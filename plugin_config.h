@@ -1,0 +1,116 @@
+#pragma once
+
+#include "plugin_interface.h"
+
+namespace MapExtensionPluginConfig
+{
+	static constexpr const char* kPluginName = "MapExtension_Plugin";
+
+	static const ConfigEntry CONFIG_ENTRIES[] = {
+		{
+			"General",
+			"Enabled",
+			ConfigValueType::Boolean,
+			"1",
+			"Enable or disable the MapExtension_Plugin plugin"
+		},
+		{
+			"Diagnostics",
+			"VerboseLifecycleLogs",
+			ConfigValueType::Boolean,
+			"0",
+			"Log world/save/experience callbacks while the cargo snapshot runtime is active"
+		},
+		{
+			"Diagnostics",
+			"LogRuntimePlanOnce",
+			ConfigValueType::Boolean,
+			"0",
+			"Log the current runtime acquisition plan once per process"
+		},
+		{
+			"Diagnostics",
+			"LogCargoSnapshots",
+			ConfigValueType::Boolean,
+			"0",
+			"Log cargo sender and receiver positions collected from runtime sources"
+		},
+		{
+			"Diagnostics",
+			"LogActorScanFallback",
+			ConfigValueType::Boolean,
+			"0",
+			"Log actor-scan fallback counts for BP_PackageSender and BP_PackageReceiver"
+		},
+		{
+			"Http",
+			"Port",
+			ConfigValueType::Integer,
+			"9000",
+			"Local HTTP port used to publish cargo snapshot JSON"
+		},
+		{
+			"Runtime",
+			"RefreshIntervalMs",
+			ConfigValueType::Integer,
+			"500",
+			"Realtime snapshot refresh interval in milliseconds while gameplay is running"
+		}
+	};
+
+	static const ConfigSchema SCHEMA = {
+		CONFIG_ENTRIES,
+		static_cast<int>(sizeof(CONFIG_ENTRIES) / sizeof(ConfigEntry))
+	};
+
+	class Config
+	{
+	public:
+		static void Initialize(IPluginConfig* config)
+		{
+			s_config = config;
+			if (s_config)
+			{
+				s_config->InitializeFromSchema(kPluginName, &SCHEMA);
+			}
+		}
+
+		static bool IsEnabled()
+		{
+			return s_config ? s_config->ReadBool(kPluginName, "General", "Enabled", true) : true;
+		}
+
+		static bool VerboseLifecycleLogs()
+		{
+			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "VerboseLifecycleLogs", false) : false;
+		}
+
+		static bool LogRuntimePlanOnce()
+		{
+			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogRuntimePlanOnce", false) : false;
+		}
+
+		static bool LogCargoSnapshots()
+		{
+			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogCargoSnapshots", false) : false;
+		}
+
+		static bool LogActorScanFallback()
+		{
+			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogActorScanFallback", false) : false;
+		}
+
+		static int HttpPort()
+		{
+			return s_config ? s_config->ReadInt(kPluginName, "Http", "Port", 9000) : 9000;
+		}
+
+		static int RefreshIntervalMs()
+		{
+			return s_config ? s_config->ReadInt(kPluginName, "Runtime", "RefreshIntervalMs", 500) : 500;
+		}
+
+	private:
+		static IPluginConfig* s_config;
+	};
+}

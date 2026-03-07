@@ -1,0 +1,22 @@
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+
+#include "cargo_runtime.h"
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
+{
+	switch (reason)
+	{
+	case DLL_PROCESS_ATTACH:
+		DisableThreadLibraryCalls(hModule);
+		break;
+	case DLL_PROCESS_DETACH:
+		CargoRuntime::HandleProcessDetach(reserved != nullptr);
+		break;
+	case DLL_THREAD_ATTACH:
+	case DLL_THREAD_DETACH:
+		break;
+	}
+
+	return TRUE;
+}

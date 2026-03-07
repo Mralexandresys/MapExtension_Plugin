@@ -1,0 +1,35 @@
+
+# Visual Studio / MSBuild user state
+*.vcxproj.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.opendb
+.vs/
+
+# Windows build outputs
+build/
+bin/
+obj/
+*.dll
+*.pdb
+*.idb
+*.iobj
+*.ipdb
+*.ilk
+*.lastbuildstate
+*.tlog/
+
+# Crash dumps and logs
+*.dmp
+*.log
+
+# Frontend artifacts
+mapview/node_modules/
+mapview/dist/
+mapview/.vite/
+mapview/.eslintcache
+
+# Misc editor/system files
+.DS_Store
+Thumbs.db
