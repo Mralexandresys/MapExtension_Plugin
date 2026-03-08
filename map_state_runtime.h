@@ -2,7 +2,7 @@
 
 namespace SDK { class UWorld; }
 
-namespace CargoRuntime
+namespace MapStateRuntime
 {
 	bool RegisterCallbacks();
 	void UnregisterCallbacks();

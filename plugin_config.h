@@ -12,7 +12,7 @@ namespace MapExtensionPluginConfig
 			"Enabled",
 			ConfigValueType::Boolean,
 			"1",
-			"Enable or disable the MapExtension_Plugin plugin"
+			"Enable or disable the MapExtension_Plugin mod"
 		},
 		{
 			"Diagnostics",
@@ -33,7 +33,7 @@ namespace MapExtensionPluginConfig
 			"LogCargoSnapshots",
 			ConfigValueType::Boolean,
 			"0",
-			"Log cargo sender and receiver positions collected from runtime sources"
+			"Log map snapshots, cargo links, teleporters, and players collected from runtime sources"
 		},
 		{
 			"Diagnostics",
@@ -47,7 +47,7 @@ namespace MapExtensionPluginConfig
 			"Port",
 			ConfigValueType::Integer,
 			"9000",
-			"Local HTTP port used to publish cargo snapshot JSON"
+			"Local HTTP port used to publish map snapshot JSON"
 		},
 		{
 			"Runtime",

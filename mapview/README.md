@@ -1,10 +1,10 @@
-# MapExtension_Plugin mapview
+# mapview
 
-Frontend Vue 3 + Vite du plugin `MapExtension_Plugin`.
+Frontend Vue 3 + Vite de l'interface web locale de `MapExtension_Plugin`.
 
 ## Objectif
 
-- UI/UX refaite dans un vrai projet front modulaire.
+- UI locale dediee a l'affichage de la carte, des entites et de leurs connexions.
 - Build de production en un seul fichier `dist/index.html`.
 - Utilisable directement contre le plugin local expose sur `http://127.0.0.1:9000` par defaut.
 - V2 avec focus reseau, tri des elements et raccourcis clavier integres.
@@ -43,6 +43,7 @@ Ce fichier contient :
 
 - L'endpoint plugin est editable dans l'UI.
 - L'app consomme `GET /health` et `GET /cargo`.
+- Les labels d'interface utilisent `Cargo Dispatchers` et `Cargo Receivers`.
 - Le fond de carte est embarque depuis `src/assets/base-map.webp` pour garder un build autonome.
 - Raccourcis utiles : `?`, `/`, `R`, `L`, `G`, `E`, `S`, `F`, `0`, `Esc`.
 

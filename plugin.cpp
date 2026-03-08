@@ -1,6 +1,6 @@
 #include "plugin.h"
 
-#include "cargo_runtime.h"
+#include "map_state_runtime.h"
 #include "plugin_config.h"
 #include "plugin_helpers.h"
 
@@ -22,7 +22,7 @@ static PluginInfo s_pluginInfo = {
 	"MapExtension_Plugin",
 	MODLOADER_BUILD_TAG,
 	"OpenAI",
-	"Publishes cargo sender and receiver positions over local HTTP",
+	"Exposes StarRupture map data, cargo links, teleporters, and players over local HTTP",
 	PLUGIN_INTERFACE_VERSION
 };
 
@@ -49,7 +49,7 @@ __declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* conf
 		return true;
 	}
 
-	if (!CargoRuntime::RegisterCallbacks())
+	if (!MapStateRuntime::RegisterCallbacks())
 	{
 		LOG_ERROR("Failed to register runtime callbacks / HTTP endpoint");
 		return false;
@@ -61,7 +61,7 @@ __declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* conf
 
 __declspec(dllexport) void PluginShutdown()
 {
-	CargoRuntime::UnregisterCallbacks();
+	MapStateRuntime::UnregisterCallbacks();
 	LOG_INFO("Plugin shutting down");
 
 	g_hooks = nullptr;

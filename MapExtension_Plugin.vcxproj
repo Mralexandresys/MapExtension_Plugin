@@ -246,7 +246,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="cargo_runtime.h" />
+    <ClInclude Include="map_state_runtime.h" />
     <ClInclude Include="plugin.h" />
     <ClInclude Include="plugin_config.h" />
     <ClInclude Include="plugin_helpers.h" />
@@ -273,7 +273,7 @@
     <ClCompile Include="$(StarRuptureSDKSourceDir)CommonUI_functions.cpp">
       <Visible>false</Visible>
     </ClCompile>
-    <ClCompile Include="cargo_runtime.cpp" />
+    <ClCompile Include="map_state_runtime.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="plugin_config.cpp" />

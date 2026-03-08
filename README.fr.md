@@ -2,25 +2,21 @@
 
 README anglais : `README.md`
 
-`MapExtension_Plugin` expose les donnees de carte de StarRupture via un endpoint HTTP local et s'accompagne de `mapview`, une interface web locale pour les visualiser.
+`MapExtension_Plugin` expose les donnees de carte de StarRupture via un endpoint HTTP local et inclut `mapview`, une interface web locale utilisee pour afficher la carte, les entites et leurs connexions.
 
-Le plugin fonctionne aussi bien en partie solo qu'en partie sur serveur.
+Le plugin fonctionne aussi bien en partie solo qu'en multijoueur, mais il n'a besoin d'etre installe que cote client. Aucune installation serveur n'est necessaire.
 
-Il n'a besoin d'etre installe que cote client. Aucune installation serveur n'est necessaire : les informations exploitees par le mod sont deja presentes sur le client.
+## Fonctionnalites
 
-## Ce que fait le plugin
+- Voir quels `Cargo Dispatchers` sont relies a quels `Cargo Receivers`, et inversement
+- Afficher leurs positions directement sur la carte
+- Voir les objets actuellement transportes dans le reseau
+- Afficher la position des `teleporteurs`
+- Afficher la position des `joueurs`
 
-- capture les `Package Sender` et `Package Receiver` depuis les donnees runtime,
-- projette les cargos, teleporteurs et joueurs en coordonnees de carte,
-- publie le snapshot courant via `GET /health` et `GET /cargo`.
+## Mapview
 
-## Ce que fait mapview
-
-`mapview/` est l'interface standalone associee au plugin.
-
-- elle lit les donnees exposees par le plugin,
-- elle affiche la carte, les entites et leurs connexions,
-- elle produit un build autonome en un seul fichier HTML.
+Le `mapview` inclus est une interface web locale autonome concue pour lire les donnees du plugin et les afficher dans un navigateur en ouvrant le fichier genere `dist/index.html`.
 
 ## Choix d'interface
 

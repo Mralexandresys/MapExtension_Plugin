@@ -1,4 +1,4 @@
-#include "cargo_runtime.h"
+#include "map_state_runtime.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -196,6 +196,31 @@ namespace
 		return kind == CargoKind::Sender ? "sender" : "receiver";
 	}
 
+	std::string NormalizeCargoBuildingName(CargoKind kind, const std::string& value)
+	{
+		if (value.empty())
+		{
+			return {};
+		}
+
+		if (kind == CargoKind::Sender)
+		{
+			if (value == "Package Sender" || value == "Cargo Sender")
+			{
+				return "Cargo Dispatcher";
+			}
+
+			return value;
+		}
+
+		if (value == "Package Receiver")
+		{
+			return "Cargo Receiver";
+		}
+
+		return value;
+	}
+
 	std::string GetConfiguredCargoBuildingName(CargoKind kind)
 	{
 		if (SDK::UCrBuilidngsDeveloperSettings* settings = SDK::UCrBuilidngsDeveloperSettings::GetDefaultObj())
@@ -205,11 +230,11 @@ namespace
 				: settings->ReceiverDefaultName.ToString();
 			if (!configuredName.empty())
 			{
-				return configuredName;
+				return NormalizeCargoBuildingName(kind, configuredName);
 			}
 		}
 
-		return kind == CargoKind::Sender ? "Cargo Sender" : "Cargo Receiver";
+		return kind == CargoKind::Sender ? "Cargo Dispatcher" : "Cargo Receiver";
 	}
 
 	std::string GetItemDisplayName(const SDK::UAuItemDataBase* item)
@@ -359,7 +384,7 @@ namespace
 		}
 
 		g_runtimePlanLogged = true;
-		LOG_INFO("Runtime plan: capture cargo sender/receiver positions from runtime data, then publish snapshots over local HTTP.");
+		LOG_INFO("Runtime plan: capture cargo dispatcher/receiver network data from runtime sources, then publish snapshots over local HTTP.");
 		LOG_INFO("Runtime plan: use package transport replication first, actor scans as fallback, and keep the web UI separate from Unreal widgets.");
 		LOG_INFO(
 			"Runtime plan: refresh the cached snapshot every %d ms while ChimeraMain is running.",
@@ -549,7 +574,7 @@ namespace
 			CargoMarker& marker = snapshot.Markers[existing->second];
 			if (marker.DisplayName.empty() && !displayName.empty())
 			{
-				marker.DisplayName = std::move(displayName);
+				marker.DisplayName = NormalizeCargoBuildingName(kind, displayName);
 			}
 			AppendResourceName(marker, resourceName);
 			return &marker;
@@ -559,7 +584,9 @@ namespace
 		marker.Kind = kind;
 		marker.WorldLocation = worldLocation;
 		marker.MapLocation = WorldToMap(worldLocation);
-		marker.DisplayName = !displayName.empty() ? std::move(displayName) : GetConfiguredCargoBuildingName(kind);
+		marker.DisplayName = !displayName.empty()
+			? NormalizeCargoBuildingName(kind, displayName)
+			: GetConfiguredCargoBuildingName(kind);
 		AppendResourceName(marker, resourceName);
 		marker.Source = source ? source : "unknown";
 		marker.InternalKey = std::move(internalKey);
@@ -1890,7 +1917,7 @@ namespace
 	}
 }
 
-namespace CargoRuntime
+namespace MapStateRuntime
 {
 	bool RegisterCallbacks()
 	{
