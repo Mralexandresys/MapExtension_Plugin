@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import baseMapUrl from '../assets/base-map.webp';
+import teleporterSvg from '../assets/teleporter.svg?raw';
 import { clamp } from '../lib/formatters';
 import { getMessages } from '../lang';
 import type { Language } from '../lang';
@@ -60,6 +61,17 @@ const DEFAULT_MAP = {
 
 const IDLE_ZOOM = 1;
 const FOCUS_ZOOM = 1.55;
+
+const TELEPORTER_SYMBOL_ID = 'teleporter-marker-icon';
+const TELEPORTER_ICON_SIZE = 20;
+const TELEPORTER_ICON_HALF = TELEPORTER_ICON_SIZE / 2;
+const teleporterSymbolHref = `#${TELEPORTER_SYMBOL_ID}`;
+const teleporterSymbolMarkup = teleporterSvg
+  .replace(/<\?xml[^>]*>\s*/i, '')
+  .replace('<svg', `<symbol id="${TELEPORTER_SYMBOL_ID}"`)
+  .replace('</svg>', '</symbol>')
+  .replace(/\swidth="[^"]*"/i, '')
+  .replace(/\sheight="[^"]*"/i, '');
 
 const mapShell = ref<HTMLElement | null>(null);
 const mapScale = ref(IDLE_ZOOM);
@@ -299,6 +311,7 @@ defineExpose({
       preserveAspectRatio="xMidYMid meet"
       @dblclick="emit('clear-selection')"
     >
+      <defs v-html="teleporterSymbolMarkup"></defs>
       <g :transform="transform">
         <image
           class="base-map"
@@ -372,8 +385,13 @@ defineExpose({
             @mousemove.stop="moveTooltip($event)"
             @mouseleave.stop="hideTooltip"
           >
-            <polygon
-              :points="`${teleporter.map.x},${teleporter.map.y - 8} ${teleporter.map.x + 8},${teleporter.map.y} ${teleporter.map.x},${teleporter.map.y + 8} ${teleporter.map.x - 8},${teleporter.map.y}`"
+            <use
+              :href="teleporterSymbolHref"
+              :xlink:href="teleporterSymbolHref"
+              :x="teleporter.map.x - TELEPORTER_ICON_HALF"
+              :y="teleporter.map.y - TELEPORTER_ICON_HALF"
+              :width="TELEPORTER_ICON_SIZE"
+              :height="TELEPORTER_ICON_SIZE"
             />
           </g>
 

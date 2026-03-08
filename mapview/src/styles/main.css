@@ -850,10 +850,13 @@ p {
     stroke-width: 1.2;
 }
 
-.map-marker.teleporter polygon {
-    fill: var(--teleporter);
-    stroke: #f0ebff;
-    stroke-width: 1.2;
+.map-marker.teleporter {
+    color: var(--teleporter);
+}
+
+.map-marker.teleporter use {
+    stroke: currentColor;
+    fill: none;
 }
 
 .map-marker.player path {
@@ -875,7 +878,8 @@ p {
 .map-marker.active rect,
 .map-marker.active circle,
 .map-marker.active polygon,
-.map-marker.active path {
+.map-marker.active path,
+.map-marker.active use {
     stroke-width: 2.6;
     filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.44));
 }
