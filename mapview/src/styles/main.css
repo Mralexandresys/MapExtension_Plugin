@@ -854,6 +854,12 @@ p {
     color: var(--teleporter);
 }
 
+.map-marker.teleporter .teleporter-hitbox {
+    fill: currentColor;
+    fill-opacity: 0;
+    pointer-events: all;
+}
+
 .map-marker.teleporter use {
     stroke: currentColor;
     fill: none;

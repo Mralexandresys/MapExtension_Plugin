@@ -65,6 +65,8 @@ const FOCUS_ZOOM = 1.55;
 const TELEPORTER_SYMBOL_ID = 'teleporter-marker-icon';
 const TELEPORTER_ICON_SIZE = 20;
 const TELEPORTER_ICON_HALF = TELEPORTER_ICON_SIZE / 2;
+const TELEPORTER_HITBOX_SIZE = 28;
+const TELEPORTER_HITBOX_HALF = TELEPORTER_HITBOX_SIZE / 2;
 const teleporterSymbolHref = `#${TELEPORTER_SYMBOL_ID}`;
 const teleporterSymbolMarkup = teleporterSvg
   .replace(/<\?xml[^>]*>\s*/i, '')
@@ -385,6 +387,13 @@ defineExpose({
             @mousemove.stop="moveTooltip($event)"
             @mouseleave.stop="hideTooltip"
           >
+            <rect
+              class="teleporter-hitbox"
+              :x="teleporter.map.x - TELEPORTER_HITBOX_HALF"
+              :y="teleporter.map.y - TELEPORTER_HITBOX_HALF"
+              :width="TELEPORTER_HITBOX_SIZE"
+              :height="TELEPORTER_HITBOX_SIZE"
+            />
             <use
               :href="teleporterSymbolHref"
               :xlink:href="teleporterSymbolHref"
