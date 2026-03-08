@@ -6,6 +6,24 @@
 - frontend source: `MapExtension_Plugin/mapview/`
 - frontend build output: `MapExtension_Plugin/mapview/dist/index.html`
 
+## Runtime module layout
+
+- `plugin.cpp`: plugin metadata, startup, shutdown, and hook registration
+- `map_state_runtime.cpp`: public runtime facade used by the plugin entrypoints
+- `map_state_capture.cpp` / `map_state_capture.h`: world scanning, snapshot refresh, and gameplay callbacks
+- `map_state_http.cpp` / `map_state_http.h`: local HTTP server and endpoint routing
+- `map_state_json.cpp` / `map_state_json.h`: JSON serialization for `/health` and `/cargo`
+- `map_state_types.h`: shared snapshot types and map projection constants
+
+Keep the runtime split along these boundaries. Do not move HTTP or JSON formatting back into `map_state_runtime.cpp` unless the split is being intentionally reverted.
+
+## Third-party code
+
+- JSON serialization uses vendored `nlohmann/json` in `third_party/nlohmann/json.hpp`.
+- License and notice files must stay in sync with that vendored header:
+  - `licenses/nlohmann-json.MIT.txt`
+  - `THIRD_PARTY_NOTICES.md`
+
 ## Prerequisites
 
 - Visual Studio 2022 (17.8 or newer) with the Desktop development with C++ workload and the Windows 10 SDK.
@@ -84,5 +102,7 @@ MapExtension_Plugin/mapview/dist/index.html
 
 - `GET /health`: status, world, generation, and entity counts
 - `GET /cargo`: current snapshot payload used by the frontend
+
+`/cargo` remains the compatibility endpoint consumed by the current frontend even though the payload now includes cargo links, teleporters, and players.
 
 The frontend endpoint is editable in the UI, but defaults to `http://127.0.0.1:9000`.
