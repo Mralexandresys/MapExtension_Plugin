@@ -14,7 +14,19 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="map_state_capture.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="map_state_http.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="map_state_json.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="map_state_runtime.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="map_state_types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="plugin.h">
@@ -24,6 +36,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="plugin_helpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="third_party/nlohmann/json.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -47,6 +62,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="$(StarRuptureSDKSourceDir)CommonUI_functions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="map_state_capture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="map_state_http.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="map_state_json.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="map_state_runtime.cpp">

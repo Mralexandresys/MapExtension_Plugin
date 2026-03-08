@@ -1,6 +1,6 @@
 # Third-party notices
 
-Verification date: 2026-03-07
+Verification date: 2026-03-08
 
 ## StarRupture-ModLoader
 
@@ -31,3 +31,15 @@ If you redistribute `base_map.webp` or derived assets, review those rights separ
 
 No code or assets from `StarRuptureSaveMap` should be copied into this project
 unless a clear license or permission is provided.
+
+## nlohmann/json
+
+- Source: `https://github.com/nlohmann/json`
+- Upstream license: MIT
+- Verified license file:
+  `https://raw.githubusercontent.com/nlohmann/json/develop/LICENSE.MIT`
+- Usage in this project: vendored single-header JSON library for HTTP payload
+  serialization
+- Vendored files:
+  - `third_party/nlohmann/json.hpp`
+  - `licenses/nlohmann-json.MIT.txt`
