@@ -1909,42 +1909,42 @@ namespace CargoRuntime
 			return false;
 		}
 
-		if (hooks->RegisterEngineInitCallback)
+		if (hooks->Engine && hooks->Engine->RegisterOnInit)
 		{
-			hooks->RegisterEngineInitCallback(OnEngineInit);
+			hooks->Engine->RegisterOnInit(OnEngineInit);
 		}
-		if (hooks->RegisterEngineShutdownCallback)
+		if (hooks->Engine && hooks->Engine->RegisterOnShutdown)
 		{
-			hooks->RegisterEngineShutdownCallback(OnEngineShutdown);
+			hooks->Engine->RegisterOnShutdown(OnEngineShutdown);
 		}
-		if (hooks->RegisterEngineTickCallback)
+		if (hooks->Engine && hooks->Engine->RegisterOnTick)
 		{
-			hooks->RegisterEngineTickCallback(OnEngineTick);
+			hooks->Engine->RegisterOnTick(OnEngineTick);
 			LOG_INFO("Requested EngineTick callback for realtime cargo refresh; confirm [EngineTick] logs in modloader.log.");
 		}
 		else
 		{
 			LOG_WARN("Engine tick callbacks are unavailable; realtime cargo refresh is disabled.");
 		}
-		if (hooks->RegisterActorBeginPlayCallback)
+		if (hooks->Actors && hooks->Actors->RegisterOnActorBeginPlay)
 		{
-			hooks->RegisterActorBeginPlayCallback(OnActorBeginPlay);
+			hooks->Actors->RegisterOnActorBeginPlay(OnActorBeginPlay);
 		}
 		else
 		{
 			LOG_WARN("ActorBeginPlay callbacks are unavailable; spawn-driven snapshot refresh is disabled.");
 		}
-		if (hooks->RegisterAnyWorldBeginPlayCallback)
+		if (hooks->World && hooks->World->RegisterOnAnyWorldBeginPlay)
 		{
-			hooks->RegisterAnyWorldBeginPlayCallback(OnAnyWorldBeginPlay);
+			hooks->World->RegisterOnAnyWorldBeginPlay(OnAnyWorldBeginPlay);
 		}
-		if (hooks->RegisterSaveLoadedCallback)
+		if (hooks->World && hooks->World->RegisterOnSaveLoaded)
 		{
-			hooks->RegisterSaveLoadedCallback(OnSaveLoaded);
+			hooks->World->RegisterOnSaveLoaded(OnSaveLoaded);
 		}
-		if (hooks->RegisterExperienceLoadCompleteCallback)
+		if (hooks->World && hooks->World->RegisterOnExperienceLoadComplete)
 		{
-			hooks->RegisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
+			hooks->World->RegisterOnExperienceLoadComplete(OnExperienceLoadComplete);
 		}
 
 		g_registered = true;
@@ -1959,33 +1959,33 @@ namespace CargoRuntime
 		IPluginHooks* hooks = GetHooks();
 		if (hooks && g_registered)
 		{
-			if (hooks->UnregisterEngineInitCallback)
+			if (hooks->Engine && hooks->Engine->UnregisterOnInit)
 			{
-				hooks->UnregisterEngineInitCallback(OnEngineInit);
+				hooks->Engine->UnregisterOnInit(OnEngineInit);
 			}
-			if (hooks->UnregisterEngineShutdownCallback)
+			if (hooks->Engine && hooks->Engine->UnregisterOnShutdown)
 			{
-				hooks->UnregisterEngineShutdownCallback(OnEngineShutdown);
+				hooks->Engine->UnregisterOnShutdown(OnEngineShutdown);
 			}
-			if (hooks->UnregisterEngineTickCallback)
+			if (hooks->Engine && hooks->Engine->UnregisterOnTick)
 			{
-				hooks->UnregisterEngineTickCallback(OnEngineTick);
+				hooks->Engine->UnregisterOnTick(OnEngineTick);
 			}
-			if (hooks->UnregisterActorBeginPlayCallback)
+			if (hooks->Actors && hooks->Actors->UnregisterOnActorBeginPlay)
 			{
-				hooks->UnregisterActorBeginPlayCallback(OnActorBeginPlay);
+				hooks->Actors->UnregisterOnActorBeginPlay(OnActorBeginPlay);
 			}
-			if (hooks->UnregisterAnyWorldBeginPlayCallback)
+			if (hooks->World && hooks->World->UnregisterOnAnyWorldBeginPlay)
 			{
-				hooks->UnregisterAnyWorldBeginPlayCallback(OnAnyWorldBeginPlay);
+				hooks->World->UnregisterOnAnyWorldBeginPlay(OnAnyWorldBeginPlay);
 			}
-			if (hooks->UnregisterSaveLoadedCallback)
+			if (hooks->World && hooks->World->UnregisterOnSaveLoaded)
 			{
-				hooks->UnregisterSaveLoadedCallback(OnSaveLoaded);
+				hooks->World->UnregisterOnSaveLoaded(OnSaveLoaded);
 			}
-			if (hooks->UnregisterExperienceLoadCompleteCallback)
+			if (hooks->World && hooks->World->UnregisterOnExperienceLoadComplete)
 			{
-				hooks->UnregisterExperienceLoadCompleteCallback(OnExperienceLoadComplete);
+				hooks->World->UnregisterOnExperienceLoadComplete(OnExperienceLoadComplete);
 			}
 		}
 
