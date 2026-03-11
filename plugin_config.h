@@ -35,9 +35,30 @@ namespace MapExtensionPluginConfig
 			"0",
 			"Log map snapshots, cargo links, teleporters, and players collected from runtime sources"
 		},
-		{
-			"Diagnostics",
-			"LogActorScanFallback",
+			{
+				"Diagnostics",
+				"LogEnviroWaveDiagnostics",
+				ConfigValueType::Boolean,
+				"0",
+				"Log rupture timer, wave stage, substages, and raw SDK timing data"
+			},
+			{
+				"Diagnostics",
+				"LogEnviroWaveActorInventory",
+				ConfigValueType::Boolean,
+				"0",
+				"Log enviro-wave actor inventory from GObjects (experimental, heavier than normal diagnostics)"
+			},
+			{
+				"Diagnostics",
+				"LogEnviroWavePostCaptureLogs",
+				ConfigValueType::Boolean,
+				"0",
+				"Log enviro-wave snapshot/timer lines after capture (temporary safety valve while crash-debugging)"
+			},
+			{
+				"Diagnostics",
+				"LogActorScanFallback",
 			ConfigValueType::Boolean,
 			"0",
 			"Log actor-scan fallback counts for BP_PackageSender and BP_PackageReceiver"
@@ -95,8 +116,23 @@ namespace MapExtensionPluginConfig
 			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogCargoSnapshots", false) : false;
 		}
 
-		static bool LogActorScanFallback()
-		{
+			static bool LogEnviroWaveDiagnostics()
+			{
+				return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogEnviroWaveDiagnostics", false) : false;
+			}
+
+			static bool LogEnviroWaveActorInventory()
+			{
+				return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogEnviroWaveActorInventory", false) : false;
+			}
+
+			static bool LogEnviroWavePostCaptureLogs()
+			{
+				return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogEnviroWavePostCaptureLogs", false) : false;
+			}
+
+			static bool LogActorScanFallback()
+			{
 			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogActorScanFallback", false) : false;
 		}
 

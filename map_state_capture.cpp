@@ -9,6 +9,7 @@
 #include "BP_Teleporter_classes.hpp"
 #include "Chimera_classes.hpp"
 #include "Chimera_structs.hpp"
+#include "CoreUObject_classes.hpp"
 #include "Engine_classes.hpp"
 
 #include <algorithm>
@@ -41,6 +42,7 @@ namespace
 {
 	constexpr int kMaxLoggedMarkersPerSnapshot = 8;
 	constexpr int kMaxLoggedActorsPerKind = 4;
+	constexpr int kMaxLoggedEnviroWaveActorClasses = 8;
 	bool g_runtimePlanLogged = false;
 	bool g_engineTickSeen = false;
 	int g_anyWorldBeginPlayCount = 0;
@@ -48,11 +50,19 @@ namespace
 	int g_experienceLoadedCount = 0;
 	SDK::UWorld* g_lastChimeraWorld = nullptr;
 	std::string g_lastWorldName;
+	bool g_chimeraWorldReady = false;
+	bool g_enviroWaveDiagnosticsReady = false;
 	float g_engineTickAccumulatorSeconds = 0.0f;
 
 	std::mutex g_snapshotMutex;
 	CargoSnapshot g_snapshot{};
 	std::unordered_set<uint32_t> g_requestedCustomNameEntityIds;
+	std::string g_lastEnviroWaveStateSignature;
+	bool g_enviroWaveStateSignatureValid = false;
+	std::string g_lastEnviroWaveTimerSignature;
+	bool g_enviroWaveTimerSignatureValid = false;
+	std::string g_lastEnviroWaveActorInventorySignature;
+	bool g_enviroWaveActorInventorySignatureValid = false;
 
 	bool ShouldLogLifecycle()
 	{
@@ -62,6 +72,21 @@ namespace
 	bool ShouldLogCargoSnapshots()
 	{
 		return MapExtensionPluginConfig::Config::LogCargoSnapshots();
+	}
+
+	bool ShouldLogEnviroWaveDiagnostics()
+	{
+		return MapExtensionPluginConfig::Config::LogEnviroWaveDiagnostics();
+	}
+
+	bool ShouldLogEnviroWaveActorInventory()
+	{
+		return MapExtensionPluginConfig::Config::LogEnviroWaveActorInventory();
+	}
+
+	bool ShouldLogEnviroWavePostCaptureLogs()
+	{
+		return MapExtensionPluginConfig::Config::LogEnviroWavePostCaptureLogs();
 	}
 
 	bool ShouldLogActorScanFallback()
@@ -77,6 +102,431 @@ namespace
 			refreshMs = 100;
 		}
 		return static_cast<float>(refreshMs) / 1000.0f;
+	}
+
+	bool IsChimeraWorldName(const std::string& worldName)
+	{
+		return worldName.find("ChimeraMain") != std::string::npos;
+	}
+
+	int GetEnviroWaveHeartbeatSnapshotInterval()
+	{
+		int refreshMs = MapExtensionPluginConfig::Config::RefreshIntervalMs();
+		if (refreshMs < 100)
+		{
+			refreshMs = 100;
+		}
+
+		const int heartbeatMs = 5000;
+		return std::max(1, (heartbeatMs + refreshMs - 1) / refreshMs);
+	}
+
+	const char* BoolToYesNo(bool value)
+	{
+		return value ? "yes" : "no";
+	}
+
+	const char* EnviroWaveToString(SDK::EEnviroWave wave)
+	{
+		switch (wave)
+		{
+		case SDK::EEnviroWave::None:
+			return "None";
+		case SDK::EEnviroWave::Heat:
+			return "Heat";
+		case SDK::EEnviroWave::Cold:
+			return "Cold";
+		default:
+			return "Unknown";
+		}
+	}
+
+	const char* EnviroWaveStageToString(SDK::EEnviroWaveStage stage)
+	{
+		switch (stage)
+		{
+		case SDK::EEnviroWaveStage::None:
+			return "None";
+		case SDK::EEnviroWaveStage::PreWave:
+			return "PreWave";
+		case SDK::EEnviroWaveStage::Moving:
+			return "Moving";
+		case SDK::EEnviroWaveStage::Fadeout:
+			return "Fadeout";
+		case SDK::EEnviroWaveStage::Growback:
+			return "Growback";
+		default:
+			return "Unknown";
+		}
+	}
+
+	const char* PreWaveSubstageToString(SDK::EEnviroWavePreWaveSubstage substage)
+	{
+		switch (substage)
+		{
+		case SDK::EEnviroWavePreWaveSubstage::None:
+			return "None";
+		case SDK::EEnviroWavePreWaveSubstage::BeforeExplosion:
+			return "BeforeExplosion";
+		case SDK::EEnviroWavePreWaveSubstage::AfterExplosion:
+			return "AfterExplosion";
+		default:
+			return "Unknown";
+		}
+	}
+
+	const char* FadeoutSubstageToString(SDK::EEnviroWaveFadeoutSubstage substage)
+	{
+		switch (substage)
+		{
+		case SDK::EEnviroWaveFadeoutSubstage::None:
+			return "None";
+		case SDK::EEnviroWaveFadeoutSubstage::FireWave:
+			return "FireWave";
+		case SDK::EEnviroWaveFadeoutSubstage::Burning:
+			return "Burning";
+		case SDK::EEnviroWaveFadeoutSubstage::Fading:
+			return "Fading";
+		default:
+			return "Unknown";
+		}
+	}
+
+	const char* GrowbackSubstageToString(SDK::EEnviroWaveGrowbackSubstage substage)
+	{
+		switch (substage)
+		{
+		case SDK::EEnviroWaveGrowbackSubstage::None:
+			return "None";
+		case SDK::EEnviroWaveGrowbackSubstage::MoonPhase:
+			return "MoonPhase";
+		case SDK::EEnviroWaveGrowbackSubstage::RegrowthStart:
+			return "RegrowthStart";
+		case SDK::EEnviroWaveGrowbackSubstage::Regrowth:
+			return "Regrowth";
+		default:
+			return "Unknown";
+		}
+	}
+
+	struct EnviroWaveActorClassInfo final
+	{
+		std::string ClassName;
+		int Count = 0;
+		std::string SampleActorName;
+		SDK::AActor* SampleActor = nullptr;
+	};
+
+	struct EnviroWaveActorInventory final
+	{
+		bool GObjectsAvailable = false;
+		int MatchingActorCount = 0;
+		std::vector<EnviroWaveActorClassInfo> Classes;
+	};
+
+	bool TryIsObjectInWorld(SDK::UObject* obj, SDK::UWorld* world)
+	{
+		if (!obj || !world)
+		{
+			return false;
+		}
+
+		__try
+		{
+			SDK::UObject* outer = obj->Outer;
+			return outer && (outer->Outer == static_cast<SDK::UObject*>(world));
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	bool TryIsActorObject(SDK::UObject* obj, SDK::UClass* actorClass)
+	{
+		if (!obj || !actorClass)
+		{
+			return false;
+		}
+
+		__try
+		{
+			return obj->IsA(actorClass);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	bool IsInterestingEnviroWaveActorName(const std::string& className, const std::string& actorName)
+	{
+		return className.find("EnviroWave") != std::string::npos
+			|| className.find("WaveTimer") != std::string::npos
+			|| className == "CrGatherableSpawnersRepActor"
+			|| actorName.find("EnviroWave") != std::string::npos
+			|| actorName.find("WaveTimer") != std::string::npos
+			|| actorName.find("HeatWave") != std::string::npos
+			|| actorName.find("ColdWave") != std::string::npos;
+	}
+
+	EnviroWaveActorInventory CaptureEnviroWaveActorInventory(SDK::UWorld* world)
+	{
+		EnviroWaveActorInventory inventory{};
+		if (!world)
+		{
+			return inventory;
+		}
+
+		SDK::TUObjectArray* objectArray = SDK::UObject::GObjects.GetTypedPtr();
+		if (!objectArray || objectArray->NumElements <= 0)
+		{
+			return inventory;
+		}
+
+		inventory.GObjectsAvailable = true;
+
+		SDK::UClass* actorClass = nullptr;
+		try
+		{
+			actorClass = SDK::AActor::StaticClass();
+		}
+		catch (...)
+		{
+			return inventory;
+		}
+
+		std::unordered_map<std::string, size_t> classIndexes;
+		for (int32_t index = 0; index < objectArray->NumElements; ++index)
+		{
+			SDK::UObject* object = objectArray->GetByIndex(index);
+			if (!object || !object->Class)
+			{
+				continue;
+			}
+
+			if (!TryIsObjectInWorld(object, world) || !TryIsActorObject(object, actorClass))
+			{
+				continue;
+			}
+
+			SDK::AActor* actor = static_cast<SDK::AActor*>(object);
+			const std::string className = actor->Class ? actor->Class->GetName() : std::string();
+			const std::string actorName = actor->GetName();
+			if (!IsInterestingEnviroWaveActorName(className, actorName))
+			{
+				continue;
+			}
+
+			++inventory.MatchingActorCount;
+			auto it = classIndexes.find(className);
+			if (it == classIndexes.end())
+			{
+				EnviroWaveActorClassInfo info{};
+				info.ClassName = className;
+				info.Count = 1;
+				info.SampleActorName = actorName;
+				info.SampleActor = actor;
+				classIndexes.emplace(className, inventory.Classes.size());
+				inventory.Classes.push_back(std::move(info));
+			}
+			else
+			{
+				++inventory.Classes[it->second].Count;
+			}
+		}
+
+		std::sort(
+			inventory.Classes.begin(),
+			inventory.Classes.end(),
+			[](const EnviroWaveActorClassInfo& lhs, const EnviroWaveActorClassInfo& rhs)
+			{
+				if (lhs.Count != rhs.Count)
+				{
+					return lhs.Count > rhs.Count;
+				}
+				return lhs.ClassName < rhs.ClassName;
+			});
+
+		return inventory;
+	}
+
+	template <typename TSubsystem>
+	TSubsystem* TryGetWorldSubsystem(SDK::UWorld* world, SDK::UClass* subsystemClass)
+	{
+		if (!world || !subsystemClass)
+		{
+			return nullptr;
+		}
+
+		return static_cast<TSubsystem*>(
+			SDK::USubsystemBlueprintLibrary::GetWorldSubsystem(world, subsystemClass));
+	}
+
+	struct EnviroWaveDiagnostics final
+	{
+		std::string WorldName;
+		SDK::ACrWaveTimerActor* GameStateTimerActor = nullptr;
+		SDK::ACrWaveTimerActor* TimerSubsystemActor = nullptr;
+		SDK::ACrEnviroWaveVisualsReplicationActor* WaveSubsystemReplicationActor = nullptr;
+		SDK::ACrEnviroWaveVisualsReplicationActor* VisualsReplicationActor = nullptr;
+		SDK::ACrGatherableSpawnersRepActor* GatherableRepActor = nullptr;
+		bool HasGameState = false;
+		bool IsDedicatedServer = false;
+		bool HasWaveSubsystem = false;
+		bool HasTimerSubsystem = false;
+		bool TimerActorsMatch = false;
+		bool VisualsReplicationActorsMatch = false;
+		SDK::EEnviroWave Type = SDK::EEnviroWave::None;
+		SDK::EEnviroWaveStage Stage = SDK::EEnviroWaveStage::None;
+		SDK::EEnviroWavePreWaveSubstage PreWaveSubstage = SDK::EEnviroWavePreWaveSubstage::None;
+		SDK::EEnviroWaveFadeoutSubstage FadeoutSubstage = SDK::EEnviroWaveFadeoutSubstage::None;
+		SDK::EEnviroWaveGrowbackSubstage GrowbackSubstage = SDK::EEnviroWaveGrowbackSubstage::None;
+		SDK::EEnviroWave GatherableRepWaveType = SDK::EEnviroWave::None;
+		SDK::EEnviroWaveStage GatherableRepWaveStage = SDK::EEnviroWaveStage::None;
+		int VisualsReplicationActorCount = 0;
+		int GatherableRepActorCount = 0;
+		bool VisualsWaterEvaporated = false;
+		float VisualsWaterEvaporatedLastTimeChange = 0.0f;
+		float NextTime = 0.0f;
+		int32_t NextPhase = 0;
+		bool TimerPaused = false;
+		EnviroWaveActorInventory ActorInventory{};
+	};
+
+	template <typename TActorClass>
+	int CountActorsOfClass(SDK::UWorld* world, TActorClass** firstActor = nullptr)
+	{
+		if (firstActor)
+		{
+			*firstActor = nullptr;
+		}
+		if (!world)
+		{
+			return 0;
+		}
+
+		SDK::TArray<SDK::AActor*> actors;
+		SDK::UGameplayStatics::GetAllActorsOfClass(world, TActorClass::StaticClass(), &actors);
+
+		int count = 0;
+		for (int index = 0; index < actors.Num(); ++index)
+		{
+			SDK::AActor* actor = actors[index];
+			if (!actor)
+			{
+				continue;
+			}
+
+			++count;
+			if (firstActor && !*firstActor)
+			{
+				*firstActor = static_cast<TActorClass*>(actor);
+			}
+		}
+
+		return count;
+	}
+
+	std::string BuildEnviroWaveStateSignature(const EnviroWaveDiagnostics& diagnostics)
+	{
+		std::ostringstream oss;
+		oss
+			<< diagnostics.HasGameState << '|'
+			<< diagnostics.IsDedicatedServer << '|'
+			<< diagnostics.HasWaveSubsystem << '|'
+			<< diagnostics.HasTimerSubsystem << '|'
+			<< (diagnostics.GameStateTimerActor != nullptr) << '|'
+			<< (diagnostics.TimerSubsystemActor != nullptr) << '|'
+			<< (diagnostics.WaveSubsystemReplicationActor != nullptr) << '|'
+			<< diagnostics.VisualsReplicationActorCount << '|'
+			<< (diagnostics.VisualsReplicationActor != nullptr) << '|'
+			<< diagnostics.VisualsReplicationActorsMatch << '|'
+			<< diagnostics.VisualsWaterEvaporated << '|'
+			<< diagnostics.GatherableRepActorCount << '|'
+			<< (diagnostics.GatherableRepActor != nullptr) << '|'
+			<< diagnostics.TimerActorsMatch << '|'
+			<< static_cast<int>(diagnostics.Type) << '|'
+			<< static_cast<int>(diagnostics.Stage) << '|'
+			<< static_cast<int>(diagnostics.PreWaveSubstage) << '|'
+			<< static_cast<int>(diagnostics.FadeoutSubstage) << '|'
+			<< static_cast<int>(diagnostics.GrowbackSubstage) << '|'
+			<< static_cast<int>(diagnostics.GatherableRepWaveType) << '|'
+			<< static_cast<int>(diagnostics.GatherableRepWaveStage) << '|'
+			<< diagnostics.NextPhase << '|'
+			<< diagnostics.TimerPaused;
+		return oss.str();
+	}
+
+	std::string BuildEnviroWaveTimerSignature(const EnviroWaveDiagnostics& diagnostics)
+	{
+		std::ostringstream oss;
+		oss.setf(std::ios::fixed);
+		oss.precision(3);
+		const bool hasTimerActor = diagnostics.GameStateTimerActor || diagnostics.TimerSubsystemActor;
+		oss << hasTimerActor;
+		if (hasTimerActor)
+		{
+			oss << '|' << diagnostics.NextTime
+				<< '|' << diagnostics.NextPhase
+				<< '|' << diagnostics.TimerPaused;
+		}
+		return oss.str();
+	}
+
+	std::string BuildEnviroWaveActorInventorySignature(const EnviroWaveDiagnostics& diagnostics)
+	{
+		std::ostringstream oss;
+		oss
+			<< diagnostics.ActorInventory.GObjectsAvailable << '|'
+			<< diagnostics.ActorInventory.MatchingActorCount;
+		for (const EnviroWaveActorClassInfo& info : diagnostics.ActorInventory.Classes)
+		{
+			oss << '|' << info.ClassName << ':' << info.Count;
+		}
+		return oss.str();
+	}
+
+	void ResetEnviroWaveDiagnosticsState()
+	{
+		g_lastEnviroWaveStateSignature.clear();
+		g_enviroWaveStateSignatureValid = false;
+		g_lastEnviroWaveTimerSignature.clear();
+		g_enviroWaveTimerSignatureValid = false;
+		g_lastEnviroWaveActorInventorySignature.clear();
+		g_enviroWaveActorInventorySignatureValid = false;
+	}
+
+	void MarkChimeraWorldReady(const char* reason)
+	{
+		if (g_chimeraWorldReady)
+		{
+			return;
+		}
+
+		g_chimeraWorldReady = true;
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"ChimeraMain world marked ready by %s",
+				reason ? reason : "unknown");
+		}
+	}
+
+	void MarkEnviroWaveDiagnosticsReady(const char* reason)
+	{
+		if (g_enviroWaveDiagnosticsReady)
+		{
+			return;
+		}
+
+		g_enviroWaveDiagnosticsReady = true;
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"EnviroWave diagnostics marked ready by %s",
+				reason ? reason : "unknown");
+		}
 	}
 
 	std::string CargoKindToString(CargoKind kind)
@@ -247,6 +697,285 @@ namespace
 		return reinterpret_cast<SDK::ACrGameStateBase*>(gameStateBase);
 	}
 
+	EnviroWaveDiagnostics CaptureEnviroWaveDiagnostics(SDK::UWorld* world, SDK::ACrGameStateBase* gameState)
+	{
+		EnviroWaveDiagnostics diagnostics{};
+		diagnostics.WorldName = world ? world->GetName() : g_lastWorldName;
+		if (!IsChimeraWorldName(diagnostics.WorldName))
+		{
+			return diagnostics;
+		}
+
+		diagnostics.HasGameState = gameState != nullptr;
+
+		if (gameState)
+		{
+			diagnostics.IsDedicatedServer = gameState->bIsDedicatedServer;
+			diagnostics.GameStateTimerActor = gameState->WaveTimerActor;
+		}
+
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem =
+			TryGetWorldSubsystem<SDK::UCrEnviroWaveSubsystem>(
+				world,
+				SDK::UCrEnviroWaveSubsystem::StaticClass());
+		if (waveSubsystem)
+		{
+			diagnostics.HasWaveSubsystem = true;
+			diagnostics.WaveSubsystemReplicationActor = waveSubsystem->ReplicationActor;
+			diagnostics.Type = waveSubsystem->GetCurrentType();
+			diagnostics.Stage = waveSubsystem->GetCurrentStage();
+			diagnostics.PreWaveSubstage = waveSubsystem->CurrentPreWaveSubstage;
+			diagnostics.FadeoutSubstage = waveSubsystem->CurrentFadeoutSubstage;
+			diagnostics.GrowbackSubstage = waveSubsystem->CurrentGrowbackSubstage;
+		}
+
+		SDK::UCrEnviroWaveTimerSubsystem* timerSubsystem =
+			TryGetWorldSubsystem<SDK::UCrEnviroWaveTimerSubsystem>(
+				world,
+				SDK::UCrEnviroWaveTimerSubsystem::StaticClass());
+		if (timerSubsystem)
+		{
+			diagnostics.HasTimerSubsystem = true;
+			diagnostics.TimerSubsystemActor = timerSubsystem->TimerActor;
+		}
+
+		diagnostics.TimerActorsMatch =
+			diagnostics.GameStateTimerActor != nullptr
+			&& diagnostics.TimerSubsystemActor != nullptr
+			&& diagnostics.GameStateTimerActor == diagnostics.TimerSubsystemActor;
+
+		diagnostics.VisualsReplicationActorCount =
+			CountActorsOfClass<SDK::ACrEnviroWaveVisualsReplicationActor>(
+				world,
+				&diagnostics.VisualsReplicationActor);
+		if (diagnostics.VisualsReplicationActor)
+		{
+			diagnostics.VisualsWaterEvaporated = diagnostics.VisualsReplicationActor->bIsWaterEvaporated;
+			diagnostics.VisualsWaterEvaporatedLastTimeChange =
+				diagnostics.VisualsReplicationActor->WaterEvaporatedLastTimeChange;
+		}
+		diagnostics.VisualsReplicationActorsMatch =
+			diagnostics.WaveSubsystemReplicationActor != nullptr
+			&& diagnostics.VisualsReplicationActor != nullptr
+			&& diagnostics.WaveSubsystemReplicationActor == diagnostics.VisualsReplicationActor;
+
+		diagnostics.GatherableRepActorCount =
+			CountActorsOfClass<SDK::ACrGatherableSpawnersRepActor>(
+				world,
+				&diagnostics.GatherableRepActor);
+		if (diagnostics.GatherableRepActor)
+		{
+			diagnostics.GatherableRepWaveType = diagnostics.GatherableRepActor->RepEnviroWaveTypeChange;
+			diagnostics.GatherableRepWaveStage = diagnostics.GatherableRepActor->RepEnviroWaveStageChange;
+		}
+
+		SDK::ACrWaveTimerActor* timerActor = diagnostics.GameStateTimerActor
+			? diagnostics.GameStateTimerActor
+			: diagnostics.TimerSubsystemActor;
+		if (timerActor)
+		{
+			diagnostics.NextTime = timerActor->NextTime;
+			diagnostics.NextPhase = timerActor->NextPhase;
+			diagnostics.TimerPaused = timerActor->bPause;
+		}
+
+		if (ShouldLogEnviroWaveActorInventory())
+		{
+			diagnostics.ActorInventory = CaptureEnviroWaveActorInventory(world);
+		}
+		return diagnostics;
+	}
+
+	void LogEnviroWaveDiagnosticsIfNeeded(
+		const EnviroWaveDiagnostics& diagnostics,
+		uint64_t generation,
+		const char* reason,
+		bool isRealtimeRefresh)
+	{
+		if (!ShouldLogEnviroWaveDiagnostics())
+		{
+			return;
+		}
+
+		const std::string currentSignature = BuildEnviroWaveStateSignature(diagnostics);
+		const bool stateChanged =
+			!g_enviroWaveStateSignatureValid
+			|| currentSignature != g_lastEnviroWaveStateSignature;
+		const bool heartbeat =
+			isRealtimeRefresh
+			&& (generation % static_cast<uint64_t>(GetEnviroWaveHeartbeatSnapshotInterval()) == 0);
+		if (!stateChanged && !heartbeat && isRealtimeRefresh)
+		{
+			return;
+		}
+
+		g_lastEnviroWaveStateSignature = currentSignature;
+		g_enviroWaveStateSignatureValid = true;
+
+		LOG_INFO(
+			"EnviroWave snapshot #%llu from '%s': world='%s' dedicated=%s game_state=%s wave_subsystem=%s timer_subsystem=%s game_timer_actor=%p subsystem_timer_actor=%p timer_actor_match=%s",
+			static_cast<unsigned long long>(generation),
+			reason ? reason : "unknown",
+			diagnostics.WorldName.c_str(),
+			BoolToYesNo(diagnostics.IsDedicatedServer),
+			BoolToYesNo(diagnostics.HasGameState),
+			BoolToYesNo(diagnostics.HasWaveSubsystem),
+			BoolToYesNo(diagnostics.HasTimerSubsystem),
+			static_cast<void*>(diagnostics.GameStateTimerActor),
+			static_cast<void*>(diagnostics.TimerSubsystemActor),
+			BoolToYesNo(diagnostics.TimerActorsMatch));
+
+		if (diagnostics.HasWaveSubsystem)
+		{
+			LOG_INFO(
+				"  EnviroWave state: type=%s(%d) stage=%s(%d) pre=%s(%d) fadeout=%s(%d) growback=%s(%d)",
+				EnviroWaveToString(diagnostics.Type),
+				static_cast<int>(diagnostics.Type),
+				EnviroWaveStageToString(diagnostics.Stage),
+				static_cast<int>(diagnostics.Stage),
+				PreWaveSubstageToString(diagnostics.PreWaveSubstage),
+				static_cast<int>(diagnostics.PreWaveSubstage),
+				FadeoutSubstageToString(diagnostics.FadeoutSubstage),
+				static_cast<int>(diagnostics.FadeoutSubstage),
+				GrowbackSubstageToString(diagnostics.GrowbackSubstage),
+				static_cast<int>(diagnostics.GrowbackSubstage));
+
+			LOG_INFO(
+				"  EnviroWave settings: skipped (GetCurrentStageSettings crashes during load on this build)");
+		}
+		else
+		{
+			LOG_INFO("  EnviroWave state: subsystem unavailable for this world");
+		}
+
+		LOG_INFO(
+			"  EnviroWave actors: subsystem_rep_actor=%p visuals_rep_count=%d visuals_rep_actor=%p visuals_rep_actor_match=%s rep_water_evaporated=%s rep_water_last_change=%.3f gatherable_rep_count=%d gatherable_rep_actor=%p gatherable_type=%s(%d) gatherable_stage=%s(%d)",
+			static_cast<void*>(diagnostics.WaveSubsystemReplicationActor),
+			diagnostics.VisualsReplicationActorCount,
+			static_cast<void*>(diagnostics.VisualsReplicationActor),
+			BoolToYesNo(diagnostics.VisualsReplicationActorsMatch),
+			BoolToYesNo(diagnostics.VisualsWaterEvaporated),
+			diagnostics.VisualsWaterEvaporatedLastTimeChange,
+			diagnostics.GatherableRepActorCount,
+			static_cast<void*>(diagnostics.GatherableRepActor),
+			EnviroWaveToString(diagnostics.GatherableRepWaveType),
+			static_cast<int>(diagnostics.GatherableRepWaveType),
+			EnviroWaveStageToString(diagnostics.GatherableRepWaveStage),
+			static_cast<int>(diagnostics.GatherableRepWaveStage));
+
+		if (diagnostics.GameStateTimerActor || diagnostics.TimerSubsystemActor)
+		{
+			const char* timerSource = diagnostics.TimerActorsMatch
+				? "game_state+timer_subsystem"
+				: (diagnostics.GameStateTimerActor ? "game_state" : "timer_subsystem");
+			LOG_INFO(
+				"  EnviroWave timer: source=%s next_time=%.3f next_phase=%d timer_pause=%s",
+				timerSource,
+				diagnostics.NextTime,
+				diagnostics.NextPhase,
+				BoolToYesNo(diagnostics.TimerPaused));
+		}
+		else
+		{
+			LOG_INFO("  EnviroWave timer: actor unavailable");
+		}
+	}
+
+	void LogEnviroWaveTimerChangesIfNeeded(
+		const EnviroWaveDiagnostics& diagnostics,
+		uint64_t generation,
+		const char* reason)
+	{
+		const std::string currentSignature = BuildEnviroWaveTimerSignature(diagnostics);
+		if (g_enviroWaveTimerSignatureValid && currentSignature == g_lastEnviroWaveTimerSignature)
+		{
+			return;
+		}
+
+		g_lastEnviroWaveTimerSignature = currentSignature;
+		g_enviroWaveTimerSignatureValid = true;
+
+		if (!(diagnostics.GameStateTimerActor || diagnostics.TimerSubsystemActor))
+		{
+			LOG_INFO(
+				"  EnviroWave timer-change #%llu from '%s': actor unavailable",
+				static_cast<unsigned long long>(generation),
+				reason ? reason : "unknown");
+			return;
+		}
+
+		const char* timerSource = diagnostics.TimerActorsMatch
+			? "game_state+timer_subsystem"
+			: (diagnostics.GameStateTimerActor ? "game_state" : "timer_subsystem");
+		LOG_INFO(
+			"  EnviroWave timer-change #%llu from '%s': source=%s next_time=%.3f next_phase=%d timer_pause=%s",
+			static_cast<unsigned long long>(generation),
+			reason ? reason : "unknown",
+			timerSource,
+			diagnostics.NextTime,
+			diagnostics.NextPhase,
+			BoolToYesNo(diagnostics.TimerPaused));
+	}
+
+	void LogEnviroWaveActorInventoryIfNeeded(
+		const EnviroWaveDiagnostics& diagnostics,
+		uint64_t generation,
+		const char* reason)
+	{
+		const std::string currentSignature = BuildEnviroWaveActorInventorySignature(diagnostics);
+		if (g_enviroWaveActorInventorySignatureValid
+			&& currentSignature == g_lastEnviroWaveActorInventorySignature)
+		{
+			return;
+		}
+
+		g_lastEnviroWaveActorInventorySignature = currentSignature;
+		g_enviroWaveActorInventorySignatureValid = true;
+
+		if (!diagnostics.ActorInventory.GObjectsAvailable)
+		{
+			LOG_INFO(
+				"  EnviroWave actor inventory #%llu from '%s': GObjects unavailable",
+				static_cast<unsigned long long>(generation),
+				reason ? reason : "unknown");
+			return;
+		}
+
+		LOG_INFO(
+			"  EnviroWave actor inventory #%llu from '%s': matches=%d unique_classes=%zu",
+			static_cast<unsigned long long>(generation),
+			reason ? reason : "unknown",
+			diagnostics.ActorInventory.MatchingActorCount,
+			diagnostics.ActorInventory.Classes.size());
+
+		if (diagnostics.ActorInventory.Classes.empty())
+		{
+			LOG_INFO("    (no enviro-wave actors matched the current ChimeraMain world scan)");
+			return;
+		}
+
+		const size_t maxLog = std::min(
+			diagnostics.ActorInventory.Classes.size(),
+			static_cast<size_t>(kMaxLoggedEnviroWaveActorClasses));
+		for (size_t index = 0; index < maxLog; ++index)
+		{
+			const EnviroWaveActorClassInfo& info = diagnostics.ActorInventory.Classes[index];
+			LOG_INFO(
+				"    EnviroWave actor class='%s' count=%d sample_actor='%s' sample_ptr=%p",
+				info.ClassName.c_str(),
+				info.Count,
+				info.SampleActorName.c_str(),
+				static_cast<void*>(info.SampleActor));
+		}
+
+		if (diagnostics.ActorInventory.Classes.size() > maxLog)
+		{
+			LOG_INFO(
+				"    ... %zu additional enviro-wave actor classes omitted",
+				diagnostics.ActorInventory.Classes.size() - maxLog);
+		}
+	}
+
 	void LogRuntimePlanIfNeededImpl()
 	{
 		if (g_runtimePlanLogged || !MapExtensionPluginConfig::Config::LogRuntimePlanOnce())
@@ -395,6 +1124,18 @@ namespace
 				|| actor->IsA(SDK::ABP_Teleporter_C::StaticClass())
 				|| actor->IsA(SDK::ACrMegamachineTeleporterDevice::StaticClass())
 				|| actor->IsA(SDK::ACrCharacterPlayerBase::StaticClass()));
+	}
+
+	bool IsEnviroWaveDiagnosticsActorImpl(SDK::AActor* actor)
+	{
+		return actor
+			&& (
+				actor->IsA(SDK::ACrWaveTimerActor::StaticClass())
+				|| actor->IsA(SDK::ACrGatherableSpawnersRepActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWaveVisualsReplicationActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWaveVisualsActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWavePlayerFXActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWaveRegion::StaticClass()));
 	}
 
 	CargoMarker* AddOrUpdateMarker(
@@ -1298,13 +2039,42 @@ namespace
 
 		std::unordered_map<std::string, size_t> markerIndexes;
 		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+		EnviroWaveDiagnostics enviroWaveDiagnostics{};
+		if (ShouldLogEnviroWaveDiagnostics() && g_enviroWaveDiagnosticsReady)
+		{
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO("EnviroWave diagnostics: probing SDK state during '%s'", nextSnapshot.Reason.c_str());
+			}
+			enviroWaveDiagnostics = CaptureEnviroWaveDiagnostics(world, gameState);
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO("EnviroWave diagnostics: SDK probe completed during '%s'", nextSnapshot.Reason.c_str());
+			}
+		}
 		CaptureFromReplicator(world, nextSnapshot, gameState, markerIndexes);
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("Cargo refresh '%s': replicator stage completed", nextSnapshot.Reason.c_str());
+		}
 		if (!isRealtimeRefresh || !nextSnapshot.HasPackageTransportReplicator)
 		{
 			CaptureActorFallback(world, nextSnapshot, markerIndexes);
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO("Cargo refresh '%s': actor fallback stage completed", nextSnapshot.Reason.c_str());
+			}
 		}
 		CaptureTeleporters(world, nextSnapshot, gameState);
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("Cargo refresh '%s': teleporter stage completed", nextSnapshot.Reason.c_str());
+		}
 		CapturePlayers(world, nextSnapshot);
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("Cargo refresh '%s': player stage completed", nextSnapshot.Reason.c_str());
+		}
 
 		nextSnapshot.SenderCount = 0;
 		nextSnapshot.ReceiverCount = 0;
@@ -1341,6 +2111,33 @@ namespace
 			g_snapshot = nextSnapshot;
 		}
 
+		if (ShouldLogEnviroWaveDiagnostics() && g_enviroWaveDiagnosticsReady)
+		{
+			if (ShouldLogEnviroWavePostCaptureLogs())
+			{
+				LogEnviroWaveDiagnosticsIfNeeded(
+					enviroWaveDiagnostics,
+					nextSnapshot.Generation,
+					nextSnapshot.Reason.c_str(),
+					isRealtimeRefresh);
+				LogEnviroWaveTimerChangesIfNeeded(
+					enviroWaveDiagnostics,
+					nextSnapshot.Generation,
+					nextSnapshot.Reason.c_str());
+			}
+			else if (ShouldLogLifecycle())
+			{
+				LOG_INFO("EnviroWave diagnostics: post-capture logs skipped during '%s' (LogEnviroWavePostCaptureLogs=0)", nextSnapshot.Reason.c_str());
+			}
+			if (ShouldLogEnviroWaveActorInventory())
+			{
+				LogEnviroWaveActorInventoryIfNeeded(
+					enviroWaveDiagnostics,
+					nextSnapshot.Generation,
+					nextSnapshot.Reason.c_str());
+			}
+		}
+
 		if (!isRealtimeRefresh)
 		{
 			LogSnapshotSummary(nextSnapshot);
@@ -1366,7 +2163,28 @@ namespace
 
 	void TryRefreshCurrentWorldImpl(const char* reason)
 	{
-		SDK::UWorld* world = g_lastChimeraWorld ? g_lastChimeraWorld : SDK::UWorld::GetWorld();
+		if (!g_lastChimeraWorld)
+		{
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO(
+					"Skipping snapshot refresh '%s': ChimeraMain world is not loaded yet",
+					reason ? reason : "unknown");
+			}
+			return;
+		}
+		if (!g_chimeraWorldReady)
+		{
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO(
+					"Skipping snapshot refresh '%s': ChimeraMain world is not ready yet",
+					reason ? reason : "unknown");
+			}
+			return;
+		}
+
+		SDK::UWorld* world = g_lastChimeraWorld;
 		RefreshCargoSnapshotImpl(world, reason);
 	}
 }
@@ -1388,6 +2206,11 @@ namespace Detail
 	bool IsRelevantRealtimeActor(SDK::AActor* actor)
 	{
 		return IsRelevantRealtimeActorImpl(actor);
+	}
+
+	bool IsEnviroWaveDiagnosticsActor(SDK::AActor* actor)
+	{
+		return IsEnviroWaveDiagnosticsActorImpl(actor);
 	}
 
 	bool RefreshCargoSnapshot(SDK::UWorld* world, const char* reason)
@@ -1422,12 +2245,17 @@ namespace MapStateRuntime
 		}
 		g_engineTickAccumulatorSeconds = 0.0f;
 		g_engineTickSeen = false;
+		g_lastChimeraWorld = nullptr;
+		g_lastWorldName.clear();
+		g_chimeraWorldReady = false;
+		g_enviroWaveDiagnosticsReady = false;
 		g_requestedCustomNameEntityIds.clear();
+		ResetEnviroWaveDiagnosticsState();
 	}
 
 	void OnEngineTick(float deltaSeconds)
 	{
-		if (!g_lastChimeraWorld)
+		if (!g_lastChimeraWorld || !g_chimeraWorldReady)
 		{
 			return;
 		}
@@ -1464,26 +2292,32 @@ namespace MapStateRuntime
 
 	void OnActorBeginPlay(void* actor)
 	{
-		if (!g_lastChimeraWorld || !actor)
+		if (!g_lastChimeraWorld || !g_chimeraWorldReady || !actor)
 		{
 			return;
 		}
 
 		SDK::AActor* beginPlayActor = static_cast<SDK::AActor*>(actor);
-		if (!Detail::IsRelevantRealtimeActor(beginPlayActor))
+		const bool cargoActor = Detail::IsRelevantRealtimeActor(beginPlayActor);
+		const bool enviroWaveDiagnosticsActor =
+			ShouldLogEnviroWaveDiagnostics() && Detail::IsEnviroWaveDiagnosticsActor(beginPlayActor);
+		if (!cargoActor && !enviroWaveDiagnosticsActor)
 		{
 			return;
 		}
 
 		if (ShouldLogLifecycle())
 		{
-			LOG_INFO("ActorBeginPlay refresh trigger: class=%s actor=%s",
+			LOG_INFO("ActorBeginPlay refresh trigger: class=%s actor=%s source=%s",
 				beginPlayActor->Class ? beginPlayActor->Class->GetName().c_str() : "(null)",
-				beginPlayActor->GetName().c_str());
+				beginPlayActor->GetName().c_str(),
+				enviroWaveDiagnosticsActor ? "enviro_wave" : "cargo");
 		}
 
 		g_engineTickAccumulatorSeconds = 0.0f;
-		Detail::RefreshCargoSnapshot(g_lastChimeraWorld, "ActorBeginPlay");
+		Detail::RefreshCargoSnapshot(
+			g_lastChimeraWorld,
+			enviroWaveDiagnosticsActor ? "ActorBeginPlay(EnviroWave)" : "ActorBeginPlay");
 	}
 
 	void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
@@ -1499,13 +2333,15 @@ namespace MapStateRuntime
 		{
 			g_lastChimeraWorld = world;
 			g_lastWorldName = safeName;
+			g_chimeraWorldReady = false;
+			g_enviroWaveDiagnosticsReady = false;
 			g_engineTickAccumulatorSeconds = 0.0f;
 			g_requestedCustomNameEntityIds.clear();
+			ResetEnviroWaveDiagnosticsState();
 			if (ShouldLogLifecycle())
 			{
-				LOG_INFO("ChimeraMain detected: capturing cargo snapshot for HTTP endpoint");
+				LOG_INFO("ChimeraMain detected: deferring cargo snapshot until the world is ready");
 			}
-			Detail::RefreshCargoSnapshot(world, "AnyWorldBeginPlay(ChimeraMain)");
 		}
 	}
 
@@ -1516,6 +2352,10 @@ namespace MapStateRuntime
 		{
 			LOG_INFO("SaveLoaded #%d: refreshing cargo snapshot from save state", g_saveLoadedCount);
 		}
+		if (g_lastChimeraWorld)
+		{
+			MarkChimeraWorldReady("SaveLoaded");
+		}
 		Detail::TryRefreshCurrentWorld("SaveLoaded");
 	}
 
@@ -1525,6 +2365,11 @@ namespace MapStateRuntime
 		if (ShouldLogLifecycle())
 		{
 			LOG_INFO("ExperienceLoadComplete #%d: refreshing cargo snapshot from runtime replication", g_experienceLoadedCount);
+		}
+		if (g_lastChimeraWorld)
+		{
+			MarkChimeraWorldReady("ExperienceLoadComplete");
+			MarkEnviroWaveDiagnosticsReady("ExperienceLoadComplete");
 		}
 		Detail::TryRefreshCurrentWorld("ExperienceLoadComplete");
 	}
