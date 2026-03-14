@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import MapCanvas from './components/MapCanvas.vue';
 import { fetchJson, normalizeEndpoint } from './lib/api';
-import { formatRelativeAge, formatWorld } from './lib/formatters';
+import { clamp, formatClockSeconds, formatRelativeAge, formatWorld } from './lib/formatters';
 import { applyLanguage, getMessages, resolveInitialLanguage } from './lang';
 import type { Language } from './lang';
 import type {
@@ -14,15 +14,36 @@ import type {
   EntityVisibility,
   HealthResponse,
   Player,
+  RuptureCycleResponse,
   SelectedEntity,
   SidebarTab,
   Teleporter,
   ViewMode,
 } from './lib/types';
 
+type RupturePhaseKey = 'burning' | 'cooling' | 'stabilizing' | 'stable';
+
 interface DetailRow {
   label: string;
   value: string;
+}
+
+interface RupturePhaseView {
+  key: RupturePhaseKey;
+  label: string;
+  durationSeconds: number;
+  startSeconds: number;
+  endSeconds: number;
+  widthPercent: number;
+  active: boolean;
+  statusLabel: string;
+  toneClass: string;
+}
+
+interface RuptureTimelineTick {
+  key: string;
+  label: string;
+  leftPercent: number;
 }
 
 const DEFAULT_ENDPOINT = 'http://127.0.0.1:9000';
@@ -32,6 +53,7 @@ const STORAGE_KEY = 'starrupture-mapview:v3';
 const mapCanvasRef = ref<InstanceType<typeof MapCanvas> | null>(null);
 const cargo = ref<CargoResponse | null>(null);
 const health = ref<HealthResponse | null>(null);
+const ruptureCycle = ref<RuptureCycleResponse | null>(null);
 const endpoint = ref(DEFAULT_ENDPOINT);
 const lang = ref<Language>(resolveInitialLanguage(STORAGE_KEY));
 const showAllLinks = ref(true);
@@ -45,6 +67,7 @@ const now = ref(Date.now());
 const viewMode = ref<ViewMode>('network');
 const sidebarTab = ref<SidebarTab>('entities');
 const heroPanelCollapsed = ref(true);
+const rupturePanelCollapsed = ref(true);
 const selectionPanelCollapsed = ref(true);
 const detailsPanelExpanded = ref(false);
 const filtersPanelCollapsed = ref(true);
@@ -496,6 +519,165 @@ const statsOverview = computed<DetailRow[]>(() => [
   { label: ui.value.selection.lastUpdate, value: liveAgeLabel.value },
 ]);
 
+const ruptureState = computed(() => ruptureCycle.value?.rupture_cycle ?? null);
+const ruptureTimeline = computed(() => ruptureCycle.value?.timeline ?? null);
+const ruptureCycleTotalSeconds = computed(() => ruptureTimeline.value?.cycle_total_seconds ?? 3240);
+const rupturePhaseDurations = computed(() => ({
+  burning: ruptureTimeline.value?.phase_seconds?.burning ?? 30,
+  cooling: ruptureTimeline.value?.phase_seconds?.cooling ?? 60,
+  stabilizing: ruptureTimeline.value?.phase_seconds?.stabilizing ?? 600,
+  stable: ruptureTimeline.value?.phase_seconds?.stable ?? 2550,
+}));
+
+const ruptureElapsedSeconds = computed(() => {
+  const value = ruptureState.value?.elapsed_seconds;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+});
+
+const ruptureObservedAtUnixMs = computed(() => {
+  const value = ruptureState.value?.observed_at_unix_ms;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+});
+
+const ruptureLiveElapsedSeconds = computed(() => {
+  const elapsed = ruptureElapsedSeconds.value;
+  if (elapsed == null) return null;
+
+  const observedAtUnixMs = ruptureObservedAtUnixMs.value;
+  if (observedAtUnixMs == null) {
+    return elapsed;
+  }
+
+  const driftSeconds = Math.max(0, (now.value - observedAtUnixMs) / 1000);
+  return elapsed + driftSeconds;
+});
+
+function mapRuptureStageToPhaseKey(stage: string, step: string): RupturePhaseKey | null {
+  if (stage === 'Moving') return 'burning';
+  if (stage === 'Fadeout') {
+    return step === 'FireWave' ? 'burning' : 'cooling';
+  }
+  if (stage === 'Growback') return 'stabilizing';
+  if (stage === 'PreWave') return 'stable';
+  return null;
+}
+
+function mapRupturePositionToPhaseKey(positionSeconds: number, durations: typeof rupturePhaseDurations.value): RupturePhaseKey {
+  const burningEnd = durations.burning;
+  const coolingEnd = burningEnd + durations.cooling;
+  const stabilizingEnd = coolingEnd + durations.stabilizing;
+
+  if (positionSeconds < burningEnd) return 'burning';
+  if (positionSeconds < coolingEnd) return 'cooling';
+  if (positionSeconds < stabilizingEnd) return 'stabilizing';
+  return 'stable';
+}
+
+const ruptureCyclePositionSeconds = computed(() => {
+  const elapsed = ruptureLiveElapsedSeconds.value;
+  const total = ruptureCycleTotalSeconds.value;
+  if (elapsed == null || total <= 0) return null;
+
+  const normalized = elapsed % total;
+  return normalized >= 0 ? normalized : (normalized + total);
+});
+
+const ruptureCurrentPhaseKey = computed<RupturePhaseKey>(() => {
+  const stage = ruptureState.value?.stage ?? 'None';
+  const step = ruptureState.value?.step ?? 'None';
+  const phaseFromStage = mapRuptureStageToPhaseKey(stage, step);
+  if (phaseFromStage) return phaseFromStage;
+
+  const positionSeconds = ruptureCyclePositionSeconds.value;
+  if (positionSeconds != null) {
+    return mapRupturePositionToPhaseKey(positionSeconds, rupturePhaseDurations.value);
+  }
+
+  return 'stable';
+});
+
+const ruptureCurrentPhaseLabel = computed(() => ui.value.rupture.phases[ruptureCurrentPhaseKey.value]);
+const ruptureCurrentWaveLabel = computed(() => ruptureState.value?.wave || '--');
+const ruptureCurrentStageLabel = computed(() => ruptureState.value?.stage || '--');
+const ruptureCurrentStepLabel = computed(() => ruptureState.value?.step || '--');
+const ruptureElapsedLabel = computed(() => formatClockSeconds(ruptureLiveElapsedSeconds.value));
+
+const ruptureMarkerSeconds = computed(() => {
+  const positionSeconds = ruptureCyclePositionSeconds.value;
+  const cycleEnd = ruptureCycleTotalSeconds.value;
+  if (positionSeconds == null || cycleEnd <= 0) return null;
+  return clamp(positionSeconds, 0, cycleEnd);
+});
+
+const ruptureMarkerPercent = computed(() => {
+  const marker = ruptureMarkerSeconds.value;
+  const total = ruptureCycleTotalSeconds.value;
+  if (marker == null || total <= 0) return null;
+  return (marker / total) * 100;
+});
+
+const ruptureHasLiveData = computed(() => ruptureMarkerPercent.value !== null);
+
+const ruptureTimelineTicks = computed<RuptureTimelineTick[]>(() => {
+  const durations = rupturePhaseDurations.value;
+  const total = ruptureCycleTotalSeconds.value || 1;
+  const boundaries = [
+    { key: 'start', seconds: 0 },
+    { key: 'burning-end', seconds: durations.burning },
+    { key: 'cooling-end', seconds: durations.burning + durations.cooling },
+    { key: 'stabilizing-end', seconds: durations.burning + durations.cooling + durations.stabilizing },
+    { key: 'end', seconds: total },
+  ];
+
+  return boundaries.map((boundary) => ({
+    key: boundary.key,
+    label: formatClockSeconds(boundary.seconds),
+    leftPercent: (boundary.seconds / total) * 100,
+  }));
+});
+
+const rupturePhases = computed<RupturePhaseView[]>(() => {
+  const durations = rupturePhaseDurations.value;
+  const phaseDefs: Array<{ key: RupturePhaseKey; toneClass: string }> = [
+    { key: 'burning', toneClass: 'burning' },
+    { key: 'cooling', toneClass: 'cooling' },
+    { key: 'stabilizing', toneClass: 'stabilizing' },
+    { key: 'stable', toneClass: 'stable' },
+  ];
+
+  const marker = ruptureMarkerSeconds.value ?? 0;
+  const total = ruptureCycleTotalSeconds.value || 1;
+  let cursor = 0;
+
+  return phaseDefs.map((phase) => {
+    const durationSeconds = durations[phase.key];
+    const startSeconds = cursor;
+    const endSeconds = startSeconds + durationSeconds;
+    cursor = endSeconds;
+
+    let statusLabel = ui.value.rupture.completed;
+    if (ruptureMarkerSeconds.value == null) {
+      statusLabel = ui.value.rupture.noDataShort;
+    } else if (ruptureCurrentPhaseKey.value === phase.key) {
+      statusLabel = ui.value.rupture.format.endsIn(formatClockSeconds(Math.max(0, endSeconds - marker)));
+    } else if (marker < startSeconds) {
+      statusLabel = ui.value.rupture.format.startsIn(formatClockSeconds(Math.max(0, startSeconds - marker)));
+    }
+
+    return {
+      key: phase.key,
+      label: ui.value.rupture.phases[phase.key],
+      durationSeconds,
+      startSeconds,
+      endSeconds,
+      widthPercent: (durationSeconds / total) * 100,
+      active: ruptureCurrentPhaseKey.value === phase.key,
+      statusLabel,
+      toneClass: phase.toneClass,
+    };
+  });
+});
+
 function setStatus(online: boolean, text: string, error = ''): void {
   status.online = online;
   status.text = text;
@@ -507,6 +689,7 @@ async function refreshData(): Promise<void> {
   if (!currentEndpoint) {
     cargo.value = null;
     health.value = null;
+    ruptureCycle.value = null;
     lastUpdatedAt.value = 0;
     setStatus(false, ui.value.status.invalidEndpoint, ui.value.status.invalidEndpointHelp);
     return;
@@ -518,13 +701,15 @@ async function refreshData(): Promise<void> {
   setStatus(false, ui.value.status.contactingPlugin, '');
 
   try {
-    const [nextHealth, nextCargo] = await Promise.all([
+    const [nextHealth, nextCargo, nextRuptureCycle] = await Promise.all([
       fetchJson<HealthResponse>(currentEndpoint, '/health'),
       fetchJson<CargoResponse>(currentEndpoint, '/cargo'),
+      fetchJson<RuptureCycleResponse>(currentEndpoint, '/rupture-cycle').catch(() => null),
     ]);
 
     health.value = nextHealth;
     cargo.value = nextCargo;
+    ruptureCycle.value = nextRuptureCycle;
     lastUpdatedAt.value = Date.now();
     setStatus(
       true,
@@ -615,6 +800,10 @@ function openPanel(tab?: SidebarTab): void {
 
 function toggleHeroPanel(): void {
   heroPanelCollapsed.value = !heroPanelCollapsed.value;
+}
+
+function toggleRupturePanel(): void {
+  rupturePanelCollapsed.value = !rupturePanelCollapsed.value;
 }
 
 function toggleSelectionPanel(): void {
@@ -859,6 +1048,128 @@ onBeforeUnmount(() => {
                 {{ ui.buttons.help }}
               </button>
             </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="overlay-layer overlay-top-center">
+        <button
+          v-if="rupturePanelCollapsed"
+          class="drawer-handle drawer-handle-top-center"
+          type="button"
+          :aria-expanded="!rupturePanelCollapsed"
+          @click="toggleRupturePanel"
+        >
+          {{ ui.handles.timeline }}
+        </button>
+        <section class="floating-panel timeline-panel" :class="{ collapsed: rupturePanelCollapsed }">
+          <div class="panel-top-row">
+            <div>
+              <span class="eyebrow">{{ ui.handles.timeline }}</span>
+              <h2>{{ ui.rupture.title }}</h2>
+              <p>{{ ui.rupture.subtitle }}</p>
+            </div>
+            <div class="panel-top-actions">
+              <span class="status-inline rupture-phase-badge" :class="ruptureCurrentPhaseKey">
+                {{ ui.rupture.currentPhase }}: {{ ruptureCurrentPhaseLabel }}
+              </span>
+              <button
+                v-if="!rupturePanelCollapsed"
+                class="button subtle small"
+                type="button"
+                @click="toggleRupturePanel"
+              >
+                {{ ui.buttons.collapse }}
+              </button>
+            </div>
+          </div>
+
+          <div class="drawer-body timeline-body">
+            <div class="rupture-summary-grid">
+              <div class="fact-card">
+                <strong>{{ ui.rupture.wave }}</strong>
+                <span>{{ ruptureCurrentWaveLabel }}</span>
+              </div>
+              <div class="fact-card">
+                <strong>{{ ui.rupture.stage }}</strong>
+                <span>{{ ruptureCurrentStageLabel }}</span>
+              </div>
+              <div class="fact-card">
+                <strong>{{ ui.rupture.step }}</strong>
+                <span>{{ ruptureCurrentStepLabel }}</span>
+              </div>
+              <div class="fact-card">
+                <strong>{{ ui.rupture.elapsed }}</strong>
+                <span>{{ ruptureElapsedLabel }}</span>
+              </div>
+            </div>
+
+            <section class="rupture-panel">
+              <div class="rupture-timeline">
+                <div class="rupture-track">
+                  <div
+                    v-for="phase in rupturePhases"
+                    :key="phase.key"
+                    class="rupture-segment"
+                    :class="[phase.toneClass, { active: phase.active }]"
+                    :style="{ width: `${phase.widthPercent}%` }"
+                  ></div>
+                  <div v-if="ruptureMarkerPercent !== null" class="rupture-marker" :style="{ left: `${ruptureMarkerPercent}%` }">
+                    <span>{{ formatClockSeconds(ruptureMarkerSeconds) }}</span>
+                  </div>
+                </div>
+                <div class="rupture-track-scale">
+                  <span
+                    v-for="tick in ruptureTimelineTicks"
+                    :key="tick.key"
+                    class="rupture-track-tick"
+                    :style="{ left: `${tick.leftPercent}%` }"
+                  >
+                    {{ tick.label }}
+                  </span>
+                </div>
+                <div class="rupture-track-legend">
+                  <span
+                    v-for="phase in rupturePhases"
+                    :key="`${phase.key}-legend`"
+                    class="rupture-track-legend-item"
+                  >
+                    <span class="rupture-track-swatch" :class="phase.toneClass"></span>
+                    {{ phase.label }}
+                  </span>
+                </div>
+              </div>
+              <div v-if="!ruptureHasLiveData" class="empty-state compact-empty">
+                {{ ui.rupture.noData }}
+              </div>
+
+              <div class="rupture-cards">
+                <article v-for="phase in rupturePhases" :key="phase.key" class="rupture-card" :class="[phase.toneClass, { active: phase.active }]">
+                  <div class="rupture-card-header">
+                    <strong>{{ phase.label }}</strong>
+                    <span>{{ phase.statusLabel }}</span>
+                  </div>
+                  <div class="details-grid compact-grid">
+                    <div>
+                      <strong>{{ ui.rupture.duration }}</strong>
+                      <span>{{ formatClockSeconds(phase.durationSeconds) }}</span>
+                    </div>
+                    <div>
+                      <strong>{{ ui.rupture.start }}</strong>
+                      <span>{{ formatClockSeconds(phase.startSeconds) }}</span>
+                    </div>
+                    <div>
+                      <strong>{{ ui.rupture.end }}</strong>
+                      <span>{{ formatClockSeconds(phase.endSeconds) }}</span>
+                    </div>
+                    <div>
+                      <strong>{{ ui.rupture.status }}</strong>
+                      <span>{{ phase.statusLabel }}</span>
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </section>
           </div>
         </section>
       </div>

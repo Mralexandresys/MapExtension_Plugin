@@ -111,6 +111,24 @@ namespace Detail
 				}}
 			};
 		}
+
+		json ToJson(const RuptureCycleSnapshot& snapshot)
+		{
+			return json{
+				{"available", snapshot.Available},
+				{"chat_hud_found", snapshot.ChatHudFound},
+				{"prefix_found", snapshot.PrefixFound},
+				{"parsed", snapshot.Parsed},
+				{"sequence", snapshot.HasSequence ? json(snapshot.Sequence) : json(nullptr)},
+				{"wave", snapshot.Wave},
+				{"stage", snapshot.Stage},
+				{"step", snapshot.Step},
+				{"elapsed_seconds", snapshot.HasElapsed ? json(RoundJsonNumber(snapshot.ElapsedSeconds, 3)) : json(nullptr)},
+				{"observed_at_unix_ms", snapshot.HasObservedAtUnixMs ? json(snapshot.ObservedAtUnixMs) : json(nullptr)},
+				{"raw_line", snapshot.RawLine},
+				{"raw_payload", snapshot.RawPayload}
+			};
+		}
 	}
 
 	std::string BuildHealthJson(const CargoSnapshot& snapshot, int httpPort)
@@ -185,6 +203,26 @@ namespace Detail
 			{"teleporters", std::move(teleporters)},
 			{"players", std::move(players)},
 			{"connections", std::move(connections)}
+		};
+		return payload.dump();
+	}
+
+	std::string BuildRuptureCycleJson(const CargoSnapshot& snapshot)
+	{
+		const json payload = {
+			{"ok", true},
+			{"generation", snapshot.Generation},
+			{"world", snapshot.WorldName},
+			{"timeline", {
+				{"cycle_total_seconds", 3240},
+				{"phase_seconds", {
+					{"burning", 30},
+					{"cooling", 60},
+					{"stabilizing", 600},
+					{"stable", 2550}
+				}}
+			}},
+			{"rupture_cycle", ToJson(snapshot.RuptureCycle)}
 		};
 		return payload.dump();
 	}

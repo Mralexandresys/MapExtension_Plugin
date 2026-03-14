@@ -8,6 +8,7 @@ export const fr = {
     },
     handles: {
         controls: "Controles",
+        timeline: "Timeline",
         selection: "Selection",
         filters: "Filtres",
         legend: "Legende",
@@ -55,6 +56,33 @@ export const fr = {
         eyebrow: "mapview",
         title: "Carte StarRupture",
         endpoint: "Endpoint",
+    },
+    rupture: {
+        title: "Timeline de rupture",
+        subtitle:
+            "Timeline derivee des messages de cycle envoyes dans le chat serveur.",
+        noData: "Aucun message de cycle de rupture detecte pour le moment.",
+        noDataShort: "Pas de donnees",
+        currentPhase: "Phase actuelle",
+        wave: "Vague",
+        stage: "Stage",
+        step: "Sous-phase",
+        elapsed: "Ecoule",
+        duration: "Duree",
+        start: "Debut",
+        end: "Fin",
+        status: "Statut",
+        completed: "Termine",
+        phases: {
+            burning: "World burning",
+            cooling: "World cooling",
+            stabilizing: "World stabilizing",
+            stable: "World stable",
+        },
+        format: {
+            startsIn: (value: string) => `Demarre dans ${value}`,
+            endsIn: (value: string) => `Se termine dans ${value}`,
+        },
     },
     status: {
         connecting: "Connexion au plugin...",

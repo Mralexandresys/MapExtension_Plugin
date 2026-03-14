@@ -111,3 +111,38 @@ export interface EntityEntry {
     meta2: string;
     orphan: boolean;
 }
+
+export interface RupturePhaseSeconds {
+    burning?: number;
+    cooling?: number;
+    stabilizing?: number;
+    stable?: number;
+}
+
+export interface RuptureTimelineInfo {
+    cycle_total_seconds?: number;
+    phase_seconds?: RupturePhaseSeconds;
+}
+
+export interface RuptureCycleState {
+    available?: boolean;
+    chat_hud_found?: boolean;
+    prefix_found?: boolean;
+    parsed?: boolean;
+    sequence?: number | null;
+    wave?: string;
+    stage?: string;
+    step?: string;
+    elapsed_seconds?: number | null;
+    observed_at_unix_ms?: number | null;
+    raw_line?: string;
+    raw_payload?: string;
+}
+
+export interface RuptureCycleResponse {
+    ok?: boolean;
+    generation?: number;
+    world?: string;
+    timeline?: RuptureTimelineInfo;
+    rupture_cycle?: RuptureCycleState;
+}

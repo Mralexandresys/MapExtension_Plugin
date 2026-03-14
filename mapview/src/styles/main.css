@@ -113,6 +113,14 @@ p {
     align-items: flex-start;
 }
 
+.overlay-top-center {
+    top: 0;
+    left: 0;
+    right: 0;
+    justify-content: center;
+    align-items: flex-start;
+}
+
 .overlay-top-right {
     top: 0;
     right: 0;
@@ -165,7 +173,18 @@ p {
     border-radius: 0 24px 24px 0;
 }
 
+.timeline-panel {
+    width: calc(100% - 32px);
+    gap: 12px;
+    border-top: 0;
+    border-radius: 0 0 24px 24px;
+}
+
 .hero-panel.collapsed {
+    transform: translateY(calc(-100% + 8px));
+}
+
+.timeline-panel.collapsed {
     transform: translateY(calc(-100% + 8px));
 }
 
@@ -202,7 +221,13 @@ p {
     margin-top: 4px;
 }
 
+.timeline-panel h2 {
+    font-size: clamp(1rem, 1.6vw, 1.2rem);
+    margin-top: 4px;
+}
+
 .hero-panel p,
+.timeline-panel p,
 .selection-panel p,
 .shortcut-row p,
 .entity-meta,
@@ -257,6 +282,14 @@ p {
     left: 0;
     border-left: 0;
     border-radius: 0 14px 14px 0;
+}
+
+.drawer-handle-top-center {
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 140px;
+    border-radius: 999px;
 }
 
 .drawer-handle-right {
@@ -984,6 +1017,10 @@ p {
         width: min(440px, calc(100% - 320px));
     }
 
+    .timeline-panel {
+        width: calc(100% - 24px);
+    }
+
     .overlay-top-right {
         width: min(340px, calc(100% - 18px));
     }
@@ -1006,6 +1043,10 @@ p {
 @media (max-width: 980px) {
     .overlay-top-left {
         width: min(420px, calc(100% - 96px));
+    }
+
+    .timeline-panel {
+        width: calc(100% - 18px);
     }
 
     .overlay-top-right {
@@ -1070,6 +1111,7 @@ p {
     }
 
     .overlay-top-left,
+    .overlay-top-center,
     .overlay-top-right,
     .overlay-bottom-left,
     .overlay-bottom-right {
@@ -1084,6 +1126,10 @@ p {
     .overlay-top-right {
         bottom: 108px;
         width: calc(100% - 38px);
+    }
+
+    .overlay-top-center {
+        justify-content: center;
     }
 
     .overlay-bottom-right {
@@ -1115,6 +1161,11 @@ p {
 
     .hero-panel {
         border-radius: 0 20px 20px 0;
+    }
+
+    .timeline-panel {
+        width: calc(100% - 12px);
+        border-radius: 0 0 20px 20px;
     }
 
     .selection-panel {
@@ -1154,4 +1205,201 @@ p {
     .legend-panel.collapsed {
         transform: translateY(calc(100% - 8px));
     }
+}
+
+.rupture-panel {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: rgba(9, 15, 28, 0.78);
+}
+
+.timeline-body {
+    display: grid;
+    gap: 12px;
+}
+
+.rupture-summary-grid,
+.rupture-cards {
+    display: grid;
+    gap: 10px;
+}
+
+.rupture-summary-grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.rupture-timeline {
+    display: grid;
+    gap: 14px;
+}
+
+.rupture-track {
+    position: relative;
+    display: flex;
+    height: 56px;
+    overflow: hidden;
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.rupture-segment {
+    height: 100%;
+    opacity: 0.8;
+    min-width: 2px;
+    border-right: 1px solid rgba(7, 13, 24, 0.45);
+}
+
+.rupture-segment.burning,
+.rupture-phase-badge.burning,
+.rupture-card.burning {
+    background: rgba(248, 113, 113, 0.18);
+    border-color: rgba(248, 113, 113, 0.34);
+}
+
+.rupture-segment.cooling,
+.rupture-phase-badge.cooling,
+.rupture-card.cooling {
+    background: rgba(245, 158, 11, 0.18);
+    border-color: rgba(245, 158, 11, 0.34);
+}
+
+.rupture-segment.stabilizing,
+.rupture-phase-badge.stabilizing,
+.rupture-card.stabilizing {
+    background: rgba(229, 231, 235, 0.14);
+    border-color: rgba(229, 231, 235, 0.28);
+}
+
+.rupture-segment.stable,
+.rupture-phase-badge.stable,
+.rupture-card.stable {
+    background: rgba(49, 196, 141, 0.16);
+    border-color: rgba(49, 196, 141, 0.32);
+}
+
+.rupture-segment.active {
+    opacity: 1;
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18);
+}
+
+.rupture-marker {
+    position: absolute;
+    top: -34px;
+    bottom: -10px;
+    transform: translateX(-50%);
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.rupture-marker::before {
+    content: "";
+    position: absolute;
+    top: 28px;
+    bottom: 0;
+    width: 2px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.28);
+}
+
+.rupture-marker::after {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid #ffffff;
+}
+
+.rupture-marker span {
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.94);
+    color: #07101d;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.rupture-track-scale {
+    position: relative;
+    height: 24px;
+}
+
+.rupture-track-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    align-items: center;
+}
+
+.rupture-track-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.rupture-track-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.rupture-track-tick {
+    position: absolute;
+    bottom: 0;
+    transform: translateX(-50%);
+    font-size: 0.74rem;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.rupture-track-tick::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 20px;
+    transform: translateX(-50%);
+    width: 1px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.24);
+}
+
+.rupture-phase-badge {
+    white-space: nowrap;
+}
+
+.rupture-cards {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.rupture-card {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+}
+
+.rupture-card.active {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.rupture-card-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.rupture-card-header span {
+    color: var(--muted);
+    text-align: right;
 }

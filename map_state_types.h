@@ -87,6 +87,25 @@ namespace Detail
 		std::string PublicKey;
 	};
 
+	struct RuptureCycleSnapshot
+	{
+		bool Available = false;
+		bool ChatHudFound = false;
+		bool PrefixFound = false;
+		bool Parsed = false;
+		bool HasSequence = false;
+		uint64_t Sequence = 0;
+		std::string Wave;
+		std::string Stage;
+		std::string Step;
+		double ElapsedSeconds = 0.0;
+		bool HasElapsed = false;
+		int64_t ObservedAtUnixMs = 0;
+		bool HasObservedAtUnixMs = false;
+		std::string RawLine;
+		std::string RawPayload;
+	};
+
 	struct CargoSnapshot
 	{
 		uint64_t Generation = 0;
@@ -108,6 +127,7 @@ namespace Detail
 		std::vector<CargoConnection> Connections;
 		std::vector<TeleporterMarker> Teleporters;
 		std::vector<PlayerMarker> Players;
+		RuptureCycleSnapshot RuptureCycle;
 	};
 
 	struct ReceiverLinkInfo

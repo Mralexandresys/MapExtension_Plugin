@@ -35,6 +35,13 @@ namespace MapExtensionPluginConfig
 			"0",
 			"Log map snapshots, cargo links, teleporters, and players collected from runtime sources"
 		},
+		{
+			"Diagnostics",
+			"LogRuptureCycleChat",
+			ConfigValueType::Boolean,
+			"0",
+			"Scan the client chat HUD for [RUPTURE_CYCLE] messages and log parsed values"
+		},
 			{
 				"Diagnostics",
 				"LogEnviroWaveDiagnostics",
@@ -76,6 +83,13 @@ namespace MapExtensionPluginConfig
 			ConfigValueType::Integer,
 			"500",
 			"Realtime snapshot refresh interval in milliseconds while gameplay is running"
+		},
+		{
+			"Chat",
+			"RuptureCyclePrefix",
+			ConfigValueType::String,
+			"[RUPTURE_CYCLE]",
+			"Prefix used by the server chat plugin when broadcasting rupture cycle state"
 		}
 	};
 
@@ -116,6 +130,11 @@ namespace MapExtensionPluginConfig
 			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogCargoSnapshots", false) : false;
 		}
 
+		static bool LogRuptureCycleChat()
+		{
+			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogRuptureCycleChat", false) : false;
+		}
+
 			static bool LogEnviroWaveDiagnostics()
 			{
 				return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogEnviroWaveDiagnostics", false) : false;
@@ -144,6 +163,16 @@ namespace MapExtensionPluginConfig
 		static int RefreshIntervalMs()
 		{
 			return s_config ? s_config->ReadInt(kPluginName, "Runtime", "RefreshIntervalMs", 500) : 500;
+		}
+
+		static const char* RuptureCyclePrefix()
+		{
+			static char buffer[64] = {};
+			if (s_config && s_config->ReadString(kPluginName, "Chat", "RuptureCyclePrefix", buffer, sizeof(buffer), "[RUPTURE_CYCLE]"))
+			{
+				return buffer;
+			}
+			return "[RUPTURE_CYCLE]";
 		}
 
 	private:

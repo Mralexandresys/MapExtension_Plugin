@@ -8,12 +8,16 @@
 #include "BP_PackageSender_classes.hpp"
 #include "BP_Teleporter_classes.hpp"
 #include "Chimera_classes.hpp"
+#include "ChimeraUI_classes.hpp"
 #include "Chimera_structs.hpp"
 #include "CoreUObject_classes.hpp"
 #include "Engine_classes.hpp"
+#include "UMG_classes.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <sstream>
@@ -61,6 +65,11 @@ namespace
 	bool g_enviroWaveStateSignatureValid = false;
 	std::string g_lastEnviroWaveTimerSignature;
 	bool g_enviroWaveTimerSignatureValid = false;
+	std::string g_lastRuptureCycleChatSignature;
+	bool g_lastRuptureCycleChatSignatureValid = false;
+	std::string g_lastRuptureCycleObservedSignature;
+	bool g_lastRuptureCycleObservedSignatureValid = false;
+	int64_t g_lastRuptureCycleObservedAtUnixMs = 0;
 	std::string g_lastEnviroWaveActorInventorySignature;
 	bool g_enviroWaveActorInventorySignatureValid = false;
 
@@ -72,6 +81,11 @@ namespace
 	bool ShouldLogCargoSnapshots()
 	{
 		return MapExtensionPluginConfig::Config::LogCargoSnapshots();
+	}
+
+	bool ShouldLogRuptureCycleChat()
+	{
+		return MapExtensionPluginConfig::Config::LogRuptureCycleChat();
 	}
 
 	bool ShouldLogEnviroWaveDiagnostics()
@@ -209,6 +223,11 @@ namespace
 		}
 	}
 
+	const char* GetRuptureCycleChatPrefix()
+	{
+		return MapExtensionPluginConfig::Config::RuptureCyclePrefix();
+	}
+
 	struct EnviroWaveActorClassInfo final
 	{
 		std::string ClassName;
@@ -222,6 +241,33 @@ namespace
 		bool GObjectsAvailable = false;
 		int MatchingActorCount = 0;
 		std::vector<EnviroWaveActorClassInfo> Classes;
+	};
+
+	struct RuptureCycleChatState final
+	{
+		bool GObjectsAvailable = false;
+		bool ChatHudFound = false;
+		bool PrefixFound = false;
+		bool Parsed = false;
+		bool HasSequence = false;
+		uint64_t Sequence = 0;
+		std::string RawLine;
+		std::string Payload;
+		std::string Wave;
+		std::string Stage;
+		std::string Step;
+		double Progress = 0.0;
+		bool ProgressValid = false;
+		bool InProgress = false;
+		bool InProgressValid = false;
+		bool Paused = false;
+		bool PausedValid = false;
+		int NextPhase = 0;
+		bool NextPhaseValid = false;
+		double NextTime = 0.0;
+		bool NextTimeValid = false;
+		double SinceLastStart = 0.0;
+		bool SinceLastStartValid = false;
 	};
 
 	bool TryIsObjectInWorld(SDK::UObject* obj, SDK::UWorld* world)
@@ -259,6 +305,425 @@ namespace
 		}
 	}
 
+	template <typename TObjectClass>
+	SDK::UClass* TryGetStaticClass()
+	{
+		__try
+		{
+			return TObjectClass::StaticClass();
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return nullptr;
+		}
+	}
+
+	bool TryObjectHasOuterInChain(SDK::UObject* obj, SDK::UObject* targetOuter, int maxDepth = 12)
+	{
+		if (!obj || !targetOuter || maxDepth <= 0)
+		{
+			return false;
+		}
+
+		__try
+		{
+			SDK::UObject* current = obj;
+			for (int depth = 0; current && depth < maxDepth; ++depth)
+			{
+				if (current == targetOuter)
+				{
+					return true;
+				}
+				current = current->Outer;
+			}
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+
+		return false;
+	}
+
+	bool TryParseYesNo(const std::string& value, bool& outValue)
+	{
+		if (value == "yes")
+		{
+			outValue = true;
+			return true;
+		}
+		if (value == "no")
+		{
+			outValue = false;
+			return true;
+		}
+		return false;
+	}
+
+	bool TryParseInt(const std::string& value, int& outValue)
+	{
+		if (value.empty())
+		{
+			return false;
+		}
+
+		char* end = nullptr;
+		const long parsed = std::strtol(value.c_str(), &end, 10);
+		if (!end || *end != '\0')
+		{
+			return false;
+		}
+
+		outValue = static_cast<int>(parsed);
+		return true;
+	}
+
+	bool TryParseUInt64(const std::string& value, uint64_t& outValue)
+	{
+		if (value.empty())
+		{
+			return false;
+		}
+
+		char* end = nullptr;
+		const unsigned long long parsed = std::strtoull(value.c_str(), &end, 10);
+		if (!end || *end != '\0')
+		{
+			return false;
+		}
+
+		outValue = static_cast<uint64_t>(parsed);
+		return true;
+	}
+
+	bool TryParseDouble(const std::string& value, double& outValue)
+	{
+		if (value.empty())
+		{
+			return false;
+		}
+
+		char* end = nullptr;
+		const double parsed = std::strtod(value.c_str(), &end);
+		if (!end || *end != '\0')
+		{
+			return false;
+		}
+
+		outValue = parsed;
+		return true;
+	}
+
+	std::string TrimWhitespace(std::string value)
+	{
+		const auto isSpace = [](unsigned char c)
+		{
+			return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+		};
+
+		while (!value.empty() && isSpace(static_cast<unsigned char>(value.front())))
+		{
+			value.erase(value.begin());
+		}
+
+		while (!value.empty() && isSpace(static_cast<unsigned char>(value.back())))
+		{
+			value.pop_back();
+		}
+
+		return value;
+	}
+
+	std::string FindLastLineContainingPrefix(const std::string& text, const std::string& prefix)
+	{
+		if (text.empty() || prefix.empty())
+		{
+			return std::string();
+		}
+
+		const size_t prefixPos = text.rfind(prefix);
+		if (prefixPos == std::string::npos)
+		{
+			return std::string();
+		}
+
+		size_t lineStart = text.rfind('\n', prefixPos);
+		lineStart = (lineStart == std::string::npos) ? 0 : (lineStart + 1);
+		size_t lineEnd = text.find('\n', prefixPos);
+		if (lineEnd == std::string::npos)
+		{
+			lineEnd = text.size();
+		}
+
+		return TrimWhitespace(text.substr(lineStart, lineEnd - lineStart));
+	}
+
+	std::string StripRichTextMarkup(const std::string& value)
+	{
+		if (value.empty())
+		{
+			return std::string();
+		}
+
+		std::string stripped;
+		stripped.reserve(value.size());
+
+		bool insideTag = false;
+		for (char ch : value)
+		{
+			if (ch == '<')
+			{
+				insideTag = true;
+				continue;
+			}
+			if (insideTag)
+			{
+				if (ch == '>')
+				{
+					insideTag = false;
+				}
+				continue;
+			}
+			stripped.push_back(ch);
+		}
+
+		return stripped;
+	}
+
+	bool TryGetChatHistoryWidget(SDK::UCrUW_ChatHud* chatHud, SDK::URichTextBlock*& outChatHistory)
+	{
+		outChatHistory = nullptr;
+		if (!chatHud)
+		{
+			return false;
+		}
+
+		__try
+		{
+			outChatHistory = chatHud->ChatHistory;
+			return outChatHistory != nullptr;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			outChatHistory = nullptr;
+			return false;
+		}
+	}
+
+	bool TryGetRichTextBlockText(SDK::URichTextBlock* richTextBlock, SDK::FText& outText)
+	{
+		if (!richTextBlock)
+		{
+			return false;
+		}
+
+		__try
+		{
+			outText = richTextBlock->GetText();
+			return outText.TextData != nullptr;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	bool TryGetChatHistoryText(SDK::UCrUW_ChatHud* chatHud, std::string& outText)
+	{
+		outText.clear();
+		if (!chatHud)
+		{
+			return false;
+		}
+
+		SDK::URichTextBlock* chatHistory = nullptr;
+		SDK::FText chatHistoryText{};
+
+		if (!TryGetChatHistoryWidget(chatHud, chatHistory))
+		{
+			return false;
+		}
+
+		if (!TryGetRichTextBlockText(chatHistory, chatHistoryText))
+		{
+			return false;
+		}
+
+		outText = chatHistoryText.ToString();
+		return !outText.empty();
+	}
+
+	bool TryParseRuptureCyclePayload(const std::string& payload, RuptureCycleChatState& outState)
+	{
+		std::istringstream iss(payload);
+		std::string token;
+		bool foundField = false;
+		while (iss >> token)
+		{
+			const size_t equalsPos = token.find('=');
+			if (equalsPos == std::string::npos || equalsPos == 0 || equalsPos == (token.size() - 1))
+			{
+				continue;
+			}
+
+			foundField = true;
+			const std::string key = token.substr(0, equalsPos);
+			const std::string value = token.substr(equalsPos + 1);
+
+			if (key == "seq")
+			{
+				outState.HasSequence = TryParseUInt64(value, outState.Sequence);
+			}
+			else if (key == "wave" || key == "type")
+			{
+				outState.Wave = value;
+			}
+			else if (key == "stage")
+			{
+				outState.Stage = value;
+			}
+			else if (key == "step")
+			{
+				outState.Step = value;
+			}
+			else if (key == "pre" && value != "None")
+			{
+				outState.Step = value;
+			}
+			else if (key == "fade" && value != "None")
+			{
+				outState.Step = value;
+			}
+			else if (key == "grow" && value != "None")
+			{
+				outState.Step = value;
+			}
+			else if (key == "progress")
+			{
+				outState.ProgressValid = TryParseDouble(value, outState.Progress);
+			}
+			else if (key == "in_progress")
+			{
+				outState.InProgressValid = TryParseYesNo(value, outState.InProgress);
+			}
+			else if (key == "paused")
+			{
+				outState.PausedValid = TryParseYesNo(value, outState.Paused);
+			}
+			else if (key == "next_phase")
+			{
+				outState.NextPhaseValid = TryParseInt(value, outState.NextPhase);
+			}
+			else if (key == "next_time")
+			{
+				outState.NextTimeValid = TryParseDouble(value, outState.NextTime);
+			}
+			else if (key == "elapsed" || key == "since_last_start")
+			{
+				outState.SinceLastStartValid = TryParseDouble(value, outState.SinceLastStart);
+			}
+		}
+
+		outState.Parsed = foundField;
+		return outState.Parsed;
+	}
+
+	RuptureCycleChatState CaptureRuptureCycleChatState(SDK::UWorld* world)
+	{
+		RuptureCycleChatState state{};
+		SDK::TUObjectArray* objectArray = SDK::UObject::GObjects.GetTypedPtr();
+		if (!objectArray || objectArray->NumElements <= 0)
+		{
+			return state;
+		}
+
+		state.GObjectsAvailable = true;
+
+		SDK::UClass* chatHudClass = TryGetStaticClass<SDK::UCrUW_ChatHud>();
+		if (!chatHudClass)
+		{
+			return state;
+		}
+
+		const std::string prefix = GetRuptureCycleChatPrefix();
+		RuptureCycleChatState fallbackState{};
+		fallbackState.GObjectsAvailable = true;
+
+		for (int32_t index = 0; index < objectArray->NumElements; ++index)
+		{
+			SDK::UObject* object = objectArray->GetByIndex(index);
+			if (!object || !object->Class)
+			{
+				continue;
+			}
+
+			if (!TryIsActorObject(object, chatHudClass))
+			{
+				continue;
+			}
+
+			state.ChatHudFound = true;
+			SDK::UCrUW_ChatHud* chatHud = static_cast<SDK::UCrUW_ChatHud*>(object);
+			std::string chatText;
+			if (!TryGetChatHistoryText(chatHud, chatText))
+			{
+				continue;
+			}
+
+			RuptureCycleChatState candidate{};
+			candidate.GObjectsAvailable = true;
+			candidate.ChatHudFound = true;
+			candidate.RawLine = FindLastLineContainingPrefix(chatText, prefix);
+			if (candidate.RawLine.empty())
+			{
+				continue;
+			}
+
+			candidate.PrefixFound = true;
+			const size_t prefixPos = candidate.RawLine.rfind(prefix);
+			candidate.Payload = TrimWhitespace(StripRichTextMarkup(candidate.RawLine.substr(prefixPos + prefix.size())));
+			TryParseRuptureCyclePayload(candidate.Payload, candidate);
+
+			const bool belongsToWorld = !world || TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world));
+			if (belongsToWorld)
+			{
+				return candidate;
+			}
+
+			if (!fallbackState.PrefixFound)
+			{
+				fallbackState = candidate;
+			}
+		}
+
+		if (fallbackState.PrefixFound)
+		{
+			return fallbackState;
+		}
+
+		state.GObjectsAvailable = true;
+		return state;
+	}
+
+	MapStateRuntime::Detail::RuptureCycleSnapshot ToRuptureCycleSnapshot(const RuptureCycleChatState& state)
+	{
+		MapStateRuntime::Detail::RuptureCycleSnapshot snapshot{};
+		snapshot.Available = state.PrefixFound;
+		snapshot.ChatHudFound = state.ChatHudFound;
+		snapshot.PrefixFound = state.PrefixFound;
+		snapshot.Parsed = state.Parsed;
+		snapshot.HasSequence = state.HasSequence;
+		snapshot.Sequence = state.Sequence;
+		snapshot.Wave = state.Wave.empty() ? "None" : state.Wave;
+		snapshot.Stage = state.Stage.empty() ? "Unknown" : state.Stage;
+		snapshot.Step = state.Step.empty() ? "None" : state.Step;
+		snapshot.ElapsedSeconds = state.SinceLastStart;
+		snapshot.HasElapsed = state.SinceLastStartValid;
+		snapshot.RawLine = state.RawLine;
+		snapshot.RawPayload = state.Payload;
+		return snapshot;
+	}
+
 	bool IsInterestingEnviroWaveActorName(const std::string& className, const std::string& actorName)
 	{
 		return className.find("EnviroWave") != std::string::npos
@@ -286,12 +751,8 @@ namespace
 
 		inventory.GObjectsAvailable = true;
 
-		SDK::UClass* actorClass = nullptr;
-		try
-		{
-			actorClass = SDK::AActor::StaticClass();
-		}
-		catch (...)
+		SDK::UClass* actorClass = TryGetStaticClass<SDK::AActor>();
+		if (!actorClass)
 		{
 			return inventory;
 		}
@@ -487,14 +948,101 @@ namespace
 		return oss.str();
 	}
 
+	std::string BuildRuptureCycleChatSignature(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		std::ostringstream oss;
+		oss
+			<< snapshot.Available << '|'
+			<< snapshot.HasSequence << '|'
+			<< snapshot.Sequence << '|'
+			<< snapshot.Wave << '|'
+			<< snapshot.Stage << '|'
+			<< snapshot.Step << '|'
+			<< snapshot.HasElapsed;
+		if (snapshot.HasElapsed)
+		{
+			oss.setf(std::ios::fixed);
+			oss.precision(3);
+			oss << '|' << snapshot.ElapsedSeconds;
+		}
+		return oss.str();
+	}
+
+	int64_t GetCurrentUnixTimeMilliseconds()
+	{
+		using namespace std::chrono;
+		return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+	}
+
+	void ApplyRuptureCycleObservationTimestamp(MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		snapshot.HasObservedAtUnixMs = false;
+		snapshot.ObservedAtUnixMs = 0;
+
+		if (!snapshot.Available || !snapshot.Parsed)
+		{
+			return;
+		}
+
+		const std::string signature = BuildRuptureCycleChatSignature(snapshot);
+		if (!g_lastRuptureCycleObservedSignatureValid || signature != g_lastRuptureCycleObservedSignature)
+		{
+			g_lastRuptureCycleObservedSignature = signature;
+			g_lastRuptureCycleObservedSignatureValid = true;
+			g_lastRuptureCycleObservedAtUnixMs = GetCurrentUnixTimeMilliseconds();
+		}
+
+		snapshot.HasObservedAtUnixMs = g_lastRuptureCycleObservedAtUnixMs > 0;
+		snapshot.ObservedAtUnixMs = g_lastRuptureCycleObservedAtUnixMs;
+	}
+
 	void ResetEnviroWaveDiagnosticsState()
 	{
 		g_lastEnviroWaveStateSignature.clear();
 		g_enviroWaveStateSignatureValid = false;
 		g_lastEnviroWaveTimerSignature.clear();
 		g_enviroWaveTimerSignatureValid = false;
+		g_lastRuptureCycleChatSignature.clear();
+		g_lastRuptureCycleChatSignatureValid = false;
+		g_lastRuptureCycleObservedSignature.clear();
+		g_lastRuptureCycleObservedSignatureValid = false;
+		g_lastRuptureCycleObservedAtUnixMs = 0;
 		g_lastEnviroWaveActorInventorySignature.clear();
 		g_enviroWaveActorInventorySignatureValid = false;
+	}
+
+	void LogRuptureCycleChatIfNeeded(
+		const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot,
+		uint64_t generation,
+		const char* reason)
+	{
+		if (!ShouldLogRuptureCycleChat() || !snapshot.Available)
+		{
+			return;
+		}
+
+		const std::string signature = BuildRuptureCycleChatSignature(snapshot);
+		if (g_lastRuptureCycleChatSignatureValid && signature == g_lastRuptureCycleChatSignature)
+		{
+			return;
+		}
+
+		g_lastRuptureCycleChatSignature = signature;
+		g_lastRuptureCycleChatSignatureValid = true;
+
+		const std::string seqText = snapshot.HasSequence ? std::to_string(snapshot.Sequence) : "--";
+		const std::string elapsedText = snapshot.HasElapsed ? std::to_string(snapshot.ElapsedSeconds) : "--";
+
+		LOG_INFO(
+			"RuptureCycle chat #%llu from '%s': seq=%s wave=%s stage=%s step=%s elapsed=%s raw='%s'",
+			static_cast<unsigned long long>(generation),
+			reason ? reason : "unknown",
+			seqText.c_str(),
+			snapshot.Wave.c_str(),
+			snapshot.Stage.c_str(),
+			snapshot.Step.c_str(),
+			elapsedText.c_str(),
+			snapshot.RawPayload.c_str());
 	}
 
 	void MarkChimeraWorldReady(const char* reason)
@@ -2076,6 +2624,9 @@ namespace
 			LOG_INFO("Cargo refresh '%s': player stage completed", nextSnapshot.Reason.c_str());
 		}
 
+		nextSnapshot.RuptureCycle = ToRuptureCycleSnapshot(CaptureRuptureCycleChatState(world));
+		ApplyRuptureCycleObservationTimestamp(nextSnapshot.RuptureCycle);
+
 		nextSnapshot.SenderCount = 0;
 		nextSnapshot.ReceiverCount = 0;
 		for (const CargoMarker& marker : nextSnapshot.Markers)
@@ -2137,6 +2688,10 @@ namespace
 					nextSnapshot.Reason.c_str());
 			}
 		}
+		LogRuptureCycleChatIfNeeded(
+			nextSnapshot.RuptureCycle,
+			nextSnapshot.Generation,
+			nextSnapshot.Reason.c_str());
 
 		if (!isRealtimeRefresh)
 		{

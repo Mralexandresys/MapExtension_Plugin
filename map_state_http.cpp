@@ -122,9 +122,14 @@ namespace Detail
 				SendJsonResponse(clientSocket, 200, "OK", BuildCargoJson(snapshot));
 				return;
 			}
+			if (path == "/rupture-cycle")
+			{
+				SendJsonResponse(clientSocket, 200, "OK", BuildRuptureCycleJson(snapshot));
+				return;
+			}
 			if (path == "/" || path == "/index.html")
 			{
-				SendJsonResponse(clientSocket, 200, "OK", "{\"ok\":true,\"endpoints\":[\"/health\",\"/cargo\"]}");
+				SendJsonResponse(clientSocket, 200, "OK", "{\"ok\":true,\"endpoints\":[\"/health\",\"/cargo\",\"/rupture-cycle\"]}");
 				return;
 			}
 
