@@ -90,11 +90,6 @@ namespace Detail
 	struct RuptureCycleSnapshot
 	{
 		bool Available = false;
-		bool ChatHudFound = false;
-		bool PrefixFound = false;
-		bool Parsed = false;
-		bool HasSequence = false;
-		uint64_t Sequence = 0;
 		std::string Wave;
 		std::string Stage;
 		std::string Step;
@@ -102,8 +97,6 @@ namespace Detail
 		bool HasElapsed = false;
 		int64_t ObservedAtUnixMs = 0;
 		bool HasObservedAtUnixMs = false;
-		std::string RawLine;
-		std::string RawPayload;
 	};
 
 	struct CargoSnapshot

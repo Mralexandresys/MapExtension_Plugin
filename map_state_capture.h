@@ -13,6 +13,7 @@ namespace MapStateRuntime
 namespace Detail
 {
 	CargoSnapshot CopySnapshot();
+	CargoSnapshot CopySnapshotWithFreshRuptureCycle();
 	void LogRuntimePlanIfNeeded();
 	bool IsRelevantRealtimeActor(SDK::AActor* actor);
 	bool RefreshCargoSnapshot(SDK::UWorld* world, const char* reason);

@@ -583,15 +583,15 @@ const ruptureCyclePositionSeconds = computed(() => {
 });
 
 const ruptureCurrentPhaseKey = computed<RupturePhaseKey>(() => {
-  const stage = ruptureState.value?.stage ?? 'None';
-  const step = ruptureState.value?.step ?? 'None';
-  const phaseFromStage = mapRuptureStageToPhaseKey(stage, step);
-  if (phaseFromStage) return phaseFromStage;
-
   const positionSeconds = ruptureCyclePositionSeconds.value;
   if (positionSeconds != null) {
     return mapRupturePositionToPhaseKey(positionSeconds, rupturePhaseDurations.value);
   }
+
+  const stage = ruptureState.value?.stage ?? 'None';
+  const step = ruptureState.value?.step ?? 'None';
+  const phaseFromStage = mapRuptureStageToPhaseKey(stage, step);
+  if (phaseFromStage) return phaseFromStage;
 
   return 'stable';
 });

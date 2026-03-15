@@ -116,17 +116,11 @@ namespace Detail
 		{
 			return json{
 				{"available", snapshot.Available},
-				{"chat_hud_found", snapshot.ChatHudFound},
-				{"prefix_found", snapshot.PrefixFound},
-				{"parsed", snapshot.Parsed},
-				{"sequence", snapshot.HasSequence ? json(snapshot.Sequence) : json(nullptr)},
 				{"wave", snapshot.Wave},
 				{"stage", snapshot.Stage},
 				{"step", snapshot.Step},
 				{"elapsed_seconds", snapshot.HasElapsed ? json(RoundJsonNumber(snapshot.ElapsedSeconds, 3)) : json(nullptr)},
-				{"observed_at_unix_ms", snapshot.HasObservedAtUnixMs ? json(snapshot.ObservedAtUnixMs) : json(nullptr)},
-				{"raw_line", snapshot.RawLine},
-				{"raw_payload", snapshot.RawPayload}
+				{"observed_at_unix_ms", snapshot.HasObservedAtUnixMs ? json(snapshot.ObservedAtUnixMs) : json(nullptr)}
 			};
 		}
 	}

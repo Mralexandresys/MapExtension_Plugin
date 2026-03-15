@@ -126,17 +126,11 @@ export interface RuptureTimelineInfo {
 
 export interface RuptureCycleState {
     available?: boolean;
-    chat_hud_found?: boolean;
-    prefix_found?: boolean;
-    parsed?: boolean;
-    sequence?: number | null;
     wave?: string;
     stage?: string;
     step?: string;
     elapsed_seconds?: number | null;
     observed_at_unix_ms?: number | null;
-    raw_line?: string;
-    raw_payload?: string;
 }
 
 export interface RuptureCycleResponse {
