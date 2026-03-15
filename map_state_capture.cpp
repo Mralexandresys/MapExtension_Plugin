@@ -61,6 +61,8 @@ namespace
 	std::unordered_set<uint32_t> g_requestedCustomNameEntityIds;
 	std::string g_lastRuptureCycleChatSignature;
 	bool g_lastRuptureCycleChatSignatureValid = false;
+	MapStateRuntime::Detail::RuptureCycleSnapshot g_lastPersistentRuptureCycleSnapshot{};
+	bool g_lastPersistentRuptureCycleSnapshotValid = false;
 	std::string g_lastRuptureCycleObservedSignature;
 	bool g_lastRuptureCycleObservedSignatureValid = false;
 	int64_t g_lastRuptureCycleObservedAtUnixMs = 0;
@@ -769,6 +771,30 @@ namespace
 		snapshot.ObservedAtUnixMs = g_lastRuptureCycleObservedAtUnixMs;
 	}
 
+	void StorePersistentRuptureCycleSnapshot(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		if (!snapshot.Available)
+		{
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(g_snapshotMutex);
+		g_lastPersistentRuptureCycleSnapshot = snapshot;
+		g_lastPersistentRuptureCycleSnapshotValid = true;
+	}
+
+	bool TryGetPersistentRuptureCycleSnapshot(MapStateRuntime::Detail::RuptureCycleSnapshot& outSnapshot)
+	{
+		std::lock_guard<std::mutex> lock(g_snapshotMutex);
+		if (!g_lastPersistentRuptureCycleSnapshotValid)
+		{
+			return false;
+		}
+
+		outSnapshot = g_lastPersistentRuptureCycleSnapshot;
+		return outSnapshot.Available;
+	}
+
 	bool ShouldPreferChatDerivedRuptureCycle(
 		const MapStateRuntime::Detail::RuptureCycleSnapshot& currentSnapshot,
 		const MapStateRuntime::Detail::RuptureCycleSnapshot& chatSnapshot)
@@ -810,7 +836,11 @@ namespace
 		MapStateRuntime::Detail::RuptureCycleSnapshot snapshot{};
 		if (!g_lastChimeraWorld || !g_chimeraWorldReady)
 		{
-			return snapshot;
+			if (TryGetPersistentRuptureCycleSnapshot(snapshot))
+			{
+				return snapshot;
+			}
+			return {};
 		}
 
 		RuptureCycleChatState chatState = CaptureRuptureCycleChatState(g_lastChimeraWorld);
@@ -820,11 +850,16 @@ namespace
 		}
 		if (!chatState.Available)
 		{
-			return snapshot;
+			if (TryGetPersistentRuptureCycleSnapshot(snapshot))
+			{
+				return snapshot;
+			}
+			return {};
 		}
 
 		snapshot = ToRuptureCycleSnapshot(chatState);
 		ApplyRuptureCycleObservationTimestamp(snapshot);
+		StorePersistentRuptureCycleSnapshot(snapshot);
 		return snapshot;
 	}
 
@@ -832,6 +867,8 @@ namespace
 	{
 		g_lastRuptureCycleChatSignature.clear();
 		g_lastRuptureCycleChatSignatureValid = false;
+		g_lastPersistentRuptureCycleSnapshot = {};
+		g_lastPersistentRuptureCycleSnapshotValid = false;
 		g_lastRuptureCycleObservedSignature.clear();
 		g_lastRuptureCycleObservedSignatureValid = false;
 		g_lastRuptureCycleObservedAtUnixMs = 0;
@@ -2165,6 +2202,7 @@ namespace
 
 		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(world);
 		ApplyRuptureCycleObservationTimestamp(nextSnapshot.RuptureCycle);
+		StorePersistentRuptureCycleSnapshot(nextSnapshot.RuptureCycle);
 
 		nextSnapshot.SenderCount = 0;
 		nextSnapshot.ReceiverCount = 0;

@@ -58,12 +58,13 @@ export const fr = {
         endpoint: "Endpoint",
     },
     rupture: {
-        title: "Timeline de rupture",
+        title: "Timeline d'Arcadia",
         subtitle:
-            "Timeline derivee des messages de cycle envoyes dans le chat serveur.",
+            "Timeline du cycle de rupture d'Arcadia, derivee des messages envoyes dans le chat serveur.",
         noData: "Aucun message de cycle de rupture detecte pour le moment.",
         noDataShort: "Pas de donnees",
         currentPhase: "Phase actuelle",
+        timeRemaining: "Temps restant",
         wave: "Vague",
         stage: "Stage",
         step: "Sous-phase",
@@ -74,14 +75,17 @@ export const fr = {
         status: "Statut",
         completed: "Termine",
         phases: {
-            burning: "World burning",
-            cooling: "World cooling",
-            stabilizing: "World stabilizing",
-            stable: "World stable",
+            burning: "Arcadia en feu",
+            cooling: "Refroidissement d'Arcadia",
+            stabilizing: "Stabilisation d'Arcadia",
+            stable: "Arcadia stable",
+            incoming: "Rupture imminente",
         },
         format: {
             startsIn: (value: string) => `Demarre dans ${value}`,
             endsIn: (value: string) => `Se termine dans ${value}`,
+            startsShort: (value: string) => `Dans ${value}`,
+            remainingShort: (value: string) => `${value} restant`,
         },
     },
     status: {
