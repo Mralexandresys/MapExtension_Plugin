@@ -38,6 +38,7 @@ using CargoConnection = MapStateRuntime::Detail::CargoConnection;
 using CargoKind = MapStateRuntime::Detail::CargoKind;
 using CargoMarker = MapStateRuntime::Detail::CargoMarker;
 using CargoSnapshot = MapStateRuntime::Detail::CargoSnapshot;
+using RuptureCycleSnapshot = MapStateRuntime::Detail::RuptureCycleSnapshot;
 using PlayerMarker = MapStateRuntime::Detail::PlayerMarker;
 using ReceiverLinkInfo = MapStateRuntime::Detail::ReceiverLinkInfo;
 using TeleporterMarker = MapStateRuntime::Detail::TeleporterMarker;
@@ -46,6 +47,8 @@ namespace
 {
 	constexpr int kMaxLoggedMarkersPerSnapshot = 8;
 	constexpr int kMaxLoggedActorsPerKind = 4;
+	constexpr const wchar_t* kRuptureCycleInfoRequestCommand = L"get info arcadia";
+	constexpr int64_t kRuptureCycleInfoRequestRetryMs = 5000;
 	bool g_runtimePlanLogged = false;
 	bool g_engineTickSeen = false;
 	int g_anyWorldBeginPlayCount = 0;
@@ -66,6 +69,9 @@ namespace
 	std::string g_lastRuptureCycleObservedSignature;
 	bool g_lastRuptureCycleObservedSignatureValid = false;
 	int64_t g_lastRuptureCycleObservedAtUnixMs = 0;
+	bool g_shouldRequestDedicatedServerRuptureCycle = false;
+	int64_t g_lastRuptureCycleRequestAtUnixMs = 0;
+	int g_ruptureCycleRequestAttemptCount = 0;
 
 	bool ShouldLogLifecycle()
 	{
@@ -302,6 +308,8 @@ namespace
 	}
 
 	SDK::ACrGameStateBase* TryGetGameState(SDK::UWorld* world);
+	SDK::ACrPlayerControllerBase* TryGetLocalCrPlayerController(SDK::UWorld* world);
+	RuptureCycleSnapshot CaptureFreshChatRuptureCycleSnapshot();
 
 	std::string TrimWhitespace(std::string value)
 	{
@@ -440,6 +448,42 @@ namespace
 
 		outText = chatHistoryText.ToString();
 		return !outText.empty();
+	}
+
+	bool HasUsableChatHud(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return false;
+		}
+
+		SDK::UClass* chatHudClass = TryGetStaticClass<SDK::UCrUW_ChatHud>();
+		if (!chatHudClass)
+		{
+			return false;
+		}
+
+		const int32_t objectCount = SDK::UObject::GObjects->Num();
+		for (int32_t index = 0; index < objectCount; ++index)
+		{
+			SDK::UObject* object = SDK::UObject::GObjects->GetByIndex(index);
+			if (!object || !object->IsA(chatHudClass))
+			{
+				continue;
+			}
+			if (!TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world)))
+			{
+				continue;
+			}
+
+			SDK::URichTextBlock* chatHistory = nullptr;
+			if (TryGetChatHistoryWidget(static_cast<SDK::UCrUW_ChatHud*>(object), chatHistory))
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	bool TryParseDouble(const std::string& value, double& outValue)
@@ -725,6 +769,28 @@ namespace
 		return {};
 	}
 
+	bool HasDedicatedServerChatRuptureCycle(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return false;
+		}
+
+		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+		if (!gameState || !gameState->bIsDedicatedServer)
+		{
+			return false;
+		}
+
+		RuptureCycleChatState chatState = CaptureRuptureCycleChatState(world);
+		if (!chatState.Available)
+		{
+			chatState = CaptureRuptureCycleRichTextState(world);
+		}
+
+		return chatState.Available;
+	}
+
 	std::string BuildRuptureCycleChatSignature(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
 	{
 		std::ostringstream oss;
@@ -747,6 +813,110 @@ namespace
 	{
 		using namespace std::chrono;
 		return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+	}
+
+	void ResetRuptureCycleRequestState()
+	{
+		g_shouldRequestDedicatedServerRuptureCycle = false;
+		g_lastRuptureCycleRequestAtUnixMs = 0;
+		g_ruptureCycleRequestAttemptCount = 0;
+	}
+
+	void ScheduleDedicatedServerRuptureCycleRequest(const char* reason)
+	{
+		if (g_shouldRequestDedicatedServerRuptureCycle)
+		{
+			return;
+		}
+
+		g_shouldRequestDedicatedServerRuptureCycle = true;
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"Scheduled dedicated rupture cycle chat request via %s",
+				reason ? reason : "unknown");
+		}
+	}
+
+	void UpdateDedicatedServerRuptureCycleRequestState(
+		SDK::UWorld* world,
+		const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot,
+		const char* reason)
+	{
+		(void)snapshot;
+
+		if (!world)
+		{
+			ResetRuptureCycleRequestState();
+			return;
+		}
+
+		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+		if (!gameState || !gameState->bIsDedicatedServer)
+		{
+			ResetRuptureCycleRequestState();
+			return;
+		}
+
+		if (HasDedicatedServerChatRuptureCycle(world))
+		{
+			ResetRuptureCycleRequestState();
+			return;
+		}
+
+		ScheduleDedicatedServerRuptureCycleRequest(reason);
+	}
+
+	bool TryRequestDedicatedServerRuptureCycle(SDK::UWorld* world, const char* reason)
+	{
+		if (!world || !g_shouldRequestDedicatedServerRuptureCycle)
+		{
+			return false;
+		}
+		if (!g_chimeraWorldReady)
+		{
+			return false;
+		}
+
+		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+		if (!gameState || !gameState->bIsDedicatedServer)
+		{
+			ResetRuptureCycleRequestState();
+			return false;
+		}
+
+		if (HasDedicatedServerChatRuptureCycle(world))
+		{
+			ResetRuptureCycleRequestState();
+			return false;
+		}
+
+		SDK::ACrPlayerControllerBase* playerController = TryGetLocalCrPlayerController(world);
+		if (!playerController)
+		{
+			return false;
+		}
+
+		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
+		if (g_lastRuptureCycleRequestAtUnixMs > 0
+			&& nowUnixMs - g_lastRuptureCycleRequestAtUnixMs < kRuptureCycleInfoRequestRetryMs)
+		{
+			return false;
+		}
+
+		playerController->ServerChatCommit(SDK::FString(kRuptureCycleInfoRequestCommand));
+		g_lastRuptureCycleRequestAtUnixMs = nowUnixMs;
+		++g_ruptureCycleRequestAttemptCount;
+
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"Requested dedicated rupture cycle info via chat (%s, attempt=%d)",
+				reason ? reason : "unknown",
+				g_ruptureCycleRequestAttemptCount);
+		}
+
+		return true;
 	}
 
 	void ApplyRuptureCycleObservationTimestamp(MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
@@ -872,6 +1042,7 @@ namespace
 		g_lastRuptureCycleObservedSignature.clear();
 		g_lastRuptureCycleObservedSignatureValid = false;
 		g_lastRuptureCycleObservedAtUnixMs = 0;
+		ResetRuptureCycleRequestState();
 	}
 
 	void LogRuptureCycleChatIfNeeded(
@@ -2203,6 +2374,10 @@ namespace
 		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(world);
 		ApplyRuptureCycleObservationTimestamp(nextSnapshot.RuptureCycle);
 		StorePersistentRuptureCycleSnapshot(nextSnapshot.RuptureCycle);
+		UpdateDedicatedServerRuptureCycleRequestState(
+			world,
+			nextSnapshot.RuptureCycle,
+			nextSnapshot.Reason.c_str());
 
 		nextSnapshot.SenderCount = 0;
 		nextSnapshot.ReceiverCount = 0;
@@ -2312,6 +2487,13 @@ namespace Detail
 		{
 			snapshot.RuptureCycle = chatSnapshot;
 		}
+		UpdateDedicatedServerRuptureCycleRequestState(
+			g_lastChimeraWorld,
+			snapshot.RuptureCycle,
+			"CopySnapshotWithFreshRuptureCycle");
+		TryRequestDedicatedServerRuptureCycle(
+			g_lastChimeraWorld,
+			"CopySnapshotWithFreshRuptureCycle");
 		return snapshot;
 	}
 
@@ -2400,6 +2582,7 @@ namespace MapStateRuntime
 
 		g_engineTickAccumulatorSeconds = 0.0f;
 		Detail::RefreshCargoSnapshot(g_lastChimeraWorld, "EngineTick");
+		TryRequestDedicatedServerRuptureCycle(g_lastChimeraWorld, "EngineTick");
 	}
 
 	void OnActorBeginPlay(void* actor)
@@ -2433,6 +2616,9 @@ namespace MapStateRuntime
 
 		g_engineTickAccumulatorSeconds = 0.0f;
 		Detail::RefreshCargoSnapshot(
+			g_lastChimeraWorld,
+			ruptureActor ? "ActorBeginPlay(Rupture)" : "ActorBeginPlay");
+		TryRequestDedicatedServerRuptureCycle(
 			g_lastChimeraWorld,
 			ruptureActor ? "ActorBeginPlay(Rupture)" : "ActorBeginPlay");
 	}
@@ -2476,8 +2662,10 @@ namespace MapStateRuntime
 		if (g_lastChimeraWorld)
 		{
 			MarkChimeraWorldReady("SaveLoaded");
+			ScheduleDedicatedServerRuptureCycleRequest("SaveLoaded");
 		}
 		Detail::TryRefreshCurrentWorld("SaveLoaded");
+		TryRequestDedicatedServerRuptureCycle(g_lastChimeraWorld, "SaveLoaded");
 	}
 
 	void OnExperienceLoadComplete()
@@ -2490,7 +2678,9 @@ namespace MapStateRuntime
 		if (g_lastChimeraWorld)
 		{
 			MarkChimeraWorldReady("ExperienceLoadComplete");
+			ScheduleDedicatedServerRuptureCycleRequest("ExperienceLoadComplete");
 		}
 		Detail::TryRefreshCurrentWorld("ExperienceLoadComplete");
+		TryRequestDedicatedServerRuptureCycle(g_lastChimeraWorld, "ExperienceLoadComplete");
 	}
 }
