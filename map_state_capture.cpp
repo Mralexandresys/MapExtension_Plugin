@@ -2606,6 +2606,13 @@ namespace MapStateRuntime
 			return;
 		}
 
+		if (!cargoActor)
+		{
+			// Rupture visuals can spawn in bursts while the player moves. Avoid a full cargo scan here.
+			TryRequestDedicatedServerRuptureCycle(g_lastChimeraWorld, "ActorBeginPlay(Rupture)");
+			return;
+		}
+
 		if (ShouldLogLifecycle())
 		{
 			LOG_INFO("ActorBeginPlay refresh trigger: class=%s actor=%s source=%s",
