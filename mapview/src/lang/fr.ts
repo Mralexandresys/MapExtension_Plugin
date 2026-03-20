@@ -15,6 +15,7 @@ export const fr = {
     },
     buttons: {
         collapse: "Replier",
+        applyEndpoint: "Appliquer endpoint",
         refresh: "Actualiser",
         refreshing: "Actualisation...",
         live: "Live",
@@ -91,6 +92,8 @@ export const fr = {
     status: {
         connecting: "Connexion au plugin...",
         contactingPlugin: "Contact du plugin...",
+        endpointPending:
+            "Endpoint modifie. Applique pour lancer le polling sur cette cible.",
         invalidEndpoint: "Endpoint invalide",
         invalidEndpointHelp: "Renseigne une URL locale valide.",
         offline: "Hors ligne",
@@ -238,5 +241,6 @@ export const fr = {
         activeFilterCount: (count: number) => `${count} filtre(s) actif(s).`,
         hiddenLabels: (labels: string) => `Masques : ${labels}`,
         modeChip: (mode: string) => `Mode : ${mode}`,
+        endpointReady: (endpoint: string) => `Endpoint actif : ${endpoint}`,
     },
 };

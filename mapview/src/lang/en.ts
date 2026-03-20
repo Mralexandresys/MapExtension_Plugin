@@ -17,6 +17,7 @@ export const en = {
     },
     buttons: {
         collapse: "Collapse",
+        applyEndpoint: "Apply endpoint",
         refresh: "Refresh",
         refreshing: "Refreshing...",
         live: "Live",
@@ -92,6 +93,7 @@ export const en = {
     status: {
         connecting: "Connecting to plugin...",
         contactingPlugin: "Contacting plugin...",
+        endpointPending: "Endpoint edited. Apply to start polling this target.",
         invalidEndpoint: "Invalid endpoint",
         invalidEndpointHelp: "Enter a valid local URL.",
         offline: "Offline",
@@ -238,5 +240,6 @@ export const en = {
         activeFilterCount: (count: number) => `${count} active filter(s).`,
         hiddenLabels: (labels: string) => `Hidden: ${labels}`,
         modeChip: (mode: string) => `Mode: ${mode}`,
+        endpointReady: (endpoint: string) => `Active endpoint: ${endpoint}`,
     },
 } satisfies typeof fr;

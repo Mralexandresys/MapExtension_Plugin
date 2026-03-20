@@ -61,6 +61,7 @@ const cargo = ref<CargoResponse | null>(null);
 const health = ref<HealthResponse | null>(null);
 const ruptureCycle = ref<RuptureCycleResponse | null>(null);
 const endpoint = ref(DEFAULT_ENDPOINT);
+const endpointDraft = ref(DEFAULT_ENDPOINT);
 const lang = ref<Language>(resolveInitialLanguage(STORAGE_KEY));
 const showAllLinks = ref(true);
 const highlightOrphans = ref(false);
@@ -72,8 +73,8 @@ const lastUpdatedAt = ref(0);
 const now = ref(Date.now());
 const viewMode = ref<ViewMode>('network');
 const sidebarTab = ref<SidebarTab>('entities');
-const heroPanelCollapsed = ref(true);
-const rupturePanelCollapsed = ref(true);
+const heroPanelCollapsed = ref(false);
+const rupturePanelCollapsed = ref(false);
 const selectionPanelCollapsed = ref(true);
 const detailsPanelExpanded = ref(false);
 const filtersPanelCollapsed = ref(true);
@@ -114,7 +115,7 @@ const entityToggleOptions = computed<Array<{ key: EntityToggleKey; label: string
 ]);
 
 const shortcutItems = computed(() => [
-  { keys: ['?'], label: ui.value.shortcuts.items.help.label, description: ui.value.shortcuts.items.help.description },
+  { keys: ['?', '/'], label: ui.value.shortcuts.items.help.label, description: ui.value.shortcuts.items.help.description },
   { keys: ['R'], label: ui.value.shortcuts.items.refresh.label, description: ui.value.shortcuts.items.refresh.description },
   { keys: ['L'], label: ui.value.shortcuts.items.live.label, description: ui.value.shortcuts.items.live.description },
   { keys: ['G'], label: ui.value.shortcuts.items.focus.label, description: ui.value.shortcuts.items.focus.description },
@@ -144,6 +145,7 @@ function loadPreferences(): void {
     }>;
 
     endpoint.value = saved.endpoint || DEFAULT_ENDPOINT;
+    endpointDraft.value = endpoint.value;
     autoRefresh.value = saved.autoRefresh ?? true;
     showAllLinks.value = saved.showAllLinks ?? true;
     highlightOrphans.value = saved.highlightOrphans ?? false;
@@ -157,6 +159,7 @@ function loadPreferences(): void {
     entityVisibility.player = saved.entityVisibility?.player ?? true;
   } catch {
     endpoint.value = DEFAULT_ENDPOINT;
+    endpointDraft.value = DEFAULT_ENDPOINT;
   }
 }
 
@@ -203,6 +206,10 @@ watch(
 );
 
 const normalizedEndpoint = computed(() => normalizeEndpoint(endpoint.value));
+const normalizedDraftEndpoint = computed(() => normalizeEndpoint(endpointDraft.value));
+const endpointHasPendingChanges = computed(
+  () => normalizedDraftEndpoint.value !== normalizedEndpoint.value,
+);
 const isCargoViewMode = computed(
   () => viewMode.value === 'network' || viewMode.value === 'resources',
 );
@@ -823,6 +830,20 @@ function setStatus(online: boolean, text: string, error = ''): void {
   status.error = error;
 }
 
+function applyEndpoint(refresh = true): void {
+  endpoint.value = endpointDraft.value;
+  if (refresh) {
+    void refreshData();
+  }
+}
+
+function handleEndpointKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    applyEndpoint(true);
+  }
+}
+
 async function refreshData(): Promise<void> {
   const currentEndpoint = normalizedEndpoint.value;
   if (!currentEndpoint) {
@@ -995,6 +1016,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 function handleKeydown(event: KeyboardEvent): void {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
+  if (isTypingTarget(event.target)) return;
 
   if (event.key === 'Escape') {
     if (shortcutsOpen.value) {
@@ -1011,13 +1033,11 @@ function handleKeydown(event: KeyboardEvent): void {
     return;
   }
 
-  if (event.key === '?') {
+  if (event.key === '?' || event.key === '/') {
     event.preventDefault();
     shortcutsOpen.value = !shortcutsOpen.value;
     return;
   }
-
-  if (isTypingTarget(event.target)) return;
 
   switch (event.key) {
     case '0':
@@ -1101,6 +1121,7 @@ onBeforeUnmount(() => {
     <section class="card map-stage">
       <MapCanvas
         ref="mapCanvasRef"
+        :loading="status.loading"
         :cargo="cargo"
         :cargo-markers="displayedCargoMarkers"
         :cargo-connections="visibleCargoConnections"
@@ -1125,9 +1146,19 @@ onBeforeUnmount(() => {
           :aria-expanded="!heroPanelCollapsed"
           @click="toggleHeroPanel"
         >
+          <span class="collapse-arrow down" aria-hidden="true"></span>
           {{ ui.handles.controls }}
         </button>
         <section class="floating-panel hero-panel" :class="{ collapsed: heroPanelCollapsed }">
+          <button
+            class="panel-edge-toggle panel-edge-toggle-top-left"
+            type="button"
+            :aria-label="ui.buttons.collapse"
+            :title="ui.buttons.collapse"
+            @click="toggleHeroPanel"
+          >
+            <span class="collapse-arrow up" aria-hidden="true"></span>
+          </button>
           <div class="panel-top-row">
             <div>
               <span class="eyebrow">{{ ui.hero.eyebrow }}</span>
@@ -1141,14 +1172,6 @@ onBeforeUnmount(() => {
                   {{ statusBadgeLabel }}
                 </span>
               </div>
-              <button
-                v-if="!heroPanelCollapsed"
-                class="button subtle small"
-                type="button"
-                @click="toggleHeroPanel"
-              >
-                {{ ui.buttons.collapse }}
-              </button>
             </div>
           </div>
 
@@ -1157,11 +1180,20 @@ onBeforeUnmount(() => {
               <label class="field compact endpoint-field">
                 <span>{{ ui.hero.endpoint }}</span>
                 <input
-                  v-model="endpoint"
+                  v-model="endpointDraft"
                   type="text"
                   :placeholder="DEFAULT_ENDPOINT"
                   spellcheck="false"
+                  :class="{ pending: endpointHasPendingChanges }"
+                  @keydown="handleEndpointKeydown"
                 />
+                <small class="field-note" :class="{ pending: endpointHasPendingChanges }">
+                  {{
+                    endpointHasPendingChanges
+                      ? ui.status.endpointPending
+                      : ui.format.endpointReady(normalizedEndpoint || '--')
+                  }}
+                </small>
               </label>
               <label class="field compact language-field">
                 <span>{{ ui.languageLabel }}</span>
@@ -1170,10 +1202,19 @@ onBeforeUnmount(() => {
                     {{ ui.languages[option] }}
                   </option>
                 </select>
+                <small class="field-note placeholder" aria-hidden="true">.</small>
               </label>
             </div>
 
             <div class="floating-actions">
+              <button
+                class="button subtle"
+                type="button"
+                :disabled="!endpointHasPendingChanges"
+                @click="applyEndpoint(true)"
+              >
+                {{ ui.buttons.applyEndpoint }}
+              </button>
               <button class="button primary" type="button" :disabled="status.loading" @click="refreshData">
                 {{ status.loading ? ui.buttons.refreshing : ui.buttons.refresh }}
               </button>
@@ -1187,6 +1228,11 @@ onBeforeUnmount(() => {
                 {{ ui.buttons.help }}
               </button>
             </div>
+
+            <div class="inline-note" :class="{ error: !!status.error }">
+              <strong>{{ status.text }}</strong>
+              <span v-if="status.error">{{ status.error }}</span>
+            </div>
           </div>
         </section>
       </div>
@@ -1199,9 +1245,20 @@ onBeforeUnmount(() => {
           :aria-expanded="!rupturePanelCollapsed"
           @click="toggleRupturePanel"
         >
+          <span class="collapse-arrow up" aria-hidden="true"></span>
           {{ ui.handles.timeline }}
         </button>
         <section class="floating-panel timeline-panel" :class="{ collapsed: rupturePanelCollapsed }">
+          <button
+            v-if="!rupturePanelCollapsed"
+            class="panel-edge-toggle panel-edge-toggle-bottom-center"
+            type="button"
+            :aria-label="ui.buttons.collapse"
+            :title="ui.buttons.collapse"
+            @click="toggleRupturePanel"
+          >
+            <span class="collapse-arrow down" aria-hidden="true"></span>
+          </button>
           <div class="panel-top-row">
             <div>
               <span class="eyebrow">{{ ui.handles.timeline }}</span>
@@ -1212,14 +1269,6 @@ onBeforeUnmount(() => {
               <span class="status-inline rupture-phase-badge" :class="ruptureCurrentPhaseKey">
                 {{ ui.rupture.currentPhase }}: {{ ruptureCurrentPhaseLabel }}
               </span>
-              <button
-                v-if="!rupturePanelCollapsed"
-                class="button subtle small"
-                type="button"
-                @click="toggleRupturePanel"
-              >
-                {{ ui.buttons.collapse }}
-              </button>
             </div>
           </div>
 
@@ -1292,12 +1341,22 @@ onBeforeUnmount(() => {
           :aria-expanded="!selectionPanelCollapsed"
           @click="toggleSelectionPanel"
         >
+          <span class="collapse-arrow left" aria-hidden="true"></span>
           {{ ui.handles.selection }}
         </button>
         <section
           class="floating-panel selection-panel"
           :class="{ expanded: detailsPanelExpanded, collapsed: selectionPanelCollapsed }"
         >
+          <button
+            class="panel-edge-toggle panel-edge-toggle-right"
+            type="button"
+            :aria-label="ui.buttons.collapse"
+            :title="ui.buttons.collapse"
+            @click="toggleSelectionPanel"
+          >
+            <span class="collapse-arrow right" aria-hidden="true"></span>
+          </button>
           <div class="panel-top-row compact">
             <div>
               <span class="panel-kicker">{{ ui.handles.selection }}</span>
@@ -1307,14 +1366,6 @@ onBeforeUnmount(() => {
             <div class="panel-top-actions">
               <button class="button subtle small" type="button" @click="toggleDetailsPanel">
                 {{ detailsPanelExpanded ? ui.buttons.hideDetails : ui.buttons.details }}
-              </button>
-              <button
-                v-if="!selectionPanelCollapsed"
-                class="button subtle small"
-                type="button"
-                @click="toggleSelectionPanel"
-              >
-                {{ ui.buttons.collapse }}
               </button>
             </div>
           </div>
@@ -1436,12 +1487,22 @@ onBeforeUnmount(() => {
           :aria-expanded="!filtersPanelCollapsed"
           @click="toggleFiltersPanel"
         >
+          <span class="collapse-arrow up" aria-hidden="true"></span>
           {{ ui.handles.filters }}
         </button>
         <section
           class="floating-panel footer-panel filters-panel"
           :class="{ collapsed: filtersPanelCollapsed, expanded: filtersPanelExpanded }"
         >
+          <button
+            class="panel-edge-toggle panel-edge-toggle-bottom-left"
+            type="button"
+            :aria-label="ui.buttons.collapse"
+            :title="ui.buttons.collapse"
+            @click="toggleFiltersPanel"
+          >
+            <span class="collapse-arrow down" aria-hidden="true"></span>
+          </button>
           <div class="panel-top-row compact">
             <div>
               <span class="panel-kicker">{{ ui.handles.filters }}</span>
@@ -1451,14 +1512,6 @@ onBeforeUnmount(() => {
             <div class="panel-top-actions">
               <button class="button subtle small" type="button" @click="toggleFiltersExpanded">
                 {{ filtersPanelExpanded ? ui.buttons.compact : ui.buttons.advanced }}
-              </button>
-              <button
-                v-if="!filtersPanelCollapsed"
-                class="button subtle small"
-                type="button"
-                @click="toggleFiltersPanel"
-              >
-                {{ ui.buttons.collapse }}
               </button>
             </div>
           </div>
@@ -1537,23 +1590,23 @@ onBeforeUnmount(() => {
           :aria-expanded="!legendPanelCollapsed"
           @click="toggleLegendPanel"
         >
+          <span class="collapse-arrow up" aria-hidden="true"></span>
           {{ ui.handles.legend }}
         </button>
         <section class="floating-panel footer-panel legend-panel" :class="{ collapsed: legendPanelCollapsed }">
+          <button
+            class="panel-edge-toggle panel-edge-toggle-bottom-right"
+            type="button"
+            :aria-label="ui.buttons.collapse"
+            :title="ui.buttons.collapse"
+            @click="toggleLegendPanel"
+          >
+            <span class="collapse-arrow down" aria-hidden="true"></span>
+          </button>
           <div class="panel-top-row compact">
             <div>
               <span class="panel-kicker">{{ ui.handles.legend }}</span>
               <h2>{{ ui.legend.title }}</h2>
-            </div>
-            <div class="panel-top-actions">
-              <button
-                v-if="!legendPanelCollapsed"
-                class="button subtle small"
-                type="button"
-                @click="toggleLegendPanel"
-              >
-                {{ ui.buttons.collapse }}
-              </button>
             </div>
           </div>
 

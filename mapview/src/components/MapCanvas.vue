@@ -31,6 +31,7 @@ interface DragState {
 }
 
 const props = defineProps<{
+  loading: boolean;
   cargo: CargoResponse | null;
   cargoMarkers: CargoMarker[];
   cargoConnections: CargoConnection[];
@@ -326,8 +327,8 @@ defineExpose({
 
         <g>
           <line
-            v-for="connection in cargoConnections"
-            :key="`${connection.sender_key}-${connection.receiver_key}-${connection.item || 'item'}`"
+            v-for="(connection, index) in cargoConnections"
+            :key="`${connection.sender_key}-${connection.receiver_key}-${connection.item || 'item'}-${index}`"
             class="connection-line"
             :class="{
               active: isConnectionActive(connection),
@@ -429,6 +430,11 @@ defineExpose({
     <div v-if="!cargo" class="map-empty-state">
       <strong>{{ ui.map.emptyTitle }}</strong>
       <span>{{ ui.map.emptyBody }}</span>
+    </div>
+
+    <div v-if="loading" class="map-loading-indicator">
+      <span class="map-loading-dot"></span>
+      <span>{{ ui.status.sync }}</span>
     </div>
 
     <div
