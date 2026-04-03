@@ -1950,7 +1950,11 @@ namespace CargoRuntime
 		g_registered = true;
 		LOG_INFO("Runtime callbacks registered");
 		LogRuntimePlanIfNeeded();
-		TryRefreshCurrentWorld("RegisterCallbacks");
+		// NOTE: Do NOT call TryRefreshCurrentWorld() here.
+		// At this point the engine is still initializing and the UWorld is not
+		// yet valid, causing an EXCEPTION_ACCESS_VIOLATION (null-pointer
+		// dereference at offset 0x3).  The first snapshot will be captured
+		// safely when OnEngineInit or OnAnyWorldBeginPlay fires.
 		return true;
 	}
 
