@@ -10,5 +10,6 @@ namespace Detail
 {
 	std::string BuildHealthJson(const CargoSnapshot& snapshot, int httpPort);
 	std::string BuildCargoJson(const CargoSnapshot& snapshot);
+	std::string BuildRuptureCycleJson(const CargoSnapshot& snapshot);
 }
 }

@@ -8,11 +8,16 @@
 #include "BP_PackageSender_classes.hpp"
 #include "BP_Teleporter_classes.hpp"
 #include "Chimera_classes.hpp"
+#include "ChimeraUI_classes.hpp"
 #include "Chimera_structs.hpp"
+#include "CoreUObject_classes.hpp"
 #include "Engine_classes.hpp"
+#include "UMG_classes.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <sstream>
@@ -33,6 +38,7 @@ using CargoConnection = MapStateRuntime::Detail::CargoConnection;
 using CargoKind = MapStateRuntime::Detail::CargoKind;
 using CargoMarker = MapStateRuntime::Detail::CargoMarker;
 using CargoSnapshot = MapStateRuntime::Detail::CargoSnapshot;
+using RuptureCycleSnapshot = MapStateRuntime::Detail::RuptureCycleSnapshot;
 using PlayerMarker = MapStateRuntime::Detail::PlayerMarker;
 using ReceiverLinkInfo = MapStateRuntime::Detail::ReceiverLinkInfo;
 using TeleporterMarker = MapStateRuntime::Detail::TeleporterMarker;
@@ -41,6 +47,17 @@ namespace
 {
 	constexpr int kMaxLoggedMarkersPerSnapshot = 8;
 	constexpr int kMaxLoggedActorsPerKind = 4;
+	constexpr const wchar_t* kRuptureCycleInfoRequestCommand = L"get info arcadia";
+	constexpr int64_t kRuptureCycleInfoRequestRetryMs = 5000;
+	struct TrackedChimeraWorldState final
+	{
+		SDK::UWorld* World = nullptr;
+		std::string WorldName;
+		bool Ready = false;
+	};
+
+	void ClearChimeraWorldState(const char* reason);
+
 	bool g_runtimePlanLogged = false;
 	bool g_engineTickSeen = false;
 	int g_anyWorldBeginPlayCount = 0;
@@ -48,11 +65,23 @@ namespace
 	int g_experienceLoadedCount = 0;
 	SDK::UWorld* g_lastChimeraWorld = nullptr;
 	std::string g_lastWorldName;
+	bool g_chimeraWorldReady = false;
 	float g_engineTickAccumulatorSeconds = 0.0f;
 
+	std::mutex g_runtimeStateMutex;
 	std::mutex g_snapshotMutex;
 	CargoSnapshot g_snapshot{};
 	std::unordered_set<uint32_t> g_requestedCustomNameEntityIds;
+	std::string g_lastRuptureCycleChatSignature;
+	bool g_lastRuptureCycleChatSignatureValid = false;
+	MapStateRuntime::Detail::RuptureCycleSnapshot g_lastPersistentRuptureCycleSnapshot{};
+	bool g_lastPersistentRuptureCycleSnapshotValid = false;
+	std::string g_lastRuptureCycleObservedSignature;
+	bool g_lastRuptureCycleObservedSignatureValid = false;
+	int64_t g_lastRuptureCycleObservedAtUnixMs = 0;
+	bool g_shouldRequestDedicatedServerRuptureCycle = false;
+	int64_t g_lastRuptureCycleRequestAtUnixMs = 0;
+	int g_ruptureCycleRequestAttemptCount = 0;
 
 	bool ShouldLogLifecycle()
 	{
@@ -62,6 +91,11 @@ namespace
 	bool ShouldLogCargoSnapshots()
 	{
 		return MapExtensionPluginConfig::Config::LogCargoSnapshots();
+	}
+
+	bool ShouldLogRuptureCycleChat()
+	{
+		return MapExtensionPluginConfig::Config::LogRuptureCycleChat();
 	}
 
 	bool ShouldLogActorScanFallback()
@@ -78,6 +112,1065 @@ namespace
 		}
 		return static_cast<float>(refreshMs) / 1000.0f;
 	}
+
+	TrackedChimeraWorldState CopyTrackedChimeraWorldState()
+	{
+		std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+		TrackedChimeraWorldState state;
+		state.World = g_lastChimeraWorld;
+		state.WorldName = g_lastWorldName;
+		state.Ready = g_chimeraWorldReady;
+		return state;
+	}
+
+	bool IsChimeraWorldName(const std::string& worldName)
+	{
+		return worldName.find("ChimeraMain") != std::string::npos;
+	}
+
+	const char* EnviroWaveToString(SDK::EEnviroWave wave)
+	{
+		switch (wave)
+		{
+		case SDK::EEnviroWave::None:
+			return "None";
+		case SDK::EEnviroWave::Heat:
+			return "Heat";
+		case SDK::EEnviroWave::Cold:
+			return "Cold";
+		default:
+			return "Unknown";
+		}
+	}
+
+	const char* EnviroWaveStageToString(SDK::EEnviroWaveStage stage)
+	{
+		switch (stage)
+		{
+		case SDK::EEnviroWaveStage::None:
+			return "None";
+		case SDK::EEnviroWaveStage::PreWave:
+			return "PreWave";
+		case SDK::EEnviroWaveStage::Moving:
+			return "Moving";
+		case SDK::EEnviroWaveStage::Fadeout:
+			return "Fadeout";
+		case SDK::EEnviroWaveStage::Growback:
+			return "Growback";
+		default:
+			return "Unknown";
+		}
+	}
+
+	const char* PreWaveSubstageToString(SDK::EEnviroWavePreWaveSubstage substage)
+	{
+		switch (substage)
+		{
+		case SDK::EEnviroWavePreWaveSubstage::None:
+			return "None";
+		case SDK::EEnviroWavePreWaveSubstage::BeforeExplosion:
+			return "BeforeExplosion";
+		case SDK::EEnviroWavePreWaveSubstage::AfterExplosion:
+			return "AfterExplosion";
+		default:
+			return "Unknown";
+		}
+	}
+
+	const char* FadeoutSubstageToString(SDK::EEnviroWaveFadeoutSubstage substage)
+	{
+		switch (substage)
+		{
+		case SDK::EEnviroWaveFadeoutSubstage::None:
+			return "None";
+		case SDK::EEnviroWaveFadeoutSubstage::FireWave:
+			return "FireWave";
+		case SDK::EEnviroWaveFadeoutSubstage::Burning:
+			return "Burning";
+		case SDK::EEnviroWaveFadeoutSubstage::Fading:
+			return "Fading";
+		default:
+			return "Unknown";
+		}
+	}
+
+	const char* GrowbackSubstageToString(SDK::EEnviroWaveGrowbackSubstage substage)
+	{
+		switch (substage)
+		{
+		case SDK::EEnviroWaveGrowbackSubstage::None:
+			return "None";
+		case SDK::EEnviroWaveGrowbackSubstage::MoonPhase:
+			return "MoonPhase";
+		case SDK::EEnviroWaveGrowbackSubstage::RegrowthStart:
+			return "RegrowthStart";
+		case SDK::EEnviroWaveGrowbackSubstage::Regrowth:
+			return "Regrowth";
+		default:
+			return "Unknown";
+		}
+	}
+
+	const char* GetRuptureCycleChatPrefix()
+	{
+		return MapExtensionPluginConfig::Config::RuptureCyclePrefix();
+	}
+
+	struct RuptureCycleChatState final
+	{
+		bool Available = false;
+		std::string Wave;
+		std::string Stage;
+		std::string Step;
+		double ElapsedSeconds = 0.0;
+		bool HasElapsed = false;
+	};
+
+	struct RuptureCycleLocalState final
+	{
+		SDK::EEnviroWave Wave = SDK::EEnviroWave::None;
+		SDK::EEnviroWaveStage Stage = SDK::EEnviroWaveStage::None;
+		SDK::EEnviroWavePreWaveSubstage PreWaveSubstage = SDK::EEnviroWavePreWaveSubstage::None;
+		SDK::EEnviroWaveFadeoutSubstage FadeoutSubstage = SDK::EEnviroWaveFadeoutSubstage::None;
+		SDK::EEnviroWaveGrowbackSubstage GrowbackSubstage = SDK::EEnviroWaveGrowbackSubstage::None;
+		double ElapsedSeconds = 0.0;
+		bool HasElapsed = false;
+	};
+
+	template <typename TSubsystem>
+	TSubsystem* TryGetWorldSubsystem(SDK::UWorld* world, SDK::UClass* subsystemClass)
+	{
+		if (!world || !subsystemClass)
+		{
+			return nullptr;
+		}
+
+		auto* subsystem = SDK::USubsystemBlueprintLibrary::GetWorldSubsystem(world, subsystemClass);
+		if (!subsystem || !subsystem->IsA(subsystemClass))
+		{
+			return nullptr;
+		}
+
+		return static_cast<TSubsystem*>(subsystem);
+	}
+
+	const char* EnviroWaveStepToString(
+		SDK::EEnviroWaveStage stage,
+		SDK::EEnviroWavePreWaveSubstage preWaveSubstage,
+		SDK::EEnviroWaveFadeoutSubstage fadeoutSubstage,
+		SDK::EEnviroWaveGrowbackSubstage growbackSubstage)
+	{
+		if (stage == SDK::EEnviroWaveStage::PreWave && preWaveSubstage != SDK::EEnviroWavePreWaveSubstage::None)
+		{
+			return PreWaveSubstageToString(preWaveSubstage);
+		}
+		if (stage == SDK::EEnviroWaveStage::Fadeout && fadeoutSubstage != SDK::EEnviroWaveFadeoutSubstage::None)
+		{
+			return FadeoutSubstageToString(fadeoutSubstage);
+		}
+		if (stage == SDK::EEnviroWaveStage::Growback && growbackSubstage != SDK::EEnviroWaveGrowbackSubstage::None)
+		{
+			return GrowbackSubstageToString(growbackSubstage);
+		}
+		return "None";
+	}
+
+	bool TryIsObjectOfClass(SDK::UObject* obj, SDK::UClass* expectedClass)
+	{
+		if (!obj || !expectedClass)
+		{
+			return false;
+		}
+
+		__try
+		{
+			return obj->IsA(expectedClass);
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	bool TryIsActorObject(SDK::UObject* obj, SDK::UClass* actorClass)
+	{
+		return TryIsObjectOfClass(obj, actorClass);
+	}
+
+	template <typename TObjectClass>
+	SDK::UClass* TryGetStaticClass()
+	{
+		__try
+		{
+			return TObjectClass::StaticClass();
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return nullptr;
+		}
+	}
+
+	bool TryCopyValidatedTrackedChimeraWorldState(
+		TrackedChimeraWorldState& outState,
+		const char* reason,
+		bool requireReady,
+		bool& outInvalidPointer)
+	{
+		outInvalidPointer = false;
+		outState = CopyTrackedChimeraWorldState();
+		if (!outState.World)
+		{
+			return false;
+		}
+		if (requireReady && !outState.Ready)
+		{
+			return false;
+		}
+
+		SDK::UClass* worldClass = TryGetStaticClass<SDK::UWorld>();
+		if (!TryIsObjectOfClass(static_cast<SDK::UObject*>(outState.World), worldClass))
+		{
+			LOG_WARN(
+				"Detected invalid tracked ChimeraMain world pointer (%s)",
+				reason ? reason : "unknown");
+			outState = {};
+			outInvalidPointer = true;
+			return false;
+		}
+
+		return true;
+	}
+
+	bool TryObjectHasOuterInChain(SDK::UObject* obj, SDK::UObject* targetOuter, int maxDepth = 12)
+	{
+		if (!obj || !targetOuter || maxDepth <= 0)
+		{
+			return false;
+		}
+
+		__try
+		{
+			SDK::UObject* current = obj;
+			for (int depth = 0; current && depth < maxDepth; ++depth)
+			{
+				if (current == targetOuter)
+				{
+					return true;
+				}
+				current = current->Outer;
+			}
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+
+		return false;
+	}
+
+	SDK::ACrGameStateBase* TryGetGameState(SDK::UWorld* world);
+	SDK::ACrPlayerControllerBase* TryGetLocalCrPlayerController(SDK::UWorld* world);
+
+	std::string TrimWhitespace(std::string value)
+	{
+		const auto isSpace = [](unsigned char c)
+		{
+			return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+		};
+
+		while (!value.empty() && isSpace(static_cast<unsigned char>(value.front())))
+		{
+			value.erase(value.begin());
+		}
+
+		while (!value.empty() && isSpace(static_cast<unsigned char>(value.back())))
+		{
+			value.pop_back();
+		}
+
+		return value;
+	}
+
+	std::string FindLastLineContainingPrefix(const std::string& text, const std::string& prefix)
+	{
+		if (text.empty() || prefix.empty())
+		{
+			return std::string();
+		}
+
+		const size_t prefixPos = text.rfind(prefix);
+		if (prefixPos == std::string::npos)
+		{
+			return std::string();
+		}
+
+		size_t lineStart = text.rfind('\n', prefixPos);
+		lineStart = (lineStart == std::string::npos) ? 0 : (lineStart + 1);
+		size_t lineEnd = text.find('\n', prefixPos);
+		if (lineEnd == std::string::npos)
+		{
+			lineEnd = text.size();
+		}
+
+		return TrimWhitespace(text.substr(lineStart, lineEnd - lineStart));
+	}
+
+	std::string StripRichTextMarkup(const std::string& value)
+	{
+		if (value.empty())
+		{
+			return std::string();
+		}
+
+		std::string stripped;
+		stripped.reserve(value.size());
+
+		bool insideTag = false;
+		for (char ch : value)
+		{
+			if (ch == '<')
+			{
+				insideTag = true;
+				continue;
+			}
+			if (insideTag)
+			{
+				if (ch == '>')
+				{
+					insideTag = false;
+				}
+				continue;
+			}
+			stripped.push_back(ch);
+		}
+
+		return stripped;
+	}
+
+	bool TryGetChatHistoryWidget(SDK::UCrUW_ChatHud* chatHud, SDK::URichTextBlock*& outChatHistory)
+	{
+		outChatHistory = nullptr;
+		if (!chatHud)
+		{
+			return false;
+		}
+
+		__try
+		{
+			outChatHistory = chatHud->ChatHistory;
+			return outChatHistory != nullptr;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			outChatHistory = nullptr;
+			return false;
+		}
+	}
+
+	bool TryGetRichTextBlockText(SDK::URichTextBlock* richTextBlock, SDK::FText& outText)
+	{
+		if (!richTextBlock)
+		{
+			return false;
+		}
+
+		__try
+		{
+			outText = richTextBlock->Text;
+			return outText.TextData != nullptr;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	bool TryGetChatHistoryText(SDK::UCrUW_ChatHud* chatHud, std::string& outText)
+	{
+		outText.clear();
+		if (!chatHud)
+		{
+			return false;
+		}
+
+		SDK::URichTextBlock* chatHistory = nullptr;
+		SDK::FText chatHistoryText{};
+
+		if (!TryGetChatHistoryWidget(chatHud, chatHistory))
+		{
+			return false;
+		}
+
+		if (!TryGetRichTextBlockText(chatHistory, chatHistoryText))
+		{
+			return false;
+		}
+
+		outText = chatHistoryText.ToString();
+		return !outText.empty();
+	}
+
+	bool HasUsableChatHud(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return false;
+		}
+
+		SDK::UClass* chatHudClass = TryGetStaticClass<SDK::UCrUW_ChatHud>();
+		if (!chatHudClass)
+		{
+			return false;
+		}
+
+		const int32_t objectCount = SDK::UObject::GObjects->Num();
+		for (int32_t index = 0; index < objectCount; ++index)
+		{
+			SDK::UObject* object = SDK::UObject::GObjects->GetByIndex(index);
+			if (!object || !object->IsA(chatHudClass))
+			{
+				continue;
+			}
+			if (!TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world)))
+			{
+				continue;
+			}
+
+			SDK::URichTextBlock* chatHistory = nullptr;
+			if (TryGetChatHistoryWidget(static_cast<SDK::UCrUW_ChatHud*>(object), chatHistory))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	bool TryParseDouble(const std::string& value, double& outValue)
+	{
+		if (value.empty())
+		{
+			return false;
+		}
+
+		char* end = nullptr;
+		const double parsed = std::strtod(value.c_str(), &end);
+		if (!end || *end != '\0')
+		{
+			return false;
+		}
+
+		outValue = parsed;
+		return true;
+	}
+
+	bool TryParseRuptureCyclePayload(const std::string& payload, RuptureCycleChatState& outState)
+	{
+		std::istringstream iss(payload);
+		std::string token;
+		bool foundField = false;
+		while (iss >> token)
+		{
+			const size_t equalsPos = token.find('=');
+			if (equalsPos == std::string::npos || equalsPos == 0 || equalsPos == (token.size() - 1))
+			{
+				continue;
+			}
+
+			foundField = true;
+			const std::string key = token.substr(0, equalsPos);
+			const std::string value = token.substr(equalsPos + 1);
+
+			if (key == "wave" || key == "type")
+			{
+				outState.Wave = value;
+			}
+			else if (key == "stage")
+			{
+				outState.Stage = value;
+			}
+			else if (key == "step")
+			{
+				outState.Step = value;
+			}
+			else if ((key == "pre" || key == "fade" || key == "grow") && value != "None")
+			{
+				outState.Step = value;
+			}
+			else if (key == "elapsed" || key == "since_last_start")
+			{
+				outState.HasElapsed = TryParseDouble(value, outState.ElapsedSeconds);
+			}
+		}
+
+		outState.Available = foundField
+			&& (!outState.Wave.empty() || !outState.Stage.empty() || !outState.Step.empty() || outState.HasElapsed);
+		return outState.Available;
+	}
+
+	RuptureCycleChatState CaptureRuptureCycleChatState(SDK::UWorld* world)
+	{
+		RuptureCycleChatState state{};
+		SDK::TUObjectArray* objectArray = SDK::UObject::GObjects.GetTypedPtr();
+		if (!objectArray || objectArray->NumElements <= 0)
+		{
+			return state;
+		}
+
+		SDK::UClass* chatHudClass = TryGetStaticClass<SDK::UCrUW_ChatHud>();
+		if (!chatHudClass)
+		{
+			return state;
+		}
+
+		const std::string prefix = GetRuptureCycleChatPrefix();
+		RuptureCycleChatState fallbackState{};
+
+		for (int32_t index = 0; index < objectArray->NumElements; ++index)
+		{
+			SDK::UObject* object = objectArray->GetByIndex(index);
+			if (!object || !object->Class || !TryIsActorObject(object, chatHudClass))
+			{
+				continue;
+			}
+
+			SDK::UCrUW_ChatHud* chatHud = static_cast<SDK::UCrUW_ChatHud*>(object);
+			std::string chatText;
+			if (!TryGetChatHistoryText(chatHud, chatText))
+			{
+				continue;
+			}
+
+			const std::string line = FindLastLineContainingPrefix(chatText, prefix);
+			if (line.empty())
+			{
+				continue;
+			}
+
+			const size_t prefixPos = line.rfind(prefix);
+			if (prefixPos == std::string::npos)
+			{
+				continue;
+			}
+
+			RuptureCycleChatState candidate{};
+			const std::string payload = TrimWhitespace(StripRichTextMarkup(line.substr(prefixPos + prefix.size())));
+			if (!TryParseRuptureCyclePayload(payload, candidate))
+			{
+				continue;
+			}
+
+			const bool belongsToWorld = !world || TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world));
+			if (belongsToWorld)
+			{
+				return candidate;
+			}
+
+			if (!fallbackState.Available)
+			{
+				fallbackState = candidate;
+			}
+		}
+
+		return fallbackState;
+	}
+
+	RuptureCycleChatState CaptureRuptureCycleRichTextState(SDK::UWorld* world)
+	{
+		RuptureCycleChatState state{};
+		SDK::TUObjectArray* objectArray = SDK::UObject::GObjects.GetTypedPtr();
+		if (!objectArray || objectArray->NumElements <= 0)
+		{
+			return state;
+		}
+
+		SDK::UClass* richTextClass = TryGetStaticClass<SDK::URichTextBlock>();
+		if (!richTextClass)
+		{
+			return state;
+		}
+
+		const std::string prefix = GetRuptureCycleChatPrefix();
+		RuptureCycleChatState fallbackState{};
+
+		for (int32_t index = 0; index < objectArray->NumElements; ++index)
+		{
+			SDK::UObject* object = objectArray->GetByIndex(index);
+			if (!object || !object->Class || !TryIsActorObject(object, richTextClass))
+			{
+				continue;
+			}
+
+			SDK::FText richText{};
+			if (!TryGetRichTextBlockText(static_cast<SDK::URichTextBlock*>(object), richText))
+			{
+				continue;
+			}
+
+			const std::string textValue = richText.ToString();
+			const std::string line = FindLastLineContainingPrefix(textValue, prefix);
+			if (line.empty())
+			{
+				continue;
+			}
+
+			const size_t prefixPos = line.rfind(prefix);
+			if (prefixPos == std::string::npos)
+			{
+				continue;
+			}
+
+			RuptureCycleChatState candidate{};
+			const std::string payload =
+				TrimWhitespace(StripRichTextMarkup(line.substr(prefixPos + prefix.size())));
+			if (!TryParseRuptureCyclePayload(payload, candidate))
+			{
+				continue;
+			}
+
+			const bool belongsToWorld = !world || TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world));
+			if (belongsToWorld)
+			{
+				return candidate;
+			}
+
+			if (!fallbackState.Available)
+			{
+				fallbackState = candidate;
+			}
+		}
+
+		return fallbackState;
+	}
+
+	MapStateRuntime::Detail::RuptureCycleSnapshot ToRuptureCycleSnapshot(const RuptureCycleChatState& state)
+	{
+		MapStateRuntime::Detail::RuptureCycleSnapshot snapshot{};
+		if (!state.Available)
+		{
+			return snapshot;
+		}
+
+		snapshot.Available = true;
+		snapshot.Wave = state.Wave.empty() ? "None" : state.Wave;
+		snapshot.Stage = state.Stage.empty() ? "None" : state.Stage;
+		snapshot.Step = state.Step.empty() ? "None" : state.Step;
+		snapshot.ElapsedSeconds = state.ElapsedSeconds;
+		snapshot.HasElapsed = state.HasElapsed;
+		return snapshot;
+	}
+
+	bool CaptureLocalRuptureCycleState(SDK::UWorld* world, RuptureCycleLocalState& outState)
+	{
+		SDK::UClass* subsystemClass = TryGetStaticClass<SDK::UCrEnviroWaveSubsystem>();
+		if (!subsystemClass)
+		{
+			return false;
+		}
+
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem =
+			TryGetWorldSubsystem<SDK::UCrEnviroWaveSubsystem>(world, subsystemClass);
+		if (!waveSubsystem)
+		{
+			return false;
+		}
+
+		outState.Wave = waveSubsystem->GetCurrentType();
+		outState.Stage = waveSubsystem->GetCurrentStage();
+		outState.PreWaveSubstage = waveSubsystem->CurrentPreWaveSubstage;
+		outState.FadeoutSubstage = waveSubsystem->CurrentFadeoutSubstage;
+		outState.GrowbackSubstage = waveSubsystem->CurrentGrowbackSubstage;
+		outState.ElapsedSeconds = waveSubsystem->GetTimeSinceLastWaveStarted();
+		outState.HasElapsed = std::isfinite(outState.ElapsedSeconds);
+		return true;
+	}
+
+	MapStateRuntime::Detail::RuptureCycleSnapshot ToRuptureCycleSnapshot(const RuptureCycleLocalState& state)
+	{
+		MapStateRuntime::Detail::RuptureCycleSnapshot snapshot{};
+		snapshot.Available = true;
+		snapshot.Wave = EnviroWaveToString(state.Wave);
+		snapshot.Stage = EnviroWaveStageToString(state.Stage);
+		snapshot.Step = EnviroWaveStepToString(
+			state.Stage,
+			state.PreWaveSubstage,
+			state.FadeoutSubstage,
+			state.GrowbackSubstage);
+		snapshot.ElapsedSeconds = state.ElapsedSeconds;
+		snapshot.HasElapsed = state.HasElapsed;
+		return snapshot;
+	}
+
+	MapStateRuntime::Detail::RuptureCycleSnapshot CapturePreferredRuptureCycleSnapshot(SDK::UWorld* world)
+	{
+		RuptureCycleChatState chatState = CaptureRuptureCycleChatState(world);
+		if (!chatState.Available)
+		{
+			chatState = CaptureRuptureCycleRichTextState(world);
+		}
+
+		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+		if (gameState && gameState->bIsDedicatedServer && chatState.Available)
+		{
+			return ToRuptureCycleSnapshot(chatState);
+		}
+
+		RuptureCycleLocalState localState{};
+		if (CaptureLocalRuptureCycleState(world, localState))
+		{
+			return ToRuptureCycleSnapshot(localState);
+		}
+
+		if (chatState.Available)
+		{
+			return ToRuptureCycleSnapshot(chatState);
+		}
+
+		return {};
+	}
+
+	bool HasDedicatedServerChatRuptureCycle(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return false;
+		}
+
+		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+		if (!gameState || !gameState->bIsDedicatedServer)
+		{
+			return false;
+		}
+
+		RuptureCycleChatState chatState = CaptureRuptureCycleChatState(world);
+		if (!chatState.Available)
+		{
+			chatState = CaptureRuptureCycleRichTextState(world);
+		}
+
+		return chatState.Available;
+	}
+
+	std::string BuildRuptureCycleChatSignature(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		std::ostringstream oss;
+		oss
+			<< snapshot.Available << '|'
+			<< snapshot.Wave << '|'
+			<< snapshot.Stage << '|'
+			<< snapshot.Step << '|'
+			<< snapshot.HasElapsed;
+		if (snapshot.HasElapsed)
+		{
+			oss.setf(std::ios::fixed);
+			oss.precision(3);
+			oss << '|' << snapshot.ElapsedSeconds;
+		}
+		return oss.str();
+	}
+
+	int64_t GetCurrentUnixTimeMilliseconds()
+	{
+		using namespace std::chrono;
+		return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+	}
+
+	void ResetRuptureCycleRequestState()
+	{
+		std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+		g_shouldRequestDedicatedServerRuptureCycle = false;
+		g_lastRuptureCycleRequestAtUnixMs = 0;
+		g_ruptureCycleRequestAttemptCount = 0;
+	}
+
+	void ScheduleDedicatedServerRuptureCycleRequest(const char* reason)
+	{
+		bool scheduled = false;
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (g_shouldRequestDedicatedServerRuptureCycle)
+			{
+				return;
+			}
+
+			g_shouldRequestDedicatedServerRuptureCycle = true;
+			scheduled = true;
+		}
+
+		if (!scheduled)
+		{
+			return;
+		}
+
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"Scheduled dedicated rupture cycle chat request via %s",
+				reason ? reason : "unknown");
+		}
+	}
+
+	void UpdateDedicatedServerRuptureCycleRequestState(
+		SDK::UWorld* world,
+		const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot,
+		const char* reason)
+	{
+		(void)snapshot;
+
+		if (!world)
+		{
+			ResetRuptureCycleRequestState();
+			return;
+		}
+
+		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+		if (!gameState || !gameState->bIsDedicatedServer)
+		{
+			ResetRuptureCycleRequestState();
+			return;
+		}
+
+		if (HasDedicatedServerChatRuptureCycle(world))
+		{
+			ResetRuptureCycleRequestState();
+			return;
+		}
+
+		ScheduleDedicatedServerRuptureCycleRequest(reason);
+	}
+
+	bool TryRequestDedicatedServerRuptureCycle(SDK::UWorld* world, const char* reason)
+	{
+		const TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
+		if (!world)
+		{
+			return false;
+		}
+		if (!TryIsObjectOfClass(
+				static_cast<SDK::UObject*>(world),
+				TryGetStaticClass<SDK::UWorld>()))
+		{
+			LOG_WARN(
+				"Skipping dedicated rupture cycle request with invalid world pointer (%s)",
+				reason ? reason : "unknown");
+			return false;
+		}
+
+		int64_t lastRequestAtUnixMs = 0;
+		int requestAttemptCount = 0;
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (!g_shouldRequestDedicatedServerRuptureCycle)
+			{
+				return false;
+			}
+			if (!trackedState.Ready || trackedState.World != world)
+			{
+				return false;
+			}
+			lastRequestAtUnixMs = g_lastRuptureCycleRequestAtUnixMs;
+			requestAttemptCount = g_ruptureCycleRequestAttemptCount;
+		}
+
+		if (!trackedState.Ready)
+		{
+			return false;
+		}
+
+		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+		if (!gameState || !gameState->bIsDedicatedServer)
+		{
+			ResetRuptureCycleRequestState();
+			return false;
+		}
+
+		if (HasDedicatedServerChatRuptureCycle(world))
+		{
+			ResetRuptureCycleRequestState();
+			return false;
+		}
+
+		SDK::ACrPlayerControllerBase* playerController = TryGetLocalCrPlayerController(world);
+		if (!playerController)
+		{
+			return false;
+		}
+
+		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
+		if (lastRequestAtUnixMs > 0
+			&& nowUnixMs - lastRequestAtUnixMs < kRuptureCycleInfoRequestRetryMs)
+		{
+			return false;
+		}
+
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			g_lastRuptureCycleRequestAtUnixMs = nowUnixMs;
+			g_ruptureCycleRequestAttemptCount = requestAttemptCount + 1;
+			requestAttemptCount = g_ruptureCycleRequestAttemptCount;
+		}
+
+		playerController->ServerChatCommit(SDK::FString(kRuptureCycleInfoRequestCommand));
+
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"Requested dedicated rupture cycle info via chat (%s, attempt=%d)",
+				reason ? reason : "unknown",
+				requestAttemptCount);
+		}
+
+		return true;
+	}
+
+	void ApplyRuptureCycleObservationTimestamp(MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		snapshot.HasObservedAtUnixMs = false;
+		snapshot.ObservedAtUnixMs = 0;
+
+		if (!snapshot.Available || !snapshot.HasElapsed)
+		{
+			return;
+		}
+
+		const std::string signature = BuildRuptureCycleChatSignature(snapshot);
+		if (!g_lastRuptureCycleObservedSignatureValid || signature != g_lastRuptureCycleObservedSignature)
+		{
+			g_lastRuptureCycleObservedSignature = signature;
+			g_lastRuptureCycleObservedSignatureValid = true;
+			g_lastRuptureCycleObservedAtUnixMs = GetCurrentUnixTimeMilliseconds();
+		}
+
+		snapshot.HasObservedAtUnixMs = g_lastRuptureCycleObservedAtUnixMs > 0;
+		snapshot.ObservedAtUnixMs = g_lastRuptureCycleObservedAtUnixMs;
+	}
+
+	void StorePersistentRuptureCycleSnapshot(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		if (!snapshot.Available)
+		{
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(g_snapshotMutex);
+		g_lastPersistentRuptureCycleSnapshot = snapshot;
+		g_lastPersistentRuptureCycleSnapshotValid = true;
+	}
+
+	bool TryGetPersistentRuptureCycleSnapshot(MapStateRuntime::Detail::RuptureCycleSnapshot& outSnapshot)
+	{
+		std::lock_guard<std::mutex> lock(g_snapshotMutex);
+		if (!g_lastPersistentRuptureCycleSnapshotValid)
+		{
+			return false;
+		}
+
+		outSnapshot = g_lastPersistentRuptureCycleSnapshot;
+		return outSnapshot.Available;
+	}
+
+	void ResetRuptureCycleState()
+	{
+		g_lastRuptureCycleChatSignature.clear();
+		g_lastRuptureCycleChatSignatureValid = false;
+		g_lastPersistentRuptureCycleSnapshot = {};
+		g_lastPersistentRuptureCycleSnapshotValid = false;
+		g_lastRuptureCycleObservedSignature.clear();
+		g_lastRuptureCycleObservedSignatureValid = false;
+		g_lastRuptureCycleObservedAtUnixMs = 0;
+		ResetRuptureCycleRequestState();
+	}
+
+	void LogRuptureCycleChatIfNeeded(
+		const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot,
+		uint64_t generation,
+		const char* reason)
+	{
+		if (!ShouldLogRuptureCycleChat() || !snapshot.Available)
+		{
+			return;
+		}
+
+		const std::string signature = BuildRuptureCycleChatSignature(snapshot);
+		if (g_lastRuptureCycleChatSignatureValid && signature == g_lastRuptureCycleChatSignature)
+		{
+			return;
+		}
+
+		g_lastRuptureCycleChatSignature = signature;
+		g_lastRuptureCycleChatSignatureValid = true;
+
+		const std::string elapsedText = snapshot.HasElapsed ? std::to_string(snapshot.ElapsedSeconds) : "--";
+
+		LOG_INFO(
+			"RuptureCycle #%llu from '%s': wave=%s stage=%s step=%s elapsed=%s",
+			static_cast<unsigned long long>(generation),
+			reason ? reason : "unknown",
+			snapshot.Wave.c_str(),
+			snapshot.Stage.c_str(),
+			snapshot.Step.c_str(),
+			elapsedText.c_str());
+	}
+
+	void MarkChimeraWorldReady(const char* reason)
+	{
+		bool markedReady = false;
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (g_chimeraWorldReady)
+			{
+				return;
+			}
+
+			g_chimeraWorldReady = true;
+			markedReady = true;
+		}
+
+		if (!markedReady)
+		{
+			return;
+		}
+
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"ChimeraMain world marked ready by %s",
+				reason ? reason : "unknown");
+		}
+	}
+
+	void ClearChimeraWorldState(const char* reason)
+	{
+		bool hadState = false;
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			hadState = g_lastChimeraWorld || !g_lastWorldName.empty() || g_chimeraWorldReady;
+			if (hadState)
+			{
+				g_lastChimeraWorld = nullptr;
+				g_lastWorldName.clear();
+				g_chimeraWorldReady = false;
+				g_requestedCustomNameEntityIds.clear();
+			}
+		}
+
+		if (!hadState)
+		{
+			return;
+		}
+
+		g_engineTickAccumulatorSeconds = 0.0f;
+		g_engineTickSeen = false;
+		ResetRuptureCycleState();
+
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"Cleared ChimeraMain world state due to %s",
+				reason ? reason : "unknown");
+		}
+	}
+
 
 	std::string CargoKindToString(CargoKind kind)
 	{
@@ -227,12 +1320,12 @@ namespace
 		return oss.str();
 	}
 
-	SDK::FVector MakeVector(float x, float y, float z)
+	SDK::FVector MakeVector(double x, double y, double z)
 	{
 		SDK::FVector value{};
-		value.X = x;
-		value.Y = y;
-		value.Z = z;
+		value.X = static_cast<float>(x);
+		value.Y = static_cast<float>(y);
+		value.Z = static_cast<float>(z);
 		return value;
 	}
 
@@ -242,9 +1335,20 @@ namespace
 		{
 			return nullptr;
 		}
+		if (!TryIsObjectOfClass(
+				static_cast<SDK::UObject*>(world),
+				TryGetStaticClass<SDK::UWorld>()))
+		{
+			return nullptr;
+		}
 
 		SDK::AGameStateBase* gameStateBase = SDK::UGameplayStatics::GetGameState(world);
-		return reinterpret_cast<SDK::ACrGameStateBase*>(gameStateBase);
+		if (!gameStateBase || !gameStateBase->IsA(SDK::ACrGameStateBase::StaticClass()))
+		{
+			return nullptr;
+		}
+
+		return static_cast<SDK::ACrGameStateBase*>(gameStateBase);
 	}
 
 	void LogRuntimePlanIfNeededImpl()
@@ -397,6 +1501,18 @@ namespace
 				|| actor->IsA(SDK::ACrCharacterPlayerBase::StaticClass()));
 	}
 
+	bool IsRelevantRuptureActorImpl(SDK::AActor* actor)
+	{
+		return actor
+			&& (
+				actor->IsA(SDK::ACrWaveTimerActor::StaticClass())
+				|| actor->IsA(SDK::ACrGatherableSpawnersRepActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWaveVisualsReplicationActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWaveVisualsActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWavePlayerFXActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWaveRegion::StaticClass()));
+	}
+
 	CargoMarker* AddOrUpdateMarker(
 		CargoSnapshot& snapshot,
 		std::unordered_map<std::string, size_t>& markerIndexes,
@@ -535,15 +1651,9 @@ namespace
 
 	SDK::UCrBuildingCustomNameSubsystem* TryGetBuildingCustomNameSubsystem(SDK::UWorld* world)
 	{
-		if (!world)
-		{
-			return nullptr;
-		}
-
-		return static_cast<SDK::UCrBuildingCustomNameSubsystem*>(
-			SDK::USubsystemBlueprintLibrary::GetWorldSubsystem(
-				world,
-				SDK::UCrBuildingCustomNameSubsystem::StaticClass()));
+		return TryGetWorldSubsystem<SDK::UCrBuildingCustomNameSubsystem>(
+			world,
+			SDK::UCrBuildingCustomNameSubsystem::StaticClass());
 	}
 
 	std::string GetBuildingCustomName(SDK::UWorld* world, SDK::AActor* buildingActor)
@@ -579,9 +1689,20 @@ namespace
 		{
 			return nullptr;
 		}
+		if (!TryIsObjectOfClass(
+				static_cast<SDK::UObject*>(world),
+				TryGetStaticClass<SDK::UWorld>()))
+		{
+			return nullptr;
+		}
 
-		return static_cast<SDK::ACrPlayerControllerBase*>(
-			SDK::UGameplayStatics::GetPlayerController(world, 0));
+		SDK::APlayerController* playerController = SDK::UGameplayStatics::GetPlayerController(world, 0);
+		if (!playerController || !playerController->IsA(SDK::ACrPlayerControllerBase::StaticClass()))
+		{
+			return nullptr;
+		}
+
+		return static_cast<SDK::ACrPlayerControllerBase*>(playerController);
 	}
 
 	std::string FindCachedBuildingCustomName(
@@ -620,14 +1741,18 @@ namespace
 			return;
 		}
 
-		if (!g_requestedCustomNameEntityIds.insert(entityId).second)
 		{
-			return;
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (!g_requestedCustomNameEntityIds.insert(entityId).second)
+			{
+				return;
+			}
 		}
 
 		SDK::ACrPlayerControllerBase* playerController = TryGetLocalCrPlayerController(world);
 		if (!playerController)
 		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
 			g_requestedCustomNameEntityIds.erase(entityId);
 			return;
 		}
@@ -1286,6 +2411,7 @@ namespace
 	bool RefreshCargoSnapshotImpl(SDK::UWorld* world, const char* reason)
 	{
 		const bool isRealtimeRefresh = IsRealtimeRefreshReason(reason);
+		const TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
 		CargoSnapshot nextSnapshot{};
 		CargoSnapshot previousSnapshot{};
 		{
@@ -1294,17 +2420,41 @@ namespace
 			previousSnapshot = g_snapshot;
 		}
 		nextSnapshot.Reason = reason ? reason : "unknown";
-		nextSnapshot.WorldName = g_lastWorldName;
+		nextSnapshot.WorldName = trackedState.WorldName;
 
 		std::unordered_map<std::string, size_t> markerIndexes;
 		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
 		CaptureFromReplicator(world, nextSnapshot, gameState, markerIndexes);
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("Cargo refresh '%s': replicator stage completed", nextSnapshot.Reason.c_str());
+		}
 		if (!isRealtimeRefresh || !nextSnapshot.HasPackageTransportReplicator)
 		{
 			CaptureActorFallback(world, nextSnapshot, markerIndexes);
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO("Cargo refresh '%s': actor fallback stage completed", nextSnapshot.Reason.c_str());
+			}
 		}
 		CaptureTeleporters(world, nextSnapshot, gameState);
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("Cargo refresh '%s': teleporter stage completed", nextSnapshot.Reason.c_str());
+		}
 		CapturePlayers(world, nextSnapshot);
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("Cargo refresh '%s': player stage completed", nextSnapshot.Reason.c_str());
+		}
+
+		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(world);
+		ApplyRuptureCycleObservationTimestamp(nextSnapshot.RuptureCycle);
+		StorePersistentRuptureCycleSnapshot(nextSnapshot.RuptureCycle);
+		UpdateDedicatedServerRuptureCycleRequestState(
+			world,
+			nextSnapshot.RuptureCycle,
+			nextSnapshot.Reason.c_str());
 
 		nextSnapshot.SenderCount = 0;
 		nextSnapshot.ReceiverCount = 0;
@@ -1341,6 +2491,11 @@ namespace
 			g_snapshot = nextSnapshot;
 		}
 
+		LogRuptureCycleChatIfNeeded(
+			nextSnapshot.RuptureCycle,
+			nextSnapshot.Generation,
+			nextSnapshot.Reason.c_str());
+
 		if (!isRealtimeRefresh)
 		{
 			LogSnapshotSummary(nextSnapshot);
@@ -1366,29 +2521,48 @@ namespace
 
 	void TryRefreshCurrentWorldImpl(const char* reason)
 	{
-		SDK::UWorld* world = g_lastChimeraWorld ? g_lastChimeraWorld : SDK::UWorld::GetWorld();
-		RefreshCargoSnapshotImpl(world, reason);
+		TrackedChimeraWorldState trackedState{};
+		bool invalidPointer = false;
+		if (!TryCopyValidatedTrackedChimeraWorldState(trackedState, reason, true, invalidPointer))
+		{
+			if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+				return;
+			}
+
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO(
+					"Skipping snapshot refresh '%s': ChimeraMain world is not loaded yet",
+					reason ? reason : "unknown");
+			}
+			return;
+		}
+
+		RefreshCargoSnapshotImpl(trackedState.World, reason);
 	}
 }
 
 namespace MapStateRuntime
 {
-namespace Detail
-{
-	CargoSnapshot CopySnapshot()
+	namespace Detail
 	{
-		return CopySnapshotImpl();
-	}
+		CargoSnapshot CopySnapshot()
+		{
+			return CopySnapshotImpl();
+		}
 
-	void LogRuntimePlanIfNeeded()
-	{
-		LogRuntimePlanIfNeededImpl();
-	}
+		void LogRuntimePlanIfNeeded()
+		{
+			LogRuntimePlanIfNeededImpl();
+		}
 
 	bool IsRelevantRealtimeActor(SDK::AActor* actor)
 	{
 		return IsRelevantRealtimeActorImpl(actor);
 	}
+
 
 	bool RefreshCargoSnapshot(SDK::UWorld* world, const char* reason)
 	{
@@ -1422,13 +2596,30 @@ namespace MapStateRuntime
 		}
 		g_engineTickAccumulatorSeconds = 0.0f;
 		g_engineTickSeen = false;
-		g_requestedCustomNameEntityIds.clear();
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			g_lastChimeraWorld = nullptr;
+			g_lastWorldName.clear();
+			g_chimeraWorldReady = false;
+			g_requestedCustomNameEntityIds.clear();
+		}
+		ResetRuptureCycleState();
 	}
 
 	void OnEngineTick(float deltaSeconds)
 	{
-		if (!g_lastChimeraWorld)
+		TrackedChimeraWorldState trackedState{};
+		bool invalidPointer = false;
+		if (!TryCopyValidatedTrackedChimeraWorldState(
+			trackedState,
+			"EngineTick",
+			true,
+			invalidPointer))
 		{
+			if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+			}
 			return;
 		}
 
@@ -1459,31 +2650,64 @@ namespace MapStateRuntime
 		}
 
 		g_engineTickAccumulatorSeconds = 0.0f;
-		Detail::RefreshCargoSnapshot(g_lastChimeraWorld, "EngineTick");
+		Detail::RefreshCargoSnapshot(trackedState.World, "EngineTick");
+		TryRequestDedicatedServerRuptureCycle(trackedState.World, "EngineTick");
 	}
 
 	void OnActorBeginPlay(void* actor)
 	{
-		if (!g_lastChimeraWorld || !actor)
+		TrackedChimeraWorldState trackedState{};
+		bool invalidPointer = false;
+		if (!actor
+			|| !TryCopyValidatedTrackedChimeraWorldState(
+				trackedState,
+				"ActorBeginPlay",
+				true,
+				invalidPointer))
 		{
+			if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+			}
 			return;
 		}
 
 		SDK::AActor* beginPlayActor = static_cast<SDK::AActor*>(actor);
-		if (!Detail::IsRelevantRealtimeActor(beginPlayActor))
+		if (!TryObjectHasOuterInChain(
+			static_cast<SDK::UObject*>(beginPlayActor),
+			static_cast<SDK::UObject*>(trackedState.World)))
 		{
+			return;
+		}
+		const bool cargoActor = Detail::IsRelevantRealtimeActor(beginPlayActor);
+		const bool ruptureActor = IsRelevantRuptureActorImpl(beginPlayActor);
+		if (!cargoActor && !ruptureActor)
+		{
+			return;
+		}
+
+		if (!cargoActor)
+		{
+			// Rupture visuals can spawn in bursts while the player moves. Avoid a full cargo scan here.
+			TryRequestDedicatedServerRuptureCycle(trackedState.World, "ActorBeginPlay(Rupture)");
 			return;
 		}
 
 		if (ShouldLogLifecycle())
 		{
-			LOG_INFO("ActorBeginPlay refresh trigger: class=%s actor=%s",
+			LOG_INFO("ActorBeginPlay refresh trigger: class=%s actor=%s source=%s",
 				beginPlayActor->Class ? beginPlayActor->Class->GetName().c_str() : "(null)",
-				beginPlayActor->GetName().c_str());
+				beginPlayActor->GetName().c_str(),
+				ruptureActor ? "rupture" : "cargo");
 		}
 
 		g_engineTickAccumulatorSeconds = 0.0f;
-		Detail::RefreshCargoSnapshot(g_lastChimeraWorld, "ActorBeginPlay");
+		Detail::RefreshCargoSnapshot(
+			trackedState.World,
+			ruptureActor ? "ActorBeginPlay(Rupture)" : "ActorBeginPlay");
+		TryRequestDedicatedServerRuptureCycle(
+			trackedState.World,
+			ruptureActor ? "ActorBeginPlay(Rupture)" : "ActorBeginPlay");
 	}
 
 	void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
@@ -1497,35 +2721,109 @@ namespace MapStateRuntime
 
 		if (std::strstr(safeName, "ChimeraMain") != nullptr)
 		{
-			g_lastChimeraWorld = world;
-			g_lastWorldName = safeName;
+			{
+				std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+				g_lastChimeraWorld = world;
+				g_lastWorldName = safeName;
+				g_chimeraWorldReady = false;
+				g_requestedCustomNameEntityIds.clear();
+			}
 			g_engineTickAccumulatorSeconds = 0.0f;
-			g_requestedCustomNameEntityIds.clear();
+			ResetRuptureCycleState();
 			if (ShouldLogLifecycle())
 			{
-				LOG_INFO("ChimeraMain detected: capturing cargo snapshot for HTTP endpoint");
+				LOG_INFO("ChimeraMain detected: deferring cargo snapshot until the world is ready");
 			}
-			Detail::RefreshCargoSnapshot(world, "AnyWorldBeginPlay(ChimeraMain)");
+		}
+		else
+		{
+			TrackedChimeraWorldState trackedState{};
+			bool invalidPointer = false;
+			if (TryCopyValidatedTrackedChimeraWorldState(
+				trackedState,
+				"Non-Chimera world begin play",
+				false,
+				invalidPointer))
+			{
+				if (ShouldLogLifecycle())
+				{
+					LOG_INFO(
+						"Ignoring non-Chimera world begin play while ChimeraMain is tracked: world=%p name=%s",
+						static_cast<void*>(world),
+						safeName);
+				}
+			}
+			else if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+			}
+			else
+			{
+				ClearChimeraWorldState("Non-Chimera world begin play");
+			}
 		}
 	}
 
+
 	void OnSaveLoaded()
 	{
+		TrackedChimeraWorldState trackedState{};
+		bool invalidPointer = false;
 		++g_saveLoadedCount;
 		if (ShouldLogLifecycle())
 		{
 			LOG_INFO("SaveLoaded #%d: refreshing cargo snapshot from save state", g_saveLoadedCount);
 		}
+		if (!TryCopyValidatedTrackedChimeraWorldState(
+			trackedState,
+			"SaveLoaded",
+			false,
+			invalidPointer))
+		{
+			if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+			}
+			return;
+		}
+
+		if (trackedState.World)
+		{
+			MarkChimeraWorldReady("SaveLoaded");
+			ScheduleDedicatedServerRuptureCycleRequest("SaveLoaded");
+		}
 		Detail::TryRefreshCurrentWorld("SaveLoaded");
+		TryRequestDedicatedServerRuptureCycle(trackedState.World, "SaveLoaded");
 	}
 
 	void OnExperienceLoadComplete()
 	{
+		TrackedChimeraWorldState trackedState{};
+		bool invalidPointer = false;
 		++g_experienceLoadedCount;
 		if (ShouldLogLifecycle())
 		{
 			LOG_INFO("ExperienceLoadComplete #%d: refreshing cargo snapshot from runtime replication", g_experienceLoadedCount);
 		}
+		if (!TryCopyValidatedTrackedChimeraWorldState(
+			trackedState,
+			"ExperienceLoadComplete",
+			false,
+			invalidPointer))
+		{
+			if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+			}
+			return;
+		}
+
+		if (trackedState.World)
+		{
+			MarkChimeraWorldReady("ExperienceLoadComplete");
+			ScheduleDedicatedServerRuptureCycleRequest("ExperienceLoadComplete");
+		}
 		Detail::TryRefreshCurrentWorld("ExperienceLoadComplete");
+		TryRequestDedicatedServerRuptureCycle(trackedState.World, "ExperienceLoadComplete");
 	}
 }

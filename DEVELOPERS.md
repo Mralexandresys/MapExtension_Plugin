@@ -4,7 +4,7 @@
 
 - plugin source: `MapExtension_Plugin/`
 - frontend source: `MapExtension_Plugin/mapview/`
-- frontend build output: `MapExtension_Plugin/mapview/dist/index.html`
+- frontend build output: `MapExtension_Plugin/mapview/dist/MapExtensionViewer.html`
 
 ## Runtime module layout
 
@@ -83,16 +83,16 @@ npm run build
 The production build is a single self-contained HTML file:
 
 ```text
-MapExtension_Plugin/mapview/dist/index.html
+MapExtension_Plugin/mapview/dist/MapExtensionViewer.html
 ```
 
 ## Packaging a release
 
 1. Set `MODLOADER_BUILD_TAG` to the version you want to publish (see above) and build `Client Release|x64` so that `build/Client Release/Plugins/MapExtension_Plugin.dll` is produced.
-2. Move to `mapview/`, ensure Node.js ≥18 is active, then run `npm install && npm run check && npm run build`. The bundle lands in `mapview/dist/index.html`.
+2. Move to `mapview/`, ensure Node.js ≥18 is active, then run `npm install && npm run check && npm run build`. The bundle lands in `mapview/dist/MapExtensionViewer.html`.
 3. Copy the following into a staging directory or archive:
    - `build/Client Release/Plugins/MapExtension_Plugin.dll`
-   - `mapview/dist/index.html`
+   - `mapview/dist/MapExtensionViewer.html`
    - `README.md`, `README.fr.md`, `LICENSE`, and both `THIRD_PARTY_NOTICES.md` files
    - `licenses/` and `mapview/licenses/` to keep third-party notices alongside the binaries
 4. (Optional) include a sample `Plugins/config/MapExtension_Plugin.ini` if you want to ship defaults with instructions.

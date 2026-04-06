@@ -1,0 +1,22 @@
+{
+    "generation": 118,
+    "ok": true,
+    "rupture_cycle": {
+        "available": true,
+        "elapsed_seconds": 1684.554,
+        "observed_at_unix_ms": 1775428420574,
+        "stage": "None",
+        "step": "None",
+        "wave": "None"
+    },
+    "timeline": {
+        "cycle_total_seconds": 3240,
+        "phase_seconds": {
+            "burning": 30,
+            "cooling": 60,
+            "stabilizing": 600,
+            "stable": 2550
+        }
+    },
+    "world": "ChimeraMain"
+}

@@ -1,0 +1,219 @@
+[size=6][b]MapExtension_Plugin[/b][/size]
+
+[size=4][b]About This Mod[/b][/size]
+
+MapExtension_Plugin adds a [b]live local map viewer[/b] for StarRupture.
+
+While the game is running, the plugin reads local game data and makes it available to [b]MapExtensionViewer.html[/b], a browser page included with the mod. This lets you view your cargo network, teleporters, players, and the rupture-cycle timeline in a clearer way without replacing the in-game UI.
+
+The goal is simple: [b]make your world easier to read[/b] once your base and transport setup become harder to follow.
+
+[line]
+
+[size=4][b]Features[/b][/size]
+[list]
+[*]Show [b]Cargo Dispatchers[/b] and [b]Cargo Receivers[/b] on a local map
+[*]Show [b]links[/b] between cargo buildings
+[*]Show [b]items currently moving[/b] through the cargo network
+[*]Show [b]teleporter positions[/b]
+[*]Show [b]player positions[/b]
+[*]Show a [b]rupture-cycle timeline[/b]
+[*]Provide local data through built-in HTTP endpoints used by the viewer
+[/list]
+
+[line]
+
+[size=4][b]How It Works[/b][/size]
+
+If you are new to this kind of mod, the idea is very simple:
+
+[list]
+[*]The [b]Mod Loader[/b] lets StarRupture load plugin mods
+[*]This plugin runs while your game is open
+[*]It exposes local data on your own PC
+[*][b]MapExtensionViewer.html[/b] reads that local data and displays it in your browser
+[/list]
+
+This is [b]not[/b] an online service and [b]not[/b] a separate game client. It is just a local viewer for your current game session.
+
+[line]
+
+[size=4][b]What You Will See[/b][/size]
+[list]
+[*]Where your cargo buildings are
+[*]Which cargo buildings are connected together
+[*]Which items are travelling through those links
+[*]Where teleporters are placed
+[*]Where players are located
+[*]The current rupture-cycle timeline
+[/list]
+
+This is especially useful when your base grows and you want a cleaner overview of your layout, logistics lines, and rupture activity.
+
+[line]
+
+[size=4][b]Solo And Dedicated Server Support[/b][/size]
+
+The plugin works in both solo and multiplayer, but rupture data is not sourced the same way in every case.
+
+[list]
+[*][b]Solo / local-host:[/b] the plugin can read rupture data locally from the running game
+[*][b]Dedicated server:[/b] rupture updates in the browser timeline require the companion plugin [b]RuptureCycleToChat_Plugin[/b] on the dedicated server
+[/list]
+
+The map and cargo features are client-side. Only dedicated-server rupture support depends on the extra server plugin.
+
+[line]
+
+[size=4][b]Requirements[/b][/size]
+[list]
+[*][b][url=https://www.nexusmods.com/starrupture/mods/89]AlienX and Wilhelm's Mod Loader[/url][/b]
+[*][b]MapExtension_Plugin[/b] installed on the client
+[*][b]Optional:[/b] [b]RuptureCycleToChat_Plugin[/b] on the dedicated server for rupture timeline updates in dedicated-server play
+[/list]
+
+[line]
+
+[size=4][b]Installation[/b][/size]
+[list=1]
+[*]Install [b]AlienX and Wilhelm's Mod Loader[/b] first
+[*]Extract the Mod Loader into [code]StarRupture/Binaries/Win64/[/code]
+[*]Copy [b]MapExtension_Plugin.dll[/b] into [code]StarRupture/Binaries/Win64/Plugins/[/code]
+[*]Start the game once so the plugin can initialize and generate its config file
+[*]Place [b]MapExtensionViewer.html[/b] wherever you want on your PC
+[*]Double-click [b]MapExtensionViewer.html[/b] to open it in your default browser
+[*]Keep the game running while you use the map viewer
+[/list]
+
+If you play on a dedicated server and want rupture-cycle updates in the timeline, install [b]RuptureCycleToChat_Plugin[/b] on that dedicated server as well.
+
+[line]
+
+[size=4][b]About MapExtensionViewer.html[/b][/size]
+
+[b]MapExtensionViewer.html[/b] is the browser page used by the mod.
+
+[list]
+[*]It can be stored [b]anywhere on your PC[/b]
+[*]You can move it to your [b]Desktop[/b] for easier access
+[*]A simple [b]double-click[/b] opens it in your default browser
+[*]It does [b]not[/b] need to stay inside the game folder
+[*]The game must still be running so the page can read live data from the plugin
+[/list]
+
+[line]
+
+[size=4][b]Configuration[/b][/size]
+
+On first launch, the plugin creates:
+
+[code]Plugins/config/MapExtension_Plugin.ini[/code]
+
+Main defaults:
+
+[code][General]
+Enabled=1
+
+[Http]
+Port=9000
+
+[Runtime]
+RefreshIntervalMs=500
+
+[Chat]
+RuptureCyclePrefix=[RUPTURE_CYCLE][/code]
+
+[list]
+[*][b]Enabled[/b]: turns the plugin on or off
+[*][b]Port[/b]: local port used by the viewer to read plugin data
+[*][b]RefreshIntervalMs[/b]: how often the runtime data is refreshed
+[*][b]RuptureCyclePrefix[/b]: chat prefix expected from the dedicated-server rupture plugin
+[/list]
+
+Most players will not need to change anything. The default settings are enough to use the mod.
+
+[line]
+
+[size=4][b]Advanced Notes[/b][/size]
+
+For advanced users, the plugin exposes local endpoints used by the viewer:
+
+[list]
+[*][code]GET /health[/code]
+[*][code]GET /cargo[/code]
+[*][code]GET /rupture-cycle[/code]
+[/list]
+
+You do not need to use these manually to enjoy the mod.
+
+[line]
+
+[size=4][b]Quick FAQ[/b][/size]
+
+[b]Does this replace the in-game map?[/b]
+
+No. It is a separate local browser page designed to give you a clearer overview.
+
+[b]Do I need to keep the game running?[/b]
+
+Yes. The viewer reads live data from the running game.
+
+[b]Do I need to open the HTML file from the game folder every time?[/b]
+
+No. You can place [b]MapExtensionViewer.html[/b] anywhere on your PC, including your Desktop.
+
+[b]Is this a client-side mod?[/b]
+
+Yes. [b]MapExtension_Plugin[/b] is installed on the client.
+
+[b]Do I need anything on a dedicated server?[/b]
+
+Only if you want rupture-cycle updates in dedicated-server play. In that case, the dedicated server needs [b]RuptureCycleToChat_Plugin[/b].
+
+[b]Do I need to configure anything before using it?[/b]
+
+Usually no. The default configuration is enough for most players.
+
+[line]
+
+[size=4][b]Project Status[/b][/size]
+
+This mod is already functional, but it is still evolving. Feedback, fixes, and contributions are welcome.
+
+[line]
+
+[size=4][b]Credits[/b][/size]
+[list]
+[*][b]AlienX and Wilhelm's Mod Loader[/b] for making plugin-based modding possible
+[*][b]bithoarder[/b] for [b]StarRuptureMap[/b], used for the map background
+[*][b]Mralexandresys[/b] for [b]MapExtension_Plugin[/b]
+[/list]
+
+[line]
+
+[size=4][b]Example Folder Tree[/b][/size]
+
+After installation, your files should look similar to this:
+
+[code]StarRupture/
+|-- Binaries/
+|   `-- Win64/
+|       |-- <Mod Loader files> (dwmapi.dll)
+|       `-- Plugins/
+|           |-- MapExtension_Plugin.dll
+|           `-- config/
+|               `-- MapExtension_Plugin.ini (auto create)
+
+Anywhere on your PC
+|-- MapExtensionViewer.html
+
+Example if you place it on your Desktop
+Desktop/
+`-- MapExtensionViewer.html
+[/code]
+
+[list]
+[*]The Mod Loader files must be inside [code]StarRupture/Binaries/Win64/[/code]
+[*][b]MapExtension_Plugin.dll[/b] must be inside [code]StarRupture/Binaries/Win64/Plugins/[/code]
+[*][b]MapExtensionViewer.html[/b] can be stored anywhere, including your Desktop
+[/list]

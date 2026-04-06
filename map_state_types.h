@@ -30,8 +30,8 @@ namespace Detail
 	inline SDK::FVector2f WorldToMap(const SDK::FVector& worldLocation)
 	{
 		SDK::FVector2f out{};
-		out.X = (worldLocation.X - kMapSrcX1) * kMapScaleX;
-		out.Y = (worldLocation.Y - kMapSrcY1) * kMapScaleY;
+		out.X = static_cast<float>((worldLocation.X - kMapSrcX1) * kMapScaleX);
+		out.Y = static_cast<float>((worldLocation.Y - kMapSrcY1) * kMapScaleY);
 		return out;
 	}
 
@@ -87,6 +87,18 @@ namespace Detail
 		std::string PublicKey;
 	};
 
+	struct RuptureCycleSnapshot
+	{
+		bool Available = false;
+		std::string Wave;
+		std::string Stage;
+		std::string Step;
+		double ElapsedSeconds = 0.0;
+		bool HasElapsed = false;
+		int64_t ObservedAtUnixMs = 0;
+		bool HasObservedAtUnixMs = false;
+	};
+
 	struct CargoSnapshot
 	{
 		uint64_t Generation = 0;
@@ -108,6 +120,7 @@ namespace Detail
 		std::vector<CargoConnection> Connections;
 		std::vector<TeleporterMarker> Teleporters;
 		std::vector<PlayerMarker> Players;
+		RuptureCycleSnapshot RuptureCycle;
 	};
 
 	struct ReceiverLinkInfo

@@ -1,0 +1,11 @@
+{
+    "connection_count": 86,
+    "marker_count": 215,
+    "ok": true,
+    "player_count": 1,
+    "plugin": "MapExtension_Plugin",
+    "port": 9000,
+    "snapshot_generation": 117,
+    "teleporter_count": 18,
+    "world": "ChimeraMain"
+}
