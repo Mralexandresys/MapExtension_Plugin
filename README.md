@@ -2,9 +2,9 @@
 
 French README: `README.fr.md`
 
-`MapExtension_Plugin` exposes StarRupture map data through a local HTTP endpoint and includes `mapview`, a local web interface used to display the map, entities, and their connections.
+`MapExtension_Plugin` exposes StarRupture map data through a local HTTP endpoint and includes `mapview`, a local web interface used to display the map, entities, their connections, and the rupture cycle timeline.
 
-The plugin works in both single-player and multiplayer, but it only needs to be installed on the client side. No server-side installation is required.
+The plugin works in both single-player and multiplayer, but it only needs to be installed on the client side. For dedicated-server rupture cycle data, pair it with `RuptureCycleToChat_Plugin` on the server.
 
 ## Features
 
@@ -13,10 +13,15 @@ The plugin works in both single-player and multiplayer, but it only needs to be 
 - See the items currently travelling through the network
 - Display the positions of `teleporters`
 - Display the positions of `players`
+- Expose `GET /health`, `GET /cargo`, and `GET /rupture-cycle` on the local HTTP server
+- Reconstruct rupture cycle state from dedicated-server chat payloads when `RuptureCycleToChat_Plugin` is present
+- Fall back to the local `UCrEnviroWaveSubsystem` in solo/local sessions when no server chat payload is available
 
 ## Mapview
 
-The included `mapview` is a standalone local web UI designed to read the plugin data and display it in a browser by opening the generated `dist/index.html` file.
+The included `mapview` is a standalone local web UI designed to read the plugin data and display it in a browser by opening the generated `dist/MapExtensionViewer.html` file.
+
+It consumes both cargo/map data and the rupture cycle endpoint to render the timeline shown in the HUD replacement UI.
 
 ## Interface choice
 
@@ -54,6 +59,7 @@ Enabled=1
 VerboseLifecycleLogs=0
 LogRuntimePlanOnce=0
 LogCargoSnapshots=0
+LogRuptureCycleChat=0
 LogActorScanFallback=0
 
 [Http]
@@ -61,15 +67,20 @@ Port=9000
 
 [Runtime]
 RefreshIntervalMs=500
+
+[Chat]
+RuptureCyclePrefix=[RUPTURE_CYCLE]
 ```
 
 - `Enabled`: enables or disables the plugin (`1` or `0`)
 - `VerboseLifecycleLogs`: enables lifecycle logs (`1` or `0`)
 - `LogRuntimePlanOnce`: logs the runtime strategy once (`1` or `0`)
 - `LogCargoSnapshots`: logs cargo snapshots (`1` or `0`)
+- `LogRuptureCycleChat`: logs rupture cycle state parsed from server chat or recovered locally in solo sessions (`1` or `0`)
 - `LogActorScanFallback`: logs actor scan fallback (`1` or `0`)
 - `Port`: sets the local HTTP port used by the plugin
 - `RefreshIntervalMs`: sets the runtime refresh interval in milliseconds
+- `RuptureCyclePrefix`: chat prefix expected from the server-side rupture plugin
 
 ## Credits
 

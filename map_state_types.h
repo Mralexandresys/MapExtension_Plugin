@@ -30,8 +30,8 @@ namespace Detail
 	inline SDK::FVector2f WorldToMap(const SDK::FVector& worldLocation)
 	{
 		SDK::FVector2f out{};
-		out.X = (worldLocation.X - kMapSrcX1) * kMapScaleX;
-		out.Y = (worldLocation.Y - kMapSrcY1) * kMapScaleY;
+		out.X = static_cast<float>((worldLocation.X - kMapSrcX1) * kMapScaleX);
+		out.Y = static_cast<float>((worldLocation.Y - kMapSrcY1) * kMapScaleY);
 		return out;
 	}
 

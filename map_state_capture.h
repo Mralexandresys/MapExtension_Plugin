@@ -10,13 +10,12 @@ namespace SDK
 
 namespace MapStateRuntime
 {
-namespace Detail
-{
-	CargoSnapshot CopySnapshot();
-	CargoSnapshot CopySnapshotWithFreshRuptureCycle();
-	void LogRuntimePlanIfNeeded();
-	bool IsRelevantRealtimeActor(SDK::AActor* actor);
-	bool RefreshCargoSnapshot(SDK::UWorld* world, const char* reason);
-	void TryRefreshCurrentWorld(const char* reason);
+	namespace Detail
+	{
+		CargoSnapshot CopySnapshot();
+		void LogRuntimePlanIfNeeded();
+		bool IsRelevantRealtimeActor(SDK::AActor* actor);
+		bool RefreshCargoSnapshot(SDK::UWorld* world, const char* reason);
+		void TryRefreshCurrentWorld(const char* reason);
 }
 }
