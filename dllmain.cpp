@@ -1,7 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-#include "cargo_runtime.h"
+#include "map_state_runtime.h"
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
 {
@@ -11,7 +11,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
 		DisableThreadLibraryCalls(hModule);
 		break;
 	case DLL_PROCESS_DETACH:
-		CargoRuntime::HandleProcessDetach(reserved != nullptr);
+		MapStateRuntime::HandleProcessDetach(reserved != nullptr);
 		break;
 	case DLL_THREAD_ATTACH:
 	case DLL_THREAD_DETACH:

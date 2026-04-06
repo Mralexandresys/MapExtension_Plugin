@@ -246,10 +246,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="cargo_runtime.h" />
+    <ClInclude Include="map_state_capture.h" />
+    <ClInclude Include="map_state_http.h" />
+    <ClInclude Include="map_state_json.h" />
+    <ClInclude Include="map_state_runtime.h" />
+    <ClInclude Include="map_state_types.h" />
     <ClInclude Include="plugin.h" />
     <ClInclude Include="plugin_config.h" />
     <ClInclude Include="plugin_helpers.h" />
+    <ClInclude Include="third_party/nlohmann/json.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
@@ -273,7 +278,10 @@
     <ClCompile Include="$(StarRuptureSDKSourceDir)CommonUI_functions.cpp">
       <Visible>false</Visible>
     </ClCompile>
-    <ClCompile Include="cargo_runtime.cpp" />
+    <ClCompile Include="map_state_capture.cpp" />
+    <ClCompile Include="map_state_http.cpp" />
+    <ClCompile Include="map_state_json.cpp" />
+    <ClCompile Include="map_state_runtime.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="plugin_config.cpp" />

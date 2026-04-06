@@ -1,0 +1,3694 @@
+{
+    "connections": [
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 765.1, "y": 3022.5 },
+                "world": { "x": -302500.0, "y": -42300.0, "z": 4020.0 }
+            },
+            "receiver_key": "receiver_0_8477484",
+            "receiver_label": "HE2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 448.6, "y": 1608.7 },
+                "world": { "x": -325700.0, "y": -145900.0, "z": 5420.0 }
+            },
+            "sender_key": "sender_0_1156638",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "WolframBar",
+            "receiver": {
+                "map": { "x": 830.6, "y": 2632.2 },
+                "world": { "x": -297700.0, "y": -70900.0, "z": 1430.0 }
+            },
+            "receiver_key": "receiver_0_2614912",
+            "receiver_label": "RB T1 Cuivre 2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1394.0, "y": 1949.9 },
+                "world": { "x": -256400.0, "y": -120900.0, "z": 4930.0 }
+            },
+            "sender_key": "sender_0_2889935",
+            "sender_label": "Cargo Dispatcher - WolframBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 735.1, "y": 2632.2 },
+                "world": { "x": -304700.0, "y": -70900.0, "z": 1430.0 }
+            },
+            "receiver_key": "receiver_0_2446252",
+            "receiver_label": "RB T1 Fer 1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2803.3, "y": 3021.2 },
+                "world": { "x": -153100.0, "y": -42400.0, "z": 7730.0 }
+            },
+            "sender_key": "sender_0_1849712",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 699.6, "y": 2594.0 },
+                "world": { "x": -307300.0, "y": -73700.0, "z": 1430.0 }
+            },
+            "receiver_key": "receiver_0_2682076",
+            "receiver_label": "RB T1 FER 3",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2806.0, "y": 2952.9 },
+                "world": { "x": -152900.0, "y": -47400.0, "z": 7730.0 }
+            },
+            "sender_key": "sender_0_1866011",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 683.2, "y": 2632.2 },
+                "world": { "x": -308500.0, "y": -70900.0, "z": 1430.0 }
+            },
+            "receiver_key": "receiver_0_2465426",
+            "receiver_label": "RB T1 FER 2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2803.3, "y": 2980.2 },
+                "world": { "x": -153100.0, "y": -45400.0, "z": 7730.0 }
+            },
+            "sender_key": "sender_0_1849535",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "WolframBar",
+            "receiver": {
+                "map": { "x": 778.7, "y": 2632.2 },
+                "world": { "x": -301500.0, "y": -70900.0, "z": 1430.0 }
+            },
+            "receiver_key": "receiver_0_2608215",
+            "receiver_label": "RB T1 Cuivre 1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1359.9, "y": 1944.4 },
+                "world": { "x": -258900.0, "y": -121300.0, "z": 4930.0 }
+            },
+            "sender_key": "sender_0_2889974",
+            "sender_label": "Cargo Dispatcher - WolframBar"
+        },
+        {
+            "item": "WolframBar",
+            "receiver": {
+                "map": { "x": 882.4, "y": 2632.2 },
+                "world": { "x": -293900.0, "y": -70900.0, "z": 1570.0 }
+            },
+            "receiver_key": "receiver_0_2733431",
+            "receiver_label": "RB T1 Cuivre 3",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1406.3, "y": 1964.9 },
+                "world": { "x": -255500.0, "y": -119800.0, "z": 4930.0 }
+            },
+            "sender_key": "sender_0_2890415",
+            "sender_label": "Cargo Dispatcher - WolframBar"
+        },
+        {
+            "item": "CalciumBlock",
+            "receiver": {
+                "map": { "x": 778.7, "y": 2594.0 },
+                "world": { "x": -301500.0, "y": -73700.0, "z": 1430.0 }
+            },
+            "receiver_key": "receiver_0_2704973",
+            "receiver_label": "RB T1 Calcaire 1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 3398.1, "y": 3685.8 },
+                "world": { "x": -109500.0, "y": 6300.0, "z": 13680.0 }
+            },
+            "sender_key": "sender_0_3490283",
+            "sender_label": "Cargo Dispatcher - CalciumBlock"
+        },
+        {
+            "item": "CalciumBlock",
+            "receiver": {
+                "map": { "x": 814.2, "y": 2596.8 },
+                "world": { "x": -298900.0, "y": -73500.0, "z": 1430.0 }
+            },
+            "receiver_key": "receiver_0_2735706",
+            "receiver_label": "RB T1 CALCAIRE 2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 3376.2, "y": 3647.6 },
+                "world": { "x": -111100.0, "y": 3500.0, "z": 13120.0 }
+            },
+            "sender_key": "sender_0_3497644",
+            "sender_label": "Cargo Dispatcher - CalciumBlock"
+        },
+        {
+            "item": "CalciumBlock",
+            "receiver": {
+                "map": { "x": 778.7, "y": 2594.0 },
+                "world": { "x": -301500.0, "y": -73700.0, "z": 1430.0 }
+            },
+            "receiver_key": "receiver_0_2704973",
+            "receiver_label": "RB T1 Calcaire 1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 3343.5, "y": 3661.2 },
+                "world": { "x": -113500.0, "y": 4500.0, "z": 12140.0 }
+            },
+            "sender_key": "sender_0_3503144",
+            "sender_label": "Cargo Dispatcher - CalciumBlock"
+        },
+        {
+            "item": "WolframWire",
+            "receiver": {
+                "map": { "x": 699.6, "y": 2907.9 },
+                "world": { "x": -307300.0, "y": -50700.0, "z": 2550.0 }
+            },
+            "receiver_key": "receiver_0_25890955",
+            "receiver_label": "fils",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 3305.3, "y": 2905.2 },
+                "world": { "x": -116300.0, "y": -50900.0, "z": 8850.0 }
+            },
+            "sender_key": "sender_0_25917227",
+            "sender_label": "Cargo Dispatcher - WolframWire"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 636.9, "y": 2973.4 },
+                "world": { "x": -311900.0, "y": -45900.0, "z": 2620.0 }
+            },
+            "receiver_key": "receiver_0_4677408",
+            "receiver_label": "soufre",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2072.0, "y": 2992.5 },
+                "world": { "x": -206700.0, "y": -44500.0, "z": 5070.0 }
+            },
+            "sender_key": "sender_0_4371554",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "TitaniumSheet",
+            "receiver": {
+                "map": { "x": 656.0, "y": 2760.5 },
+                "world": { "x": -310500.0, "y": -61500.0, "z": 2060.0 }
+            },
+            "receiver_key": "receiver_0_5163384",
+            "receiver_label": "IDK plaque fer",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2819.6, "y": 2995.3 },
+                "world": { "x": -151900.0, "y": -44300.0, "z": 7730.0 }
+            },
+            "sender_key": "sender_0_4429262",
+            "sender_label": "Cargo Dispatcher - TitaniumSheet"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 636.9, "y": 2973.4 },
+                "world": { "x": -311900.0, "y": -45900.0, "z": 2620.0 }
+            },
+            "receiver_key": "receiver_0_4677408",
+            "receiver_label": "soufre",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2072.0, "y": 2981.6 },
+                "world": { "x": -206700.0, "y": -45300.0, "z": 5070.0 }
+            },
+            "sender_key": "sender_0_4370986",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 636.9, "y": 2973.4 },
+                "world": { "x": -311900.0, "y": -45900.0, "z": 2620.0 }
+            },
+            "receiver_key": "receiver_0_4677408",
+            "receiver_label": "soufre",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2072.0, "y": 3003.4 },
+                "world": { "x": -206700.0, "y": -43700.0, "z": 5070.0 }
+            },
+            "sender_key": "sender_0_4692519",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "TitaniumRod",
+            "receiver": {
+                "map": { "x": 686.0, "y": 2760.5 },
+                "world": { "x": -308300.0, "y": -61500.0, "z": 2060.0 }
+            },
+            "receiver_key": "receiver_0_4903910",
+            "receiver_label": "tige-fer",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2909.7, "y": 2935.2 },
+                "world": { "x": -145300.0, "y": -48700.0, "z": 6610.0 }
+            },
+            "sender_key": "sender_0_4499562",
+            "sender_label": "Cargo Dispatcher - TitaniumRod"
+        },
+        {
+            "item": "CalciteSheets",
+            "receiver": {
+                "map": { "x": 658.7, "y": 2888.8 },
+                "world": { "x": -310300.0, "y": -52100.0, "z": 2340.0 }
+            },
+            "receiver_key": "receiver_0_5265902",
+            "receiver_label": "plaque calcite",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 631.4, "y": 2645.9 },
+                "world": { "x": -312300.0, "y": -69900.0, "z": 1500.0 }
+            },
+            "sender_key": "sender_0_5243411",
+            "sender_label": "Cargo Dispatcher - CalciteSheets"
+        },
+        {
+            "item": "WolframPowder",
+            "receiver": {
+                "map": { "x": 702.3, "y": 2891.5 },
+                "world": { "x": -307100.0, "y": -51900.0, "z": 2480.0 }
+            },
+            "receiver_key": "receiver_0_5430859",
+            "receiver_label": "poudre tung",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 871.5, "y": 2675.9 },
+                "world": { "x": -294700.0, "y": -67700.0, "z": 1570.0 }
+            },
+            "sender_key": "sender_0_5482437",
+            "sender_label": "Cargo Dispatcher - WolframPowder"
+        },
+        {
+            "item": "WolframPowder",
+            "receiver": {
+                "map": { "x": 702.3, "y": 2891.5 },
+                "world": { "x": -307100.0, "y": -51900.0, "z": 2480.0 }
+            },
+            "receiver_key": "receiver_0_5430859",
+            "receiver_label": "poudre tung",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 882.4, "y": 2675.9 },
+                "world": { "x": -293900.0, "y": -67700.0, "z": 1570.0 }
+            },
+            "sender_key": "sender_0_5443988",
+            "sender_label": "Cargo Dispatcher - WolframPowder"
+        },
+        {
+            "item": "IntermediateBuildingMaterial",
+            "receiver": {
+                "map": { "x": 443.1, "y": 2839.7 },
+                "world": { "x": -326100.0, "y": -55700.0, "z": 2340.0 }
+            },
+            "receiver_key": "receiver_0_5863563",
+            "receiver_label": "contruction v2",
+            "requested_amount": 1000,
+            "sender": {
+                "map": { "x": 2620.5, "y": 825.4 },
+                "world": { "x": -166500.0, "y": -203300.0, "z": 730.0 }
+            },
+            "sender_key": "sender_0_5656873",
+            "sender_label": "Cargo Dispatcher - IntermediateBuildingMaterial"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 1861.9, "y": 860.9 },
+                "world": { "x": -222100.0, "y": -200700.0, "z": 1010.0 }
+            },
+            "receiver_key": "receiver_0_9075232",
+            "receiver_label": "Base fer 2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1703.7, "y": 882.7 },
+                "world": { "x": -233700.0, "y": -199100.0, "z": 1500.0 }
+            },
+            "sender_key": "sender_0_7605235",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 1861.9, "y": 860.9 },
+                "world": { "x": -222100.0, "y": -200700.0, "z": 1010.0 }
+            },
+            "receiver_key": "receiver_0_9075232",
+            "receiver_label": "Base fer 2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1714.6, "y": 882.7 },
+                "world": { "x": -232900.0, "y": -199100.0, "z": 1430.0 }
+            },
+            "sender_key": "sender_0_7605689",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 1861.9, "y": 871.8 },
+                "world": { "x": -222100.0, "y": -199900.0, "z": 1010.0 }
+            },
+            "receiver_key": "receiver_0_9025697",
+            "receiver_label": "Base Fer 1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1520.9, "y": 844.5 },
+                "world": { "x": -247100.0, "y": -201900.0, "z": 4300.0 }
+            },
+            "sender_key": "sender_0_8963775",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "StandardAmmo",
+            "receiver": {
+                "map": { "x": 3395.3, "y": 2921.6 },
+                "world": { "x": -109700.0, "y": -49700.0, "z": 9410.0 }
+            },
+            "receiver_key": "receiver_0_9387445",
+            "receiver_label": "balle",
+            "requested_amount": 300,
+            "sender": {
+                "map": { "x": 1138.9, "y": 2703.2 },
+                "world": { "x": -275100.0, "y": -65700.0, "z": 1430.0 }
+            },
+            "sender_key": "sender_0_9340680",
+            "sender_label": "Cargo Dispatcher - StandardAmmo"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 1834.7, "y": 3191.8 },
+                "world": { "x": -224100.0, "y": -29900.0, "z": 3740.0 }
+            },
+            "receiver_key": "receiver_0_19474891",
+            "receiver_label": "Base Souffre 3",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2063.8, "y": 3041.7 },
+                "world": { "x": -207300.0, "y": -40900.0, "z": 5350.0 }
+            },
+            "sender_key": "sender_0_23794119",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 1861.9, "y": 871.8 },
+                "world": { "x": -222100.0, "y": -199900.0, "z": 1010.0 }
+            },
+            "receiver_key": "receiver_0_9025697",
+            "receiver_label": "Base Fer 1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1493.6, "y": 847.2 },
+                "world": { "x": -249100.0, "y": -201700.0, "z": 4930.0 }
+            },
+            "sender_key": "sender_0_8961568",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "CalciumPowder",
+            "receiver": {
+                "map": { "x": 626.0, "y": 2929.7 },
+                "world": { "x": -312700.0, "y": -49100.0, "z": 2690.0 }
+            },
+            "receiver_key": "receiver_0_11388791",
+            "receiver_label": "poudre calcium",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 847.0, "y": 2618.6 },
+                "world": { "x": -296500.0, "y": -71900.0, "z": 1360.0 }
+            },
+            "sender_key": "sender_0_11421552",
+            "sender_label": "Cargo Dispatcher - CalciumPowder"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 1861.9, "y": 850.0 },
+                "world": { "x": -222100.0, "y": -201500.0, "z": 1010.0 }
+            },
+            "receiver_key": "receiver_0_9107288",
+            "receiver_label": "Base fer 3",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1264.4, "y": 1128.4 },
+                "world": { "x": -265900.0, "y": -181100.0, "z": 6540.0 }
+            },
+            "sender_key": "sender_0_12433033",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 2263.0, "y": 907.3 },
+                "world": { "x": -192700.0, "y": -197300.0, "z": 590.0 }
+            },
+            "receiver_key": "receiver_0_13636231",
+            "receiver_label": "fer prod max1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1949.3, "y": 880.0 },
+                "world": { "x": -215700.0, "y": -199300.0, "z": 800.0 }
+            },
+            "sender_key": "sender_0_13616667",
+            "sender_label": "base fer 1 - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 1861.9, "y": 839.0 },
+                "world": { "x": -222100.0, "y": -202300.0, "z": 1010.0 }
+            },
+            "receiver_key": "receiver_0_9107598",
+            "receiver_label": "Base fer 4",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1182.6, "y": 1117.4 },
+                "world": { "x": -271900.0, "y": -181900.0, "z": 6330.0 }
+            },
+            "sender_key": "sender_0_12485302",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 1861.9, "y": 828.1 },
+                "world": { "x": -222100.0, "y": -203100.0, "z": 1010.0 }
+            },
+            "receiver_key": "receiver_0_9108000",
+            "receiver_label": "Base fer 5",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1155.3, "y": 1253.9 },
+                "world": { "x": -273900.0, "y": -171900.0, "z": 5070.0 }
+            },
+            "sender_key": "sender_0_12839431",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 2238.5, "y": 839.0 },
+                "world": { "x": -194500.0, "y": -202300.0, "z": 730.0 }
+            },
+            "receiver_key": "receiver_0_13744196",
+            "receiver_label": "fer prod max2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1962.9, "y": 855.4 },
+                "world": { "x": -214700.0, "y": -201100.0, "z": 800.0 }
+            },
+            "sender_key": "sender_0_13973724",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 2295.8, "y": 789.9 },
+                "world": { "x": -190300.0, "y": -205900.0, "z": 240.0 }
+            },
+            "receiver_key": "receiver_0_14302196",
+            "receiver_label": "fer prod max 5",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1952.0, "y": 836.3 },
+                "world": { "x": -215500.0, "y": -202500.0, "z": 730.0 }
+            },
+            "sender_key": "sender_0_14051382",
+            "sender_label": "fer prod max 5 - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 2282.1, "y": 907.3 },
+                "world": { "x": -191300.0, "y": -197300.0, "z": 590.0 }
+            },
+            "receiver_key": "receiver_0_13636667",
+            "receiver_label": "fer prod max1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1938.3, "y": 880.0 },
+                "world": { "x": -216500.0, "y": -199300.0, "z": 800.0 }
+            },
+            "sender_key": "sender_0_13616496",
+            "sender_label": "bqse fer 1 - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 2287.6, "y": 817.2 },
+                "world": { "x": -190900.0, "y": -203900.0, "z": 310.0 }
+            },
+            "receiver_key": "receiver_0_14300715",
+            "receiver_label": "fer prod max 4",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1941.1, "y": 855.4 },
+                "world": { "x": -216300.0, "y": -201100.0, "z": 800.0 }
+            },
+            "sender_key": "sender_0_13973271",
+            "sender_label": "fer prod max 4 - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 2238.5, "y": 819.9 },
+                "world": { "x": -194500.0, "y": -203700.0, "z": 730.0 }
+            },
+            "receiver_key": "receiver_0_13745036",
+            "receiver_label": "fer prod max 2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1971.1, "y": 880.0 },
+                "world": { "x": -214100.0, "y": -199300.0, "z": 800.0 }
+            },
+            "sender_key": "sender_0_13952160",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 2287.6, "y": 817.2 },
+                "world": { "x": -190900.0, "y": -203900.0, "z": 310.0 }
+            },
+            "receiver_key": "receiver_0_14300715",
+            "receiver_label": "fer prod max 4",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1952.0, "y": 855.4 },
+                "world": { "x": -215500.0, "y": -201100.0, "z": 800.0 }
+            },
+            "sender_key": "sender_0_13973509",
+            "sender_label": "fer prod max 4 - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 2238.5, "y": 819.9 },
+                "world": { "x": -194500.0, "y": -203700.0, "z": 730.0 }
+            },
+            "receiver_key": "receiver_0_13745036",
+            "receiver_label": "fer prod max 2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1960.2, "y": 880.0 },
+                "world": { "x": -214900.0, "y": -199300.0, "z": 800.0 }
+            },
+            "sender_key": "sender_0_13952040",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 2295.8, "y": 789.9 },
+                "world": { "x": -190300.0, "y": -205900.0, "z": 240.0 }
+            },
+            "receiver_key": "receiver_0_14302196",
+            "receiver_label": "fer prod max 5",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1941.1, "y": 836.3 },
+                "world": { "x": -216300.0, "y": -202500.0, "z": 660.0 }
+            },
+            "sender_key": "sender_0_14051229",
+            "sender_label": "fer prod max 5 - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 2331.2, "y": 716.2 },
+                "world": { "x": -187700.0, "y": -211300.0, "z": 380.0 }
+            },
+            "receiver_key": "receiver_0_14443944",
+            "receiver_label": "fer prod max 6",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1941.1, "y": 817.2 },
+                "world": { "x": -216300.0, "y": -203900.0, "z": 660.0 }
+            },
+            "sender_key": "sender_0_14063616",
+            "sender_label": "fer prod max 6 - TitaniumBar"
+        },
+        {
+            "item": "TitaniumBar",
+            "receiver": {
+                "map": { "x": 1861.9, "y": 817.2 },
+                "world": { "x": -222100.0, "y": -203900.0, "z": 1010.0 }
+            },
+            "receiver_key": "receiver_0_9108374",
+            "receiver_label": "Base fer 6",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 784.2, "y": 1139.3 },
+                "world": { "x": -301100.0, "y": -180300.0, "z": 4090.0 }
+            },
+            "sender_key": "sender_0_14248649",
+            "sender_label": "Cargo Dispatcher - TitaniumBar"
+        },
+        {
+            "item": "WolframPlate",
+            "receiver": {
+                "map": { "x": 666.9, "y": 3071.7 },
+                "world": { "x": -309700.0, "y": -38700.0, "z": 3390.0 }
+            },
+            "receiver_key": "receiver_0_14517713",
+            "receiver_label": "wolfram plate",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 3349.0, "y": 2856.1 },
+                "world": { "x": -113100.0, "y": -54500.0, "z": 8850.0 }
+            },
+            "sender_key": "sender_0_14539355",
+            "sender_label": "Cargo Dispatcher - WolframPlate"
+        },
+        {
+            "item": "CalciumPowder",
+            "receiver": {
+                "map": { "x": 626.0, "y": 2929.7 },
+                "world": { "x": -312700.0, "y": -49100.0, "z": 2690.0 }
+            },
+            "receiver_key": "receiver_0_11388791",
+            "receiver_label": "poudre calcium",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1938.3, "y": 2932.5 },
+                "world": { "x": -216500.0, "y": -48900.0, "z": 5000.0 }
+            },
+            "sender_key": "sender_0_16585694",
+            "sender_label": "Cargo Dispatcher - CalciumPowder"
+        },
+        {
+            "item": "WolframPowder",
+            "receiver": {
+                "map": { "x": 615.0, "y": 2948.9 },
+                "world": { "x": -313500.0, "y": -47700.0, "z": 2550.0 }
+            },
+            "receiver_key": "receiver_0_17785496",
+            "receiver_label": "poudre cuivre",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 3349.0, "y": 2872.4 },
+                "world": { "x": -113100.0, "y": -53300.0, "z": 8850.0 }
+            },
+            "sender_key": "sender_0_15500320",
+            "sender_label": "poudre cuivre - WolframPowder"
+        },
+        {
+            "item": "WolframPlate",
+            "receiver": {
+                "map": { "x": 666.9, "y": 3071.7 },
+                "world": { "x": -309700.0, "y": -38700.0, "z": 3390.0 }
+            },
+            "receiver_key": "receiver_0_14517713",
+            "receiver_label": "wolfram plate",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 3338.0, "y": 2856.1 },
+                "world": { "x": -113900.0, "y": -54500.0, "z": 8850.0 }
+            },
+            "sender_key": "sender_0_14539511",
+            "sender_label": "Cargo Dispatcher - WolframPlate"
+        },
+        {
+            "item": "CalciumPowder",
+            "receiver": {
+                "map": { "x": 626.0, "y": 2929.7 },
+                "world": { "x": -312700.0, "y": -49100.0, "z": 2690.0 }
+            },
+            "receiver_key": "receiver_0_11388791",
+            "receiver_label": "poudre calcium",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 857.9, "y": 2618.6 },
+                "world": { "x": -295700.0, "y": -71900.0, "z": 1360.0 }
+            },
+            "sender_key": "sender_0_16431150",
+            "sender_label": "Cargo Dispatcher - CalciumPowder"
+        },
+        {
+            "item": "WolframPowder",
+            "receiver": {
+                "map": { "x": 615.0, "y": 2948.9 },
+                "world": { "x": -313500.0, "y": -47700.0, "z": 2550.0 }
+            },
+            "receiver_key": "receiver_0_17785496",
+            "receiver_label": "poudre cuivre",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 3338.0, "y": 2872.4 },
+                "world": { "x": -113900.0, "y": -53300.0, "z": 8850.0 }
+            },
+            "sender_key": "sender_0_18011721",
+            "sender_label": "Cargo Dispatcher - WolframPowder"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 1823.7, "y": 3191.8 },
+                "world": { "x": -224900.0, "y": -29900.0, "z": 3810.0 }
+            },
+            "receiver_key": "receiver_0_19474483",
+            "receiver_label": "Base Souffre 2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2901.5, "y": 2386.6 },
+                "world": { "x": -145900.0, "y": -88900.0, "z": 5070.0 }
+            },
+            "sender_key": "sender_0_18952269",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "CalciteSheets",
+            "receiver": {
+                "map": { "x": 658.7, "y": 2888.8 },
+                "world": { "x": -310300.0, "y": -52100.0, "z": 2340.0 }
+            },
+            "receiver_key": "receiver_0_5265902",
+            "receiver_label": "plaque calcite",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 631.4, "y": 2656.8 },
+                "world": { "x": -312300.0, "y": -69100.0, "z": 1500.0 }
+            },
+            "sender_key": "sender_0_16690647",
+            "sender_label": "Cargo Dispatcher - CalciteSheets"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 615.0, "y": 2929.7 },
+                "world": { "x": -313500.0, "y": -49100.0, "z": 2690.0 }
+            },
+            "receiver_key": "receiver_0_25865933",
+            "receiver_label": "helium",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1932.9, "y": 2416.6 },
+                "world": { "x": -216900.0, "y": -86700.0, "z": 8990.0 }
+            },
+            "sender_key": "sender_0_20822914",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Tube",
+            "receiver": {
+                "map": { "x": 688.7, "y": 2907.9 },
+                "world": { "x": -308100.0, "y": -50700.0, "z": 2550.0 }
+            },
+            "receiver_key": "receiver_0_25888527",
+            "receiver_label": "tubes",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2254.8, "y": 754.4 },
+                "world": { "x": -193300.0, "y": -208500.0, "z": 380.0 }
+            },
+            "sender_key": "sender_0_22849250",
+            "sender_label": "Cargo Dispatcher - Tube"
+        },
+        {
+            "item": "TitaniumHousing",
+            "receiver": {
+                "map": { "x": 743.3, "y": 2815.1 },
+                "world": { "x": -304100.0, "y": -57500.0, "z": 1430.0 }
+            },
+            "receiver_key": "receiver_0_14956027",
+            "receiver_label": "Cargo Receiver",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2407.6, "y": 825.4 },
+                "world": { "x": -182100.0, "y": -203300.0, "z": 170.0 }
+            },
+            "sender_key": "sender_0_15008952",
+            "sender_label": "Cargo Dispatcher - TitaniumHousing"
+        },
+        {
+            "item": "CalciumPowder",
+            "receiver": {
+                "map": { "x": 620.5, "y": 2812.4 },
+                "world": { "x": -313100.0, "y": -57700.0, "z": 2060.0 }
+            },
+            "receiver_key": "receiver_0_25755073",
+            "receiver_label": "poudre calcium",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 795.1, "y": 2618.6 },
+                "world": { "x": -300300.0, "y": -71900.0, "z": 1430.0 }
+            },
+            "sender_key": "sender_0_25760774",
+            "sender_label": "Cargo Dispatcher - CalciumPowder"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 1823.7, "y": 3191.8 },
+                "world": { "x": -224900.0, "y": -29900.0, "z": 3810.0 }
+            },
+            "receiver_key": "receiver_0_19474483",
+            "receiver_label": "Base Souffre 2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2846.9, "y": 2362.0 },
+                "world": { "x": -149900.0, "y": -90700.0, "z": 5280.0 }
+            },
+            "sender_key": "sender_0_18953534",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 1968.4, "y": 2498.5 },
+                "world": { "x": -214300.0, "y": -80700.0, "z": 8570.0 }
+            },
+            "receiver_key": "receiver_0_20285720",
+            "receiver_label": "base helium 3",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2233.0, "y": 2899.7 },
+                "world": { "x": -194900.0, "y": -51300.0, "z": 6190.0 }
+            },
+            "sender_key": "sender_0_20023463",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "WolframPlate",
+            "receiver": {
+                "map": { "x": 623.2, "y": 2847.9 },
+                "world": { "x": -312900.0, "y": -55100.0, "z": 1920.0 }
+            },
+            "receiver_key": "receiver_0_25795769",
+            "receiver_label": "plaque de cuivre",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 784.2, "y": 2656.8 },
+                "world": { "x": -301100.0, "y": -69100.0, "z": 1360.0 }
+            },
+            "sender_key": "sender_0_25802310",
+            "sender_label": "Cargo Dispatcher - WolframPlate"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 1812.8, "y": 3191.8 },
+                "world": { "x": -225700.0, "y": -29900.0, "z": 3810.0 }
+            },
+            "receiver_key": "receiver_0_19474108",
+            "receiver_label": "Base Souffre 1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2754.1, "y": 2342.9 },
+                "world": { "x": -156700.0, "y": -92100.0, "z": 5420.0 }
+            },
+            "sender_key": "sender_0_18955083",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 1957.4, "y": 2498.5 },
+                "world": { "x": -215100.0, "y": -80700.0, "z": 8570.0 }
+            },
+            "receiver_key": "receiver_0_20286190",
+            "receiver_label": "base helium 2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2042.0, "y": 2733.2 },
+                "world": { "x": -208900.0, "y": -63500.0, "z": 6400.0 }
+            },
+            "sender_key": "sender_0_20046761",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "TitaniumSheet",
+            "receiver": {
+                "map": { "x": 656.0, "y": 2760.5 },
+                "world": { "x": -310500.0, "y": -61500.0, "z": 2060.0 }
+            },
+            "receiver_key": "receiver_0_5163384",
+            "receiver_label": "IDK plaque fer",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2325.8, "y": 839.0 },
+                "world": { "x": -188100.0, "y": -202300.0, "z": 240.0 }
+            },
+            "sender_key": "sender_0_24572352",
+            "sender_label": "Cargo Dispatcher - TitaniumSheet"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 615.0, "y": 2929.7 },
+                "world": { "x": -313500.0, "y": -49100.0, "z": 2690.0 }
+            },
+            "receiver_key": "receiver_0_25865933",
+            "receiver_label": "helium",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1932.9, "y": 2427.5 },
+                "world": { "x": -216900.0, "y": -85900.0, "z": 8640.0 }
+            },
+            "sender_key": "sender_0_20816950",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 1957.4, "y": 2498.5 },
+                "world": { "x": -215100.0, "y": -80700.0, "z": 8570.0 }
+            },
+            "receiver_key": "receiver_0_20286190",
+            "receiver_label": "base helium 2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2042.0, "y": 2722.3 },
+                "world": { "x": -208900.0, "y": -64300.0, "z": 6400.0 }
+            },
+            "sender_key": "sender_0_20047008",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 1834.7, "y": 3191.8 },
+                "world": { "x": -224100.0, "y": -29900.0, "z": 3740.0 }
+            },
+            "receiver_key": "receiver_0_19474891",
+            "receiver_label": "Base Souffre 3",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2939.7, "y": 2403.0 },
+                "world": { "x": -143100.0, "y": -87700.0, "z": 4930.0 }
+            },
+            "sender_key": "sender_0_18951368",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 1979.3, "y": 2498.5 },
+                "world": { "x": -213500.0, "y": -80700.0, "z": 8570.0 }
+            },
+            "receiver_key": "receiver_0_20285274",
+            "receiver_label": "base helium 4",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1414.5, "y": 372.3 },
+                "world": { "x": -254900.0, "y": -236500.0, "z": 1010.0 }
+            },
+            "sender_key": "sender_0_20574536",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 1812.8, "y": 3191.8 },
+                "world": { "x": -225700.0, "y": -29900.0, "z": 3810.0 }
+            },
+            "receiver_key": "receiver_0_19474108",
+            "receiver_label": "Base Souffre 1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2726.9, "y": 2315.6 },
+                "world": { "x": -158700.0, "y": -94100.0, "z": 5700.0 }
+            },
+            "sender_key": "sender_0_18955920",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 1990.2, "y": 2498.5 },
+                "world": { "x": -212700.0, "y": -80700.0, "z": 8570.0 }
+            },
+            "receiver_key": "receiver_0_20284948",
+            "receiver_label": "base helium 5",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1414.5, "y": 350.5 },
+                "world": { "x": -254900.0, "y": -238100.0, "z": 1010.0 }
+            },
+            "sender_key": "sender_0_20575811",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 1946.5, "y": 2498.5 },
+                "world": { "x": -215900.0, "y": -80700.0, "z": 8710.0 }
+            },
+            "receiver_key": "receiver_0_20312368",
+            "receiver_label": "base helium 1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2042.0, "y": 2711.4 },
+                "world": { "x": -208900.0, "y": -65100.0, "z": 6400.0 }
+            },
+            "sender_key": "sender_0_20047285",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 1990.2, "y": 2498.5 },
+                "world": { "x": -212700.0, "y": -80700.0, "z": 8570.0 }
+            },
+            "receiver_key": "receiver_0_20284948",
+            "receiver_label": "base helium 5",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1414.5, "y": 361.4 },
+                "world": { "x": -254900.0, "y": -237300.0, "z": 1010.0 }
+            },
+            "sender_key": "sender_0_20575341",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 1979.3, "y": 2498.5 },
+                "world": { "x": -213500.0, "y": -80700.0, "z": 8570.0 }
+            },
+            "receiver_key": "receiver_0_20285274",
+            "receiver_label": "base helium 4",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1414.5, "y": 383.2 },
+                "world": { "x": -254900.0, "y": -235700.0, "z": 1010.0 }
+            },
+            "sender_key": "sender_0_20574136",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 587.8, "y": 2812.4 },
+                "world": { "x": -315500.0, "y": -57700.0, "z": 1920.0 }
+            },
+            "receiver_key": "receiver_0_25412689",
+            "receiver_label": "HE princi",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1952.0, "y": 2435.7 },
+                "world": { "x": -215500.0, "y": -85300.0, "z": 8640.0 }
+            },
+            "sender_key": "sender_0_20831107",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 587.8, "y": 2812.4 },
+                "world": { "x": -315500.0, "y": -57700.0, "z": 1920.0 }
+            },
+            "receiver_key": "receiver_0_25412689",
+            "receiver_label": "HE princi",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1984.7, "y": 2435.7 },
+                "world": { "x": -213100.0, "y": -85300.0, "z": 8780.0 }
+            },
+            "sender_key": "sender_0_20866403",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 587.8, "y": 2812.4 },
+                "world": { "x": -315500.0, "y": -57700.0, "z": 1920.0 }
+            },
+            "receiver_key": "receiver_0_25412689",
+            "receiver_label": "HE princi",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1932.9, "y": 2438.5 },
+                "world": { "x": -216900.0, "y": -85100.0, "z": 8430.0 }
+            },
+            "sender_key": "sender_0_20816582",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 1946.5, "y": 2498.5 },
+                "world": { "x": -215900.0, "y": -80700.0, "z": 8710.0 }
+            },
+            "receiver_key": "receiver_0_20312368",
+            "receiver_label": "base helium 1",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2042.0, "y": 2700.5 },
+                "world": { "x": -208900.0, "y": -65900.0, "z": 6540.0 }
+            },
+            "sender_key": "sender_0_20047595",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 587.8, "y": 2812.4 },
+                "world": { "x": -315500.0, "y": -57700.0, "z": 1920.0 }
+            },
+            "receiver_key": "receiver_0_25412689",
+            "receiver_label": "HE princi",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2001.1, "y": 2435.7 },
+                "world": { "x": -211900.0, "y": -85300.0, "z": 8710.0 }
+            },
+            "sender_key": "sender_0_20875354",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "Helium3",
+            "receiver": {
+                "map": { "x": 1968.4, "y": 2498.5 },
+                "world": { "x": -214300.0, "y": -80700.0, "z": 8570.0 }
+            },
+            "receiver_key": "receiver_0_20285720",
+            "receiver_label": "base helium 3",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2233.0, "y": 2929.7 },
+                "world": { "x": -194900.0, "y": -49100.0, "z": 6190.0 }
+            },
+            "sender_key": "sender_0_20022735",
+            "sender_label": "Cargo Dispatcher - Helium3"
+        },
+        {
+            "item": "CalciteSheets",
+            "receiver": {
+                "map": { "x": 658.7, "y": 2888.8 },
+                "world": { "x": -310300.0, "y": -52100.0, "z": 2340.0 }
+            },
+            "receiver_key": "receiver_0_5265902",
+            "receiver_label": "plaque calcite",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1984.7, "y": 2943.4 },
+                "world": { "x": -213100.0, "y": -48100.0, "z": 5000.0 }
+            },
+            "sender_key": "sender_0_23760113",
+            "sender_label": "Cargo Dispatcher - CalciteSheets"
+        },
+        {
+            "item": "CalciteSheets",
+            "receiver": {
+                "map": { "x": 658.7, "y": 2888.8 },
+                "world": { "x": -310300.0, "y": -52100.0, "z": 2340.0 }
+            },
+            "receiver_key": "receiver_0_5265902",
+            "receiver_label": "plaque calcite",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1984.7, "y": 2932.5 },
+                "world": { "x": -213100.0, "y": -48900.0, "z": 5000.0 }
+            },
+            "sender_key": "sender_0_23761091",
+            "sender_label": "Cargo Dispatcher - CalciteSheets"
+        },
+        {
+            "item": "WolframPlate",
+            "receiver": {
+                "map": { "x": 623.2, "y": 2847.9 },
+                "world": { "x": -312900.0, "y": -55100.0, "z": 1920.0 }
+            },
+            "receiver_key": "receiver_0_25795769",
+            "receiver_label": "plaque de cuivre",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 784.2, "y": 2673.2 },
+                "world": { "x": -301100.0, "y": -67900.0, "z": 1360.0 }
+            },
+            "sender_key": "sender_0_25804589",
+            "sender_label": "Cargo Dispatcher - WolframPlate"
+        },
+        {
+            "item": "Tube",
+            "receiver": {
+                "map": { "x": 688.7, "y": 2907.9 },
+                "world": { "x": -308100.0, "y": -50700.0, "z": 2550.0 }
+            },
+            "receiver_key": "receiver_0_25888527",
+            "receiver_label": "tubes",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2254.8, "y": 743.5 },
+                "world": { "x": -193300.0, "y": -209300.0, "z": 380.0 }
+            },
+            "sender_key": "sender_0_22845265",
+            "sender_label": "Cargo Dispatcher - Tube"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 754.2, "y": 3011.6 },
+                "world": { "x": -303300.0, "y": -43100.0, "z": 3880.0 }
+            },
+            "receiver_key": "receiver_0_8475204",
+            "receiver_label": "soufre2",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 1791.0, "y": 3260.0 },
+                "world": { "x": -227300.0, "y": -24900.0, "z": 3880.0 }
+            },
+            "sender_key": "sender_0_21052005",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "TitaniumSheet",
+            "receiver": {
+                "map": { "x": 656.0, "y": 2760.5 },
+                "world": { "x": -310500.0, "y": -61500.0, "z": 2060.0 }
+            },
+            "receiver_key": "receiver_0_5163384",
+            "receiver_label": "IDK plaque fer",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2336.7, "y": 839.0 },
+                "world": { "x": -187300.0, "y": -202300.0, "z": 240.0 }
+            },
+            "sender_key": "sender_0_24569877",
+            "sender_label": "Cargo Dispatcher - TitaniumSheet"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 1845.6, "y": 3191.8 },
+                "world": { "x": -223300.0, "y": -29900.0, "z": 3740.0 }
+            },
+            "receiver_key": "receiver_0_19475353",
+            "receiver_label": "Base Souffre 4",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2050.2, "y": 3060.8 },
+                "world": { "x": -208300.0, "y": -39500.0, "z": 5210.0 }
+            },
+            "sender_key": "sender_0_24392419",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "Sulphur",
+            "receiver": {
+                "map": { "x": 1845.6, "y": 3191.8 },
+                "world": { "x": -223300.0, "y": -29900.0, "z": 3740.0 }
+            },
+            "receiver_key": "receiver_0_19475353",
+            "receiver_label": "Base Souffre 4",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 2012.0, "y": 3093.5 },
+                "world": { "x": -211100.0, "y": -37100.0, "z": 4580.0 }
+            },
+            "sender_key": "sender_0_24393920",
+            "sender_label": "Cargo Dispatcher - Sulphur"
+        },
+        {
+            "item": "CalciumPowder",
+            "receiver": {
+                "map": { "x": 620.5, "y": 2812.4 },
+                "world": { "x": -313100.0, "y": -57700.0, "z": 2060.0 }
+            },
+            "receiver_key": "receiver_0_25755073",
+            "receiver_label": "poudre calcium",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 806.0, "y": 2618.6 },
+                "world": { "x": -299500.0, "y": -71900.0, "z": 1430.0 }
+            },
+            "sender_key": "sender_0_25760650",
+            "sender_label": "Cargo Dispatcher - CalciumPowder"
+        },
+        {
+            "item": "WolframWire",
+            "receiver": {
+                "map": { "x": 699.6, "y": 2907.9 },
+                "world": { "x": -307300.0, "y": -50700.0, "z": 2550.0 }
+            },
+            "receiver_key": "receiver_0_25890955",
+            "receiver_label": "fils",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 3305.3, "y": 2888.8 },
+                "world": { "x": -116300.0, "y": -52100.0, "z": 8850.0 }
+            },
+            "sender_key": "sender_0_25914971",
+            "sender_label": "Cargo Dispatcher - WolframWire"
+        },
+        {
+            "item": "WolframWire",
+            "receiver": {
+                "map": { "x": 702.3, "y": 2741.4 },
+                "world": { "x": -307100.0, "y": -62900.0, "z": 1500.0 }
+            },
+            "receiver_key": "receiver_0_25751044",
+            "receiver_label": "fils tungstene",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 827.9, "y": 2667.7 },
+                "world": { "x": -297900.0, "y": -68300.0, "z": 1220.0 }
+            },
+            "sender_key": "sender_0_25748318",
+            "sender_label": "Cargo Dispatcher - WolframWire"
+        },
+        {
+            "item": "WolframWire",
+            "receiver": {
+                "map": { "x": 702.3, "y": 2741.4 },
+                "world": { "x": -307100.0, "y": -62900.0, "z": 1500.0 }
+            },
+            "receiver_key": "receiver_0_25751044",
+            "receiver_label": "fils tungstene",
+            "requested_amount": 100,
+            "sender": {
+                "map": { "x": 844.2, "y": 2667.7 },
+                "world": { "x": -296700.0, "y": -68300.0, "z": 1220.0 }
+            },
+            "sender_key": "sender_0_25748301",
+            "sender_label": "Cargo Dispatcher - WolframWire"
+        }
+    ],
+    "counts": {
+        "connections": 86,
+        "markers": 215,
+        "players": 1,
+        "receivers": 61,
+        "senders": 154,
+        "teleporters": 18
+    },
+    "generation": 117,
+    "map": {
+        "content_height": 3471.0,
+        "content_width": 3547.0,
+        "dst_x1": 380.0,
+        "dst_x2": 3927.0,
+        "dst_y1": 567.0,
+        "dst_y2": 4038.0,
+        "image_height": 5120,
+        "image_width": 4352,
+        "src_x1": -358583.0,
+        "src_x2": -98583.0,
+        "src_y1": -263782.0,
+        "src_y2": -9439.0
+    },
+    "markers": [
+        {
+            "display_name": "fils",
+            "kind": "receiver",
+            "label": "fils",
+            "map": { "x": 699.6, "y": 2907.9 },
+            "resource": "WolframWire",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_25890955",
+            "world": { "x": -307300.0, "y": -50700.0, "z": 2550.0 }
+        },
+        {
+            "display_name": "soufre",
+            "kind": "receiver",
+            "label": "soufre",
+            "map": { "x": 636.9, "y": 2973.4 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_4677408",
+            "world": { "x": -311900.0, "y": -45900.0, "z": 2620.0 }
+        },
+        {
+            "display_name": "R Tuyaux fer 2",
+            "kind": "receiver",
+            "label": "R Tuyaux fer 2",
+            "map": { "x": 246.7, "y": 2171.0 },
+            "resource": "",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_1242635",
+            "world": { "x": -340500.0, "y": -104700.0, "z": 1850.0 }
+        },
+        {
+            "display_name": "R Tuyaux fer 1",
+            "kind": "receiver",
+            "label": "R Tuyaux fer 1",
+            "map": { "x": 265.8, "y": 2181.9 },
+            "resource": "",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_1235990",
+            "world": { "x": -339100.0, "y": -103900.0, "z": 1850.0 }
+        },
+        {
+            "display_name": "RB T1 Fer 1",
+            "kind": "receiver",
+            "label": "RB T1 Fer 1",
+            "map": { "x": 735.1, "y": 2632.2 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_2446252",
+            "world": { "x": -304700.0, "y": -70900.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "RB T1 FER 2",
+            "kind": "receiver",
+            "label": "RB T1 FER 2",
+            "map": { "x": 683.2, "y": 2632.2 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_2465426",
+            "world": { "x": -308500.0, "y": -70900.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "RB T1 Cuivre 1",
+            "kind": "receiver",
+            "label": "RB T1 Cuivre 1",
+            "map": { "x": 778.7, "y": 2632.2 },
+            "resource": "WolframBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_2608215",
+            "world": { "x": -301500.0, "y": -70900.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "RB T1 Cuivre 2",
+            "kind": "receiver",
+            "label": "RB T1 Cuivre 2",
+            "map": { "x": 830.6, "y": 2632.2 },
+            "resource": "WolframBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_2614912",
+            "world": { "x": -297700.0, "y": -70900.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "RB T1 Calcaire 1",
+            "kind": "receiver",
+            "label": "RB T1 Calcaire 1",
+            "map": { "x": 778.7, "y": 2594.0 },
+            "resource": "CalciumBlock",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_2704973",
+            "world": { "x": -301500.0, "y": -73700.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "RB T1 FER 3",
+            "kind": "receiver",
+            "label": "RB T1 FER 3",
+            "map": { "x": 699.6, "y": 2594.0 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_2682076",
+            "world": { "x": -307300.0, "y": -73700.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "RB T1 Cuivre 3",
+            "kind": "receiver",
+            "label": "RB T1 Cuivre 3",
+            "map": { "x": 882.4, "y": 2632.2 },
+            "resource": "WolframBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_2733431",
+            "world": { "x": -293900.0, "y": -70900.0, "z": 1570.0 }
+        },
+        {
+            "display_name": "RB T1 CALCAIRE 2",
+            "kind": "receiver",
+            "label": "RB T1 CALCAIRE 2",
+            "map": { "x": 814.2, "y": 2596.8 },
+            "resource": "CalciumBlock",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_2735706",
+            "world": { "x": -298900.0, "y": -73500.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "IDK plaque fer",
+            "kind": "receiver",
+            "label": "IDK plaque fer",
+            "map": { "x": 656.0, "y": 2760.5 },
+            "resource": "TitaniumSheet",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_5163384",
+            "world": { "x": -310500.0, "y": -61500.0, "z": 2060.0 }
+        },
+        {
+            "display_name": "tige-fer",
+            "kind": "receiver",
+            "label": "tige-fer",
+            "map": { "x": 686.0, "y": 2760.5 },
+            "resource": "TitaniumRod",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_4903910",
+            "world": { "x": -308300.0, "y": -61500.0, "z": 2060.0 }
+        },
+        {
+            "display_name": "poudre tung",
+            "kind": "receiver",
+            "label": "poudre tung",
+            "map": { "x": 702.3, "y": 2891.5 },
+            "resource": "WolframPowder",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_5430859",
+            "world": { "x": -307100.0, "y": -51900.0, "z": 2480.0 }
+        },
+        {
+            "display_name": "plaque calcite",
+            "kind": "receiver",
+            "label": "plaque calcite",
+            "map": { "x": 658.7, "y": 2888.8 },
+            "resource": "CalciteSheets",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_5265902",
+            "world": { "x": -310300.0, "y": -52100.0, "z": 2340.0 }
+        },
+        {
+            "display_name": "contruction v2",
+            "kind": "receiver",
+            "label": "contruction v2",
+            "map": { "x": 443.1, "y": 2839.7 },
+            "resource": "IntermediateBuildingMaterial",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_5863563",
+            "world": { "x": -326100.0, "y": -55700.0, "z": 2340.0 }
+        },
+        {
+            "display_name": "soufre2",
+            "kind": "receiver",
+            "label": "soufre2",
+            "map": { "x": 754.2, "y": 3011.6 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_8475204",
+            "world": { "x": -303300.0, "y": -43100.0, "z": 3880.0 }
+        },
+        {
+            "display_name": "HE2",
+            "kind": "receiver",
+            "label": "HE2",
+            "map": { "x": 765.1, "y": 3022.5 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_8477484",
+            "world": { "x": -302500.0, "y": -42300.0, "z": 4020.0 }
+        },
+        {
+            "display_name": "Base Souffre 3",
+            "kind": "receiver",
+            "label": "Base Souffre 3",
+            "map": { "x": 1834.7, "y": 3191.8 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_19474891",
+            "world": { "x": -224100.0, "y": -29900.0, "z": 3740.0 }
+        },
+        {
+            "display_name": "Base fer 5",
+            "kind": "receiver",
+            "label": "Base fer 5",
+            "map": { "x": 1861.9, "y": 828.1 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_9108000",
+            "world": { "x": -222100.0, "y": -203100.0, "z": 1010.0 }
+        },
+        {
+            "display_name": "tube_fer",
+            "kind": "receiver",
+            "label": "tube_fer",
+            "map": { "x": 724.2, "y": 3052.6 },
+            "resource": "",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_9219859",
+            "world": { "x": -305500.0, "y": -40100.0, "z": 3670.0 }
+        },
+        {
+            "display_name": "Base fer 6",
+            "kind": "receiver",
+            "label": "Base fer 6",
+            "map": { "x": 1861.9, "y": 817.2 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_9108374",
+            "world": { "x": -222100.0, "y": -203900.0, "z": 1010.0 }
+        },
+        {
+            "display_name": "Base fer 3",
+            "kind": "receiver",
+            "label": "Base fer 3",
+            "map": { "x": 1861.9, "y": 850.0 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_9107288",
+            "world": { "x": -222100.0, "y": -201500.0, "z": 1010.0 }
+        },
+        {
+            "display_name": "Base fer 2",
+            "kind": "receiver",
+            "label": "Base fer 2",
+            "map": { "x": 1861.9, "y": 860.9 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_9075232",
+            "world": { "x": -222100.0, "y": -200700.0, "z": 1010.0 }
+        },
+        {
+            "display_name": "Base fer 4",
+            "kind": "receiver",
+            "label": "Base fer 4",
+            "map": { "x": 1861.9, "y": 839.0 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_9107598",
+            "world": { "x": -222100.0, "y": -202300.0, "z": 1010.0 }
+        },
+        {
+            "display_name": "balle",
+            "kind": "receiver",
+            "label": "balle",
+            "map": { "x": 3395.3, "y": 2921.6 },
+            "resource": "StandardAmmo",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_9387445",
+            "world": { "x": -109700.0, "y": -49700.0, "z": 9410.0 }
+        },
+        {
+            "display_name": "Base Fer 1",
+            "kind": "receiver",
+            "label": "Base Fer 1",
+            "map": { "x": 1861.9, "y": 871.8 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_9025697",
+            "world": { "x": -222100.0, "y": -199900.0, "z": 1010.0 }
+        },
+        {
+            "display_name": "poudre calcium",
+            "kind": "receiver",
+            "label": "poudre calcium",
+            "map": { "x": 626.0, "y": 2929.7 },
+            "resource": "CalciumPowder",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_11388791",
+            "world": { "x": -312700.0, "y": -49100.0, "z": 2690.0 }
+        },
+        {
+            "display_name": "tubes",
+            "kind": "receiver",
+            "label": "tubes",
+            "map": { "x": 688.7, "y": 2907.9 },
+            "resource": "Tube",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_25888527",
+            "world": { "x": -308100.0, "y": -50700.0, "z": 2550.0 }
+        },
+        {
+            "display_name": "fer prod max1",
+            "kind": "receiver",
+            "label": "fer prod max1",
+            "map": { "x": 2282.1, "y": 907.3 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_13636667",
+            "world": { "x": -191300.0, "y": -197300.0, "z": 590.0 }
+        },
+        {
+            "display_name": "fer prod max1",
+            "kind": "receiver",
+            "label": "fer prod max1",
+            "map": { "x": 2263.0, "y": 907.3 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_13636231",
+            "world": { "x": -192700.0, "y": -197300.0, "z": 590.0 }
+        },
+        {
+            "display_name": "fer prod max 2",
+            "kind": "receiver",
+            "label": "fer prod max 2",
+            "map": { "x": 2238.5, "y": 819.9 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_13745036",
+            "world": { "x": -194500.0, "y": -203700.0, "z": 730.0 }
+        },
+        {
+            "display_name": "fer prod max 3",
+            "kind": "receiver",
+            "label": "fer prod max 3",
+            "map": { "x": 2342.2, "y": 880.0 },
+            "resource": "",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_13843955",
+            "world": { "x": -186900.0, "y": -199300.0, "z": 30.0 }
+        },
+        {
+            "display_name": "fer prod max2",
+            "kind": "receiver",
+            "label": "fer prod max2",
+            "map": { "x": 2238.5, "y": 839.0 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_13744196",
+            "world": { "x": -194500.0, "y": -202300.0, "z": 730.0 }
+        },
+        {
+            "display_name": "fer prod max 4",
+            "kind": "receiver",
+            "label": "fer prod max 4",
+            "map": { "x": 2287.6, "y": 817.2 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_14300715",
+            "world": { "x": -190900.0, "y": -203900.0, "z": 310.0 }
+        },
+        {
+            "display_name": "fer prod max 5",
+            "kind": "receiver",
+            "label": "fer prod max 5",
+            "map": { "x": 2295.8, "y": 789.9 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_14302196",
+            "world": { "x": -190300.0, "y": -205900.0, "z": 240.0 }
+        },
+        {
+            "display_name": "base helium 3",
+            "kind": "receiver",
+            "label": "base helium 3",
+            "map": { "x": 1968.4, "y": 2498.5 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_20285720",
+            "world": { "x": -214300.0, "y": -80700.0, "z": 8570.0 }
+        },
+        {
+            "display_name": "fer prod max 6",
+            "kind": "receiver",
+            "label": "fer prod max 6",
+            "map": { "x": 2331.2, "y": 716.2 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_14443944",
+            "world": { "x": -187700.0, "y": -211300.0, "z": 380.0 }
+        },
+        {
+            "display_name": "wolfram plate",
+            "kind": "receiver",
+            "label": "wolfram plate",
+            "map": { "x": 666.9, "y": 3071.7 },
+            "resource": "WolframPlate",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_14517713",
+            "world": { "x": -309700.0, "y": -38700.0, "z": 3390.0 }
+        },
+        {
+            "display_name": "Cargo Receiver",
+            "kind": "receiver",
+            "label": "Cargo Receiver",
+            "map": { "x": 743.3, "y": 2815.1 },
+            "resource": "TitaniumHousing",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_14956027",
+            "world": { "x": -304100.0, "y": -57500.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "Base Souffre 2",
+            "kind": "receiver",
+            "label": "Base Souffre 2",
+            "map": { "x": 1823.7, "y": 3191.8 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_19474483",
+            "world": { "x": -224900.0, "y": -29900.0, "z": 3810.0 }
+        },
+        {
+            "display_name": "Base Souffre 8",
+            "kind": "receiver",
+            "label": "Base Souffre 8",
+            "map": { "x": 1889.2, "y": 3191.8 },
+            "resource": "",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_19485675",
+            "world": { "x": -220100.0, "y": -29900.0, "z": 3740.0 }
+        },
+        {
+            "display_name": "poudre cuivre",
+            "kind": "receiver",
+            "label": "poudre cuivre",
+            "map": { "x": 615.0, "y": 2948.9 },
+            "resource": "WolframPowder",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_17785496",
+            "world": { "x": -313500.0, "y": -47700.0, "z": 2550.0 }
+        },
+        {
+            "display_name": "Base Souffre 1",
+            "kind": "receiver",
+            "label": "Base Souffre 1",
+            "map": { "x": 1812.8, "y": 3191.8 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_19474108",
+            "world": { "x": -225700.0, "y": -29900.0, "z": 3810.0 }
+        },
+        {
+            "display_name": "base helium 5",
+            "kind": "receiver",
+            "label": "base helium 5",
+            "map": { "x": 1990.2, "y": 2498.5 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_20284948",
+            "world": { "x": -212700.0, "y": -80700.0, "z": 8570.0 }
+        },
+        {
+            "display_name": "Base Souffre 5",
+            "kind": "receiver",
+            "label": "Base Souffre 5",
+            "map": { "x": 1856.5, "y": 3191.8 },
+            "resource": "",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_19475691",
+            "world": { "x": -222500.0, "y": -29900.0, "z": 3740.0 }
+        },
+        {
+            "display_name": "Base Souffre 9",
+            "kind": "receiver",
+            "label": "Base Souffre 9",
+            "map": { "x": 1900.1, "y": 3191.8 },
+            "resource": "",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_19486127",
+            "world": { "x": -219300.0, "y": -29900.0, "z": 3950.0 }
+        },
+        {
+            "display_name": "Base Souffre 7",
+            "kind": "receiver",
+            "label": "Base Souffre 7",
+            "map": { "x": 1878.3, "y": 3191.8 },
+            "resource": "",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_19485385",
+            "world": { "x": -220900.0, "y": -29900.0, "z": 3740.0 }
+        },
+        {
+            "display_name": "Base Souffre 10",
+            "kind": "receiver",
+            "label": "Base Souffre 10",
+            "map": { "x": 1911.1, "y": 3191.8 },
+            "resource": "",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_19486468",
+            "world": { "x": -218500.0, "y": -29900.0, "z": 4020.0 }
+        },
+        {
+            "display_name": "base helium 2",
+            "kind": "receiver",
+            "label": "base helium 2",
+            "map": { "x": 1957.4, "y": 2498.5 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_20286190",
+            "world": { "x": -215100.0, "y": -80700.0, "z": 8570.0 }
+        },
+        {
+            "display_name": "base helium 1",
+            "kind": "receiver",
+            "label": "base helium 1",
+            "map": { "x": 1946.5, "y": 2498.5 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_20312368",
+            "world": { "x": -215900.0, "y": -80700.0, "z": 8710.0 }
+        },
+        {
+            "display_name": "base helium 6",
+            "kind": "receiver",
+            "label": "base helium 6",
+            "map": { "x": 2001.1, "y": 2498.5 },
+            "resource": "",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_20284430",
+            "world": { "x": -211900.0, "y": -80700.0, "z": 8570.0 }
+        },
+        {
+            "display_name": "Base Souffre 6",
+            "kind": "receiver",
+            "label": "Base Souffre 6",
+            "map": { "x": 1867.4, "y": 3191.8 },
+            "resource": "",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_19485073",
+            "world": { "x": -221700.0, "y": -29900.0, "z": 3740.0 }
+        },
+        {
+            "display_name": "Base Souffre 4",
+            "kind": "receiver",
+            "label": "Base Souffre 4",
+            "map": { "x": 1845.6, "y": 3191.8 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_19475353",
+            "world": { "x": -223300.0, "y": -29900.0, "z": 3740.0 }
+        },
+        {
+            "display_name": "base helium 4",
+            "kind": "receiver",
+            "label": "base helium 4",
+            "map": { "x": 1979.3, "y": 2498.5 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_20285274",
+            "world": { "x": -213500.0, "y": -80700.0, "z": 8570.0 }
+        },
+        {
+            "display_name": "fils tungstene",
+            "kind": "receiver",
+            "label": "fils tungstene",
+            "map": { "x": 702.3, "y": 2741.4 },
+            "resource": "WolframWire",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_25751044",
+            "world": { "x": -307100.0, "y": -62900.0, "z": 1500.0 }
+        },
+        {
+            "display_name": "poudre calcium",
+            "kind": "receiver",
+            "label": "poudre calcium",
+            "map": { "x": 620.5, "y": 2812.4 },
+            "resource": "CalciumPowder",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_25755073",
+            "world": { "x": -313100.0, "y": -57700.0, "z": 2060.0 }
+        },
+        {
+            "display_name": "HE princi",
+            "kind": "receiver",
+            "label": "HE princi",
+            "map": { "x": 587.8, "y": 2812.4 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_25412689",
+            "world": { "x": -315500.0, "y": -57700.0, "z": 1920.0 }
+        },
+        {
+            "display_name": "helium",
+            "kind": "receiver",
+            "label": "helium",
+            "map": { "x": 615.0, "y": 2929.7 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_25865933",
+            "world": { "x": -313500.0, "y": -49100.0, "z": 2690.0 }
+        },
+        {
+            "display_name": "plaque de cuivre",
+            "kind": "receiver",
+            "label": "plaque de cuivre",
+            "map": { "x": 623.2, "y": 2847.9 },
+            "resource": "WolframPlate",
+            "source": "package_transport_replicator.receiver",
+            "unique_key": "receiver_0_25795769",
+            "world": { "x": -312900.0, "y": -55100.0, "z": 1920.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 617.8, "y": 1827.1 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1151525",
+            "world": { "x": -313300.0, "y": -129900.0, "z": 6820.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframPlate",
+            "map": { "x": 404.9, "y": 2236.5 },
+            "resource": "WolframPlate",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1425317",
+            "world": { "x": -328900.0, "y": -99900.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 448.6, "y": 1608.7 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1156638",
+            "world": { "x": -325700.0, "y": -145900.0, "z": 5420.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 650.5, "y": 1794.3 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1154391",
+            "world": { "x": -310900.0, "y": -132300.0, "z": 6190.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 415.9, "y": 1608.7 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1156759",
+            "world": { "x": -328100.0, "y": -145900.0, "z": 5700.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 666.9, "y": 1794.3 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1153289",
+            "world": { "x": -309700.0, "y": -132300.0, "z": 5840.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Stabilizer",
+            "map": { "x": 306.7, "y": 2143.7 },
+            "resource": "Stabilizer",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1437786",
+            "world": { "x": -336100.0, "y": -106700.0, "z": 2060.0 }
+        },
+        {
+            "display_name": "Hellium 2",
+            "kind": "sender",
+            "label": "Hellium 2 - Helium3",
+            "map": { "x": 1231.7, "y": 1977.2 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1126527",
+            "world": { "x": -268300.0, "y": -118900.0, "z": 5980.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframBar",
+            "map": { "x": 1394.0, "y": 1949.9 },
+            "resource": "WolframBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_2889935",
+            "world": { "x": -256400.0, "y": -120900.0, "z": 4930.0 }
+        },
+        {
+            "display_name": "Hellium 1",
+            "kind": "sender",
+            "label": "Hellium 1 - Helium3",
+            "map": { "x": 1242.6, "y": 1977.2 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1096802",
+            "world": { "x": -267500.0, "y": -118900.0, "z": 5980.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 2803.3, "y": 3021.2 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1849712",
+            "world": { "x": -153100.0, "y": -42400.0, "z": 7730.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 2806.0, "y": 2952.9 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1866011",
+            "world": { "x": -152900.0, "y": -47400.0, "z": 7730.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 2803.3, "y": 2980.2 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1849535",
+            "world": { "x": -153100.0, "y": -45400.0, "z": 7730.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 3002.4, "y": 2987.1 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1905146",
+            "world": { "x": -138500.0, "y": -44900.0, "z": 7100.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 3002.4, "y": 2970.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1927057",
+            "world": { "x": -138500.0, "y": -46100.0, "z": 7100.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 2997.0, "y": 3089.4 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1946190",
+            "world": { "x": -138900.0, "y": -37400.0, "z": 7030.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframBar",
+            "map": { "x": 1359.9, "y": 1944.4 },
+            "resource": "WolframBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_2889974",
+            "world": { "x": -258900.0, "y": -121300.0, "z": 4930.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 2994.3, "y": 3114.0 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_1946768",
+            "world": { "x": -139100.0, "y": -35600.0, "z": 7030.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframBar",
+            "map": { "x": 1406.3, "y": 1964.9 },
+            "resource": "WolframBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_2890415",
+            "world": { "x": -255500.0, "y": -119800.0, "z": 4930.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1406.3, "y": 2000.4 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_2890436",
+            "world": { "x": -255500.0, "y": -117200.0, "z": 4930.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciumBlock",
+            "map": { "x": 3398.1, "y": 3685.8 },
+            "resource": "CalciumBlock",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_3490283",
+            "world": { "x": -109500.0, "y": 6300.0, "z": 13680.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciumBlock",
+            "map": { "x": 3376.2, "y": 3647.6 },
+            "resource": "CalciumBlock",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_3497644",
+            "world": { "x": -111100.0, "y": 3500.0, "z": 13120.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciumBlock",
+            "map": { "x": 3343.5, "y": 3661.2 },
+            "resource": "CalciumBlock",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_3503144",
+            "world": { "x": -113500.0, "y": 4500.0, "z": 12140.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframWire",
+            "map": { "x": 3305.3, "y": 2905.2 },
+            "resource": "WolframWire",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_25917227",
+            "world": { "x": -116300.0, "y": -50900.0, "z": 8850.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 2072.0, "y": 2992.5 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_4371554",
+            "world": { "x": -206700.0, "y": -44500.0, "z": 5070.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumSheet",
+            "map": { "x": 2819.6, "y": 2995.3 },
+            "resource": "TitaniumSheet",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_4429262",
+            "world": { "x": -151900.0, "y": -44300.0, "z": 7730.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 2072.0, "y": 2981.6 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_4370986",
+            "world": { "x": -206700.0, "y": -45300.0, "z": 5070.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 2072.0, "y": 3003.4 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_4692519",
+            "world": { "x": -206700.0, "y": -43700.0, "z": 5070.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumSheet",
+            "map": { "x": 2770.5, "y": 2872.4 },
+            "resource": "TitaniumSheet",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_4469526",
+            "world": { "x": -155500.0, "y": -53300.0, "z": 8010.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumRod",
+            "map": { "x": 2909.7, "y": 2935.2 },
+            "resource": "TitaniumRod",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_4499562",
+            "world": { "x": -145300.0, "y": -48700.0, "z": 6610.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciteSheets",
+            "map": { "x": 631.4, "y": 2645.9 },
+            "resource": "CalciteSheets",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_5243411",
+            "world": { "x": -312300.0, "y": -69900.0, "z": 1500.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframPowder",
+            "map": { "x": 871.5, "y": 2675.9 },
+            "resource": "WolframPowder",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_5482437",
+            "world": { "x": -294700.0, "y": -67700.0, "z": 1570.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframPowder",
+            "map": { "x": 882.4, "y": 2675.9 },
+            "resource": "WolframPowder",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_5443988",
+            "world": { "x": -293900.0, "y": -67700.0, "z": 1570.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - IntermediateBuildingMaterial",
+            "map": { "x": 2620.5, "y": 825.4 },
+            "resource": "IntermediateBuildingMaterial",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_5656873",
+            "world": { "x": -166500.0, "y": -203300.0, "z": 730.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 1703.7, "y": 882.7 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_7605235",
+            "world": { "x": -233700.0, "y": -199100.0, "z": 1500.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1962.9, "y": 798.1 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14076473",
+            "world": { "x": -214700.0, "y": -205300.0, "z": 380.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 1714.6, "y": 882.7 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_7605689",
+            "world": { "x": -232900.0, "y": -199100.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 1520.9, "y": 844.5 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_8963775",
+            "world": { "x": -247100.0, "y": -201900.0, "z": 4300.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - StandardAmmo",
+            "map": { "x": 1138.9, "y": 2703.2 },
+            "resource": "StandardAmmo",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_9340680",
+            "world": { "x": -275100.0, "y": -65700.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 2063.8, "y": 3041.7 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_23794119",
+            "world": { "x": -207300.0, "y": -40900.0, "z": 5350.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 1493.6, "y": 847.2 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_8961568",
+            "world": { "x": -249100.0, "y": -201700.0, "z": 4930.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciumPowder",
+            "map": { "x": 847.0, "y": 2618.6 },
+            "resource": "CalciumPowder",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_11421552",
+            "world": { "x": -296500.0, "y": -71900.0, "z": 1360.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 1264.4, "y": 1128.4 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_12433033",
+            "world": { "x": -265900.0, "y": -181100.0, "z": 6540.0 }
+        },
+        {
+            "display_name": "base fer 1",
+            "kind": "sender",
+            "label": "base fer 1 - TitaniumBar",
+            "map": { "x": 1949.3, "y": 880.0 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_13616667",
+            "world": { "x": -215700.0, "y": -199300.0, "z": 800.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1952.0, "y": 817.2 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14063720",
+            "world": { "x": -215500.0, "y": -203900.0, "z": 660.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 1182.6, "y": 1117.4 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_12485302",
+            "world": { "x": -271900.0, "y": -181900.0, "z": 6330.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 1155.3, "y": 1253.9 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_12839431",
+            "world": { "x": -273900.0, "y": -171900.0, "z": 5070.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 1962.9, "y": 855.4 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_13973724",
+            "world": { "x": -214700.0, "y": -201100.0, "z": 800.0 }
+        },
+        {
+            "display_name": "fer prod max 5",
+            "kind": "sender",
+            "label": "fer prod max 5 - TitaniumBar",
+            "map": { "x": 1952.0, "y": 836.3 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14051382",
+            "world": { "x": -215500.0, "y": -202500.0, "z": 730.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1973.8, "y": 798.1 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14077088",
+            "world": { "x": -213900.0, "y": -205300.0, "z": 170.0 }
+        },
+        {
+            "display_name": "bqse fer 1",
+            "kind": "sender",
+            "label": "bqse fer 1 - TitaniumBar",
+            "map": { "x": 1938.3, "y": 880.0 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_13616496",
+            "world": { "x": -216500.0, "y": -199300.0, "z": 800.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 1973.8, "y": 855.4 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_13974100",
+            "world": { "x": -213900.0, "y": -201100.0, "z": 800.0 }
+        },
+        {
+            "display_name": "fer prod max 4",
+            "kind": "sender",
+            "label": "fer prod max 4 - TitaniumBar",
+            "map": { "x": 1941.1, "y": 855.4 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_13973271",
+            "world": { "x": -216300.0, "y": -201100.0, "z": 800.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1973.8, "y": 817.2 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14063969",
+            "world": { "x": -213900.0, "y": -203900.0, "z": 590.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 1971.1, "y": 880.0 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_13952160",
+            "world": { "x": -214100.0, "y": -199300.0, "z": 800.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1952.0, "y": 798.1 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14075650",
+            "world": { "x": -215500.0, "y": -205300.0, "z": 590.0 }
+        },
+        {
+            "display_name": "fer prod max 4",
+            "kind": "sender",
+            "label": "fer prod max 4 - TitaniumBar",
+            "map": { "x": 1952.0, "y": 855.4 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_13973509",
+            "world": { "x": -215500.0, "y": -201100.0, "z": 800.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 1960.2, "y": 880.0 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_13952040",
+            "world": { "x": -214900.0, "y": -199300.0, "z": 800.0 }
+        },
+        {
+            "display_name": "fer prod max 5",
+            "kind": "sender",
+            "label": "fer prod max 5 - TitaniumBar",
+            "map": { "x": 1941.1, "y": 836.3 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14051229",
+            "world": { "x": -216300.0, "y": -202500.0, "z": 660.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1962.9, "y": 836.3 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14051544",
+            "world": { "x": -214700.0, "y": -202500.0, "z": 660.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1941.1, "y": 779.0 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14196614",
+            "world": { "x": -216300.0, "y": -206700.0, "z": 590.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1973.8, "y": 836.3 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14052402",
+            "world": { "x": -213900.0, "y": -202500.0, "z": 310.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1973.8, "y": 779.0 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14196913",
+            "world": { "x": -213900.0, "y": -206700.0, "z": -40.0 }
+        },
+        {
+            "display_name": "fer prod max 6",
+            "kind": "sender",
+            "label": "fer prod max 6 - TitaniumBar",
+            "map": { "x": 1941.1, "y": 817.2 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14063616",
+            "world": { "x": -216300.0, "y": -203900.0, "z": 660.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1962.9, "y": 817.2 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14063835",
+            "world": { "x": -214700.0, "y": -203900.0, "z": 660.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumBar",
+            "map": { "x": 784.2, "y": 1139.3 },
+            "resource": "TitaniumBar",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14248649",
+            "world": { "x": -301100.0, "y": -180300.0, "z": 4090.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1941.1, "y": 798.1 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14075448",
+            "world": { "x": -216300.0, "y": -205300.0, "z": 590.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1952.0, "y": 779.0 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14196732",
+            "world": { "x": -215500.0, "y": -206700.0, "z": 590.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1962.9, "y": 779.0 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14196812",
+            "world": { "x": -214700.0, "y": -206700.0, "z": 520.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframPlate",
+            "map": { "x": 3349.0, "y": 2856.1 },
+            "resource": "WolframPlate",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14539355",
+            "world": { "x": -113100.0, "y": -54500.0, "z": 8850.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciumPowder",
+            "map": { "x": 1938.3, "y": 2932.5 },
+            "resource": "CalciumPowder",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_16585694",
+            "world": { "x": -216500.0, "y": -48900.0, "z": 5000.0 }
+        },
+        {
+            "display_name": "poudre cuivre",
+            "kind": "sender",
+            "label": "poudre cuivre - WolframPowder",
+            "map": { "x": 3349.0, "y": 2872.4 },
+            "resource": "WolframPowder",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_15500320",
+            "world": { "x": -113100.0, "y": -53300.0, "z": 8850.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframPlate",
+            "map": { "x": 3338.0, "y": 2856.1 },
+            "resource": "WolframPlate",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_14539511",
+            "world": { "x": -113900.0, "y": -54500.0, "z": 8850.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciumPowder",
+            "map": { "x": 857.9, "y": 2618.6 },
+            "resource": "CalciumPowder",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_16431150",
+            "world": { "x": -295700.0, "y": -71900.0, "z": 1360.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1856.5, "y": 3273.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21129868",
+            "world": { "x": -222500.0, "y": -23900.0, "z": 3880.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframPowder",
+            "map": { "x": 3338.0, "y": 2872.4 },
+            "resource": "WolframPowder",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_18011721",
+            "world": { "x": -113900.0, "y": -53300.0, "z": 8850.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 2901.5, "y": 2386.6 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_18952269",
+            "world": { "x": -145900.0, "y": -88900.0, "z": 5070.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1856.5, "y": 3284.6 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21130277",
+            "world": { "x": -222500.0, "y": -23100.0, "z": 3880.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciteSheets",
+            "map": { "x": 631.4, "y": 2656.8 },
+            "resource": "CalciteSheets",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_16690647",
+            "world": { "x": -312300.0, "y": -69100.0, "z": 1500.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1977.9, "y": 451.5 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_18480958",
+            "world": { "x": -213600.0, "y": -230700.0, "z": 590.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1937.0, "y": 448.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_18480270",
+            "world": { "x": -216600.0, "y": -230900.0, "z": 100.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 1932.9, "y": 2416.6 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20822914",
+            "world": { "x": -216900.0, "y": -86700.0, "z": 8990.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1932.9, "y": 2405.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20823651",
+            "world": { "x": -216900.0, "y": -87500.0, "z": 9410.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Tube",
+            "map": { "x": 2254.8, "y": 754.4 },
+            "resource": "Tube",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_22849250",
+            "world": { "x": -193300.0, "y": -208500.0, "z": 380.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1971.1, "y": 2403.0 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20859756",
+            "world": { "x": -214100.0, "y": -87700.0, "z": 8990.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumHousing",
+            "map": { "x": 2407.6, "y": 825.4 },
+            "resource": "TitaniumHousing",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_15008952",
+            "world": { "x": -182100.0, "y": -203300.0, "z": 170.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciumPowder",
+            "map": { "x": 795.1, "y": 2618.6 },
+            "resource": "CalciumPowder",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_25760774",
+            "world": { "x": -300300.0, "y": -71900.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1807.4, "y": 3273.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21068945",
+            "world": { "x": -226100.0, "y": -23900.0, "z": 3810.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 2846.9, "y": 2362.0 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_18953534",
+            "world": { "x": -149900.0, "y": -90700.0, "z": 5280.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1968.4, "y": 2424.8 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20857902",
+            "world": { "x": -214300.0, "y": -86100.0, "z": 8710.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 2233.0, "y": 2899.7 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20023463",
+            "world": { "x": -194900.0, "y": -51300.0, "z": 6190.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1984.7, "y": 2424.8 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20866774",
+            "world": { "x": -213100.0, "y": -86100.0, "z": 8640.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframPlate",
+            "map": { "x": 784.2, "y": 2656.8 },
+            "resource": "WolframPlate",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_25802310",
+            "world": { "x": -301100.0, "y": -69100.0, "z": 1360.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 2754.1, "y": 2342.9 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_18955083",
+            "world": { "x": -156700.0, "y": -92100.0, "z": 5420.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 2042.0, "y": 2733.2 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20046761",
+            "world": { "x": -208900.0, "y": -63500.0, "z": 6400.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumSheet",
+            "map": { "x": 2325.8, "y": 839.0 },
+            "resource": "TitaniumSheet",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_24572352",
+            "world": { "x": -188100.0, "y": -202300.0, "z": 240.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1952.0, "y": 2424.8 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20831414",
+            "world": { "x": -215500.0, "y": -86100.0, "z": 8710.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1823.7, "y": 3262.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21087582",
+            "world": { "x": -224900.0, "y": -24700.0, "z": 3880.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 1932.9, "y": 2427.5 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20816950",
+            "world": { "x": -216900.0, "y": -85900.0, "z": 8640.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1968.4, "y": 2413.9 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20858408",
+            "world": { "x": -214300.0, "y": -86900.0, "z": 8780.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 2042.0, "y": 2722.3 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20047008",
+            "world": { "x": -208900.0, "y": -64300.0, "z": 6400.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1856.5, "y": 3295.5 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21130702",
+            "world": { "x": -222500.0, "y": -22300.0, "z": 3880.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1823.7, "y": 3273.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21088299",
+            "world": { "x": -224900.0, "y": -23900.0, "z": 3880.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 2001.1, "y": 2413.9 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20876010",
+            "world": { "x": -211900.0, "y": -86900.0, "z": 8640.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 2020.2, "y": 2403.0 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20885961",
+            "world": { "x": -210500.0, "y": -87700.0, "z": 8850.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1952.0, "y": 2413.9 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20832619",
+            "world": { "x": -215500.0, "y": -86900.0, "z": 8850.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1823.7, "y": 3284.6 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21089054",
+            "world": { "x": -224900.0, "y": -23100.0, "z": 3880.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 2939.7, "y": 2403.0 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_18951368",
+            "world": { "x": -143100.0, "y": -87700.0, "z": 4930.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 1414.5, "y": 372.3 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20574536",
+            "world": { "x": -254900.0, "y": -236500.0, "z": 1010.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1968.4, "y": 2435.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20856404",
+            "world": { "x": -214300.0, "y": -85300.0, "z": 8710.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 2726.9, "y": 2315.6 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_18955920",
+            "world": { "x": -158700.0, "y": -94100.0, "z": 5700.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 1414.5, "y": 350.5 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20575811",
+            "world": { "x": -254900.0, "y": -238100.0, "z": 1010.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 2042.0, "y": 2711.4 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20047285",
+            "world": { "x": -208900.0, "y": -65100.0, "z": 6400.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1927.4, "y": 2932.5 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_23704244",
+            "world": { "x": -217300.0, "y": -48900.0, "z": 5000.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 1414.5, "y": 361.4 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20575341",
+            "world": { "x": -254900.0, "y": -237300.0, "z": 1010.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 2001.1, "y": 2424.8 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20875742",
+            "world": { "x": -211900.0, "y": -86100.0, "z": 8640.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1952.0, "y": 2403.0 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20836091",
+            "world": { "x": -215500.0, "y": -87700.0, "z": 9410.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 1414.5, "y": 383.2 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20574136",
+            "world": { "x": -254900.0, "y": -235700.0, "z": 1010.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 2017.5, "y": 2435.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20884971",
+            "world": { "x": -210700.0, "y": -85300.0, "z": 8640.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 2017.5, "y": 2413.9 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20885504",
+            "world": { "x": -210700.0, "y": -86900.0, "z": 8780.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 1952.0, "y": 2435.7 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20831107",
+            "world": { "x": -215500.0, "y": -85300.0, "z": 8640.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 1984.7, "y": 2435.7 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20866403",
+            "world": { "x": -213100.0, "y": -85300.0, "z": 8780.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 2017.5, "y": 2424.8 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20885256",
+            "world": { "x": -210700.0, "y": -86100.0, "z": 8640.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 1932.9, "y": 2438.5 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20816582",
+            "world": { "x": -216900.0, "y": -85100.0, "z": 8430.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 2042.0, "y": 2700.5 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20047595",
+            "world": { "x": -208900.0, "y": -65900.0, "z": 6540.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 2001.1, "y": 2435.7 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20875354",
+            "world": { "x": -211900.0, "y": -85300.0, "z": 8710.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Helium3",
+            "map": { "x": 2233.0, "y": 2929.7 },
+            "resource": "Helium3",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20022735",
+            "world": { "x": -194900.0, "y": -49100.0, "z": 6190.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1807.4, "y": 3262.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21068315",
+            "world": { "x": -226100.0, "y": -24700.0, "z": 3740.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1840.1, "y": 3295.5 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21104222",
+            "world": { "x": -223700.0, "y": -22300.0, "z": 3950.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1807.4, "y": 3284.6 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21072892",
+            "world": { "x": -226100.0, "y": -23100.0, "z": 3810.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciteSheets",
+            "map": { "x": 1984.7, "y": 2943.4 },
+            "resource": "CalciteSheets",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_23760113",
+            "world": { "x": -213100.0, "y": -48100.0, "z": 5000.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciteSheets",
+            "map": { "x": 1984.7, "y": 2932.5 },
+            "resource": "CalciteSheets",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_23761091",
+            "world": { "x": -213100.0, "y": -48900.0, "z": 5000.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1791.0, "y": 3270.9 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21052449",
+            "world": { "x": -227300.0, "y": -24100.0, "z": 3880.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1984.7, "y": 2413.9 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20867140",
+            "world": { "x": -213100.0, "y": -86900.0, "z": 8640.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1987.5, "y": 2403.0 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20867529",
+            "world": { "x": -212900.0, "y": -87700.0, "z": 8920.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 2003.8, "y": 2403.0 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_20876265",
+            "world": { "x": -211700.0, "y": -87700.0, "z": 8640.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1823.7, "y": 3295.5 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21089547",
+            "world": { "x": -224900.0, "y": -22300.0, "z": 3880.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframPlate",
+            "map": { "x": 784.2, "y": 2673.2 },
+            "resource": "WolframPlate",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_25804589",
+            "world": { "x": -301100.0, "y": -67900.0, "z": 1360.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Tube",
+            "map": { "x": 2254.8, "y": 743.5 },
+            "resource": "Tube",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_22845265",
+            "world": { "x": -193300.0, "y": -209300.0, "z": 380.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1840.1, "y": 3284.6 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21102106",
+            "world": { "x": -223700.0, "y": -23100.0, "z": 3950.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1856.5, "y": 3262.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21129114",
+            "world": { "x": -222500.0, "y": -24700.0, "z": 3950.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1791.0, "y": 3281.8 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21053164",
+            "world": { "x": -227300.0, "y": -23300.0, "z": 4020.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1791.0, "y": 3292.8 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21053796",
+            "world": { "x": -227300.0, "y": -22500.0, "z": 4300.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 1791.0, "y": 3260.0 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21052005",
+            "world": { "x": -227300.0, "y": -24900.0, "z": 3880.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1807.4, "y": 3295.5 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21073553",
+            "world": { "x": -226100.0, "y": -22300.0, "z": 4160.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1840.1, "y": 3262.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21101094",
+            "world": { "x": -223700.0, "y": -24700.0, "z": 3950.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher",
+            "map": { "x": 1840.1, "y": 3273.7 },
+            "resource": "",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_21101590",
+            "world": { "x": -223700.0, "y": -23900.0, "z": 3950.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - TitaniumSheet",
+            "map": { "x": 2336.7, "y": 839.0 },
+            "resource": "TitaniumSheet",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_24569877",
+            "world": { "x": -187300.0, "y": -202300.0, "z": 240.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 2050.2, "y": 3060.8 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_24392419",
+            "world": { "x": -208300.0, "y": -39500.0, "z": 5210.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - Sulphur",
+            "map": { "x": 2012.0, "y": 3093.5 },
+            "resource": "Sulphur",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_24393920",
+            "world": { "x": -211100.0, "y": -37100.0, "z": 4580.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - CalciumPowder",
+            "map": { "x": 806.0, "y": 2618.6 },
+            "resource": "CalciumPowder",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_25760650",
+            "world": { "x": -299500.0, "y": -71900.0, "z": 1430.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframWire",
+            "map": { "x": 3305.3, "y": 2888.8 },
+            "resource": "WolframWire",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_25914971",
+            "world": { "x": -116300.0, "y": -52100.0, "z": 8850.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframWire",
+            "map": { "x": 827.9, "y": 2667.7 },
+            "resource": "WolframWire",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_25748318",
+            "world": { "x": -297900.0, "y": -68300.0, "z": 1220.0 }
+        },
+        {
+            "display_name": "Cargo Dispatcher",
+            "kind": "sender",
+            "label": "Cargo Dispatcher - WolframWire",
+            "map": { "x": 844.2, "y": 2667.7 },
+            "resource": "WolframWire",
+            "source": "package_transport_replicator.connection",
+            "unique_key": "sender_0_25748301",
+            "world": { "x": -296700.0, "y": -68300.0, "z": 1220.0 }
+        }
+    ],
+    "players": [
+        {
+            "label": "Alexandre",
+            "map": { "x": 535.7, "y": 2775.9 },
+            "source": "actor_scan.player",
+            "unique_key": "player_player_state_PS_PlayerStateDefault_C_2147479360",
+            "world": { "x": -319315.5, "y": -60372.3, "z": 2315.7 }
+        }
+    ],
+    "reason": "EngineTick",
+    "teleporters": [
+        {
+            "label": "FER MAX",
+            "map": { "x": 2849.6, "y": 3015.7 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_3483757",
+            "world": { "x": -149700.0, "y": -42800.0, "z": 7730.0 }
+        },
+        {
+            "label": "LE NORD",
+            "map": { "x": 2288.9, "y": 688.9 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_4024872",
+            "world": { "x": -190800.0, "y": -213300.0, "z": 380.0 }
+        },
+        {
+            "label": "MAGASIN",
+            "map": { "x": 1095.2, "y": 2647.3 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_4325945",
+            "world": { "x": -278300.0, "y": -69800.0, "z": 1430.0 }
+        },
+        {
+            "label": "Base materieux V2",
+            "map": { "x": 2606.8, "y": 769.4 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_5881709",
+            "world": { "x": -167500.0, "y": -207400.0, "z": 380.0 }
+        },
+        {
+            "label": "BASE PRINCIPAL",
+            "map": { "x": 530.5, "y": 2797.4 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_8203088",
+            "world": { "x": -319700.0, "y": -58800.0, "z": 2200.0 }
+        },
+        {
+            "label": "soufre-douler alex",
+            "map": { "x": 2058.4, "y": 3002.1 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_8540672",
+            "world": { "x": -207700.0, "y": -43800.0, "z": 4930.0 }
+        },
+        {
+            "label": "Base fer ",
+            "map": { "x": 1907.0, "y": 929.1 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_9207564",
+            "world": { "x": -218800.0, "y": -195700.0, "z": 1220.0 }
+        },
+        {
+            "label": "cuivre prod",
+            "map": { "x": 3398.1, "y": 2830.1 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_9422630",
+            "world": { "x": -109500.0, "y": -56400.0, "z": 9270.0 }
+        },
+        {
+            "label": "Base cuivre",
+            "map": { "x": 2789.6, "y": 428.3 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_18663816",
+            "world": { "x": -154100.0, "y": -232400.0, "z": 2200.0 }
+        },
+        {
+            "label": "Souffre Nord",
+            "map": { "x": 2829.2, "y": 2332.0 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_19005928",
+            "world": { "x": -151200.0, "y": -92900.0, "z": 5980.0 }
+        },
+        {
+            "label": "Base Souffre",
+            "map": { "x": 1819.7, "y": 3167.2 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_19574052",
+            "world": { "x": -225200.0, "y": -31700.0, "z": 3950.0 }
+        },
+        {
+            "label": "Base Helium",
+            "map": { "x": 1932.9, "y": 2494.4 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_20156555",
+            "world": { "x": -216900.0, "y": -81000.0, "z": 8920.0 }
+        },
+        {
+            "label": "base principal haut",
+            "map": { "x": 793.8, "y": 3055.3 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_24391453",
+            "world": { "x": -300400.0, "y": -39900.0, "z": 4230.0 }
+        },
+        {
+            "label": "Cave Ouest",
+            "map": { "x": 1114.3, "y": 1661.9 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_22482484",
+            "world": { "x": -276900.0, "y": -142000.0, "z": 5630.0 }
+        },
+        {
+            "label": "Cave fin",
+            "map": { "x": 728.3, "y": 1161.1 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_22779219",
+            "world": { "x": -305200.0, "y": -178700.0, "z": 6190.0 }
+        },
+        {
+            "label": "Cave Sud",
+            "map": { "x": 1374.9, "y": 3322.8 },
+            "source": "teleport_replicator",
+            "unique_key": "teleporter_0_25612835",
+            "world": { "x": -257800.0, "y": -20300.0, "z": 5910.0 }
+        },
+        {
+            "label": "BP_FE_Teleporter_Device_C_UAID_D85ED32CC0E62B2102_1396965415",
+            "map": { "x": 2456.4, "y": 1711.3 },
+            "source": "actor_scan.teleporter_device",
+            "unique_key": "teleporter_teleporter_-178522_-138387_10397",
+            "world": { "x": -178522.4, "y": -138387.3, "z": 10396.6 }
+        },
+        {
+            "label": "BP_FE_Teleporter_Device_C_UAID_D85ED32CC0E62B2102_1493237416",
+            "map": { "x": 5191.5, "y": 9552.3 },
+            "source": "actor_scan.teleporter_device",
+            "unique_key": "teleporter_teleporter_21961_436176_7888",
+            "world": { "x": 21961.0, "y": 436176.2, "z": 7888.4 }
+        }
+    ],
+    "world": "ChimeraMain"
+}

@@ -12,7 +12,7 @@ namespace MapExtensionPluginConfig
 			"Enabled",
 			ConfigValueType::Boolean,
 			"1",
-			"Enable or disable the MapExtension_Plugin plugin"
+			"Enable or disable the MapExtension_Plugin mod"
 		},
 		{
 			"Diagnostics",
@@ -33,7 +33,14 @@ namespace MapExtensionPluginConfig
 			"LogCargoSnapshots",
 			ConfigValueType::Boolean,
 			"0",
-			"Log cargo sender and receiver positions collected from runtime sources"
+			"Log map snapshots, cargo links, teleporters, and players collected from runtime sources"
+		},
+		{
+			"Diagnostics",
+			"LogRuptureCycleChat",
+			ConfigValueType::Boolean,
+			"0",
+			"Log rupture cycle state parsed from server chat or recovered locally in solo sessions"
 		},
 		{
 			"Diagnostics",
@@ -47,7 +54,7 @@ namespace MapExtensionPluginConfig
 			"Port",
 			ConfigValueType::Integer,
 			"9000",
-			"Local HTTP port used to publish cargo snapshot JSON"
+			"Local HTTP port used to publish map snapshot JSON"
 		},
 		{
 			"Runtime",
@@ -55,6 +62,13 @@ namespace MapExtensionPluginConfig
 			ConfigValueType::Integer,
 			"500",
 			"Realtime snapshot refresh interval in milliseconds while gameplay is running"
+		},
+		{
+			"Chat",
+			"RuptureCyclePrefix",
+			ConfigValueType::String,
+			"[RUPTURE_CYCLE]",
+			"Prefix used by the server chat plugin when broadcasting rupture cycle state"
 		}
 	};
 
@@ -95,6 +109,11 @@ namespace MapExtensionPluginConfig
 			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogCargoSnapshots", false) : false;
 		}
 
+		static bool LogRuptureCycleChat()
+		{
+			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogRuptureCycleChat", false) : false;
+		}
+
 		static bool LogActorScanFallback()
 		{
 			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogActorScanFallback", false) : false;
@@ -108,6 +127,16 @@ namespace MapExtensionPluginConfig
 		static int RefreshIntervalMs()
 		{
 			return s_config ? s_config->ReadInt(kPluginName, "Runtime", "RefreshIntervalMs", 500) : 500;
+		}
+
+		static const char* RuptureCyclePrefix()
+		{
+			static char buffer[64] = {};
+			if (s_config && s_config->ReadString(kPluginName, "Chat", "RuptureCyclePrefix", buffer, sizeof(buffer), "[RUPTURE_CYCLE]"))
+			{
+				return buffer;
+			}
+			return "[RUPTURE_CYCLE]";
 		}
 
 	private:

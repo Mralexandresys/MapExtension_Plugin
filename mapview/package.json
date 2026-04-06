@@ -1,22 +1,23 @@
 {
-  "name": "mapview",
-  "private": true,
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "check": "vue-tsc --noEmit"
-  },
-  "dependencies": {
-    "vue": "^3.5.29"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.4",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.1",
-    "vite-plugin-singlefile": "^2.3.0",
-    "vue-tsc": "^3.2.5"
-  }
+    "name": "mapview",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build && mv dist/index.html dist/MapExtensionViewer.html",
+        "preview": "vite preview",
+        "check": "vue-tsc --noEmit",
+        "mock-api": "python3 local-test/mock_server.py"
+    },
+    "dependencies": {
+        "vue": "^3.5.29"
+    },
+    "devDependencies": {
+        "@vitejs/plugin-vue": "^6.0.4",
+        "typescript": "^5.9.3",
+        "vite": "^7.3.1",
+        "vite-plugin-singlefile": "^2.3.0",
+        "vue-tsc": "^3.2.5"
+    }
 }
