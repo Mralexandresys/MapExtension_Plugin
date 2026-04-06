@@ -1,0 +1,221 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugin_version:
+        description: "Plugin version suffix (example: v0.2)"
+        required: true
+        type: string
+      draft:
+        description: Create the GitHub release as a draft
+        required: true
+        default: true
+        type: boolean
+      build_author:
+        description: Optional build author override
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Resolve release metadata
+        id: meta
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          $release = gh api repos/AlienXAXS/StarRupture-ModLoader/releases/latest | ConvertFrom-Json
+          $modloaderTag = [string]$release.tag_name
+          if ([string]::IsNullOrWhiteSpace($modloaderTag)) {
+            throw "Could not resolve the latest published StarRupture-ModLoader release tag."
+          }
+          if (-not $modloaderTag.StartsWith("release-")) {
+            throw "Unsupported modloader tag format: '$modloaderTag'. Expected it to start with 'release-'."
+          }
+
+          $pluginVersion = [string]'${{ inputs.plugin_version }}'
+          if ([string]::IsNullOrWhiteSpace($pluginVersion)) {
+            throw "plugin_version is required."
+          }
+          if ($pluginVersion -notmatch '^v[0-9A-Za-z][0-9A-Za-z._-]*$') {
+            throw "Invalid plugin_version '$pluginVersion'. Expected a value like v0.2."
+          }
+
+          $trimmedAuthor = [string]'${{ inputs.build_author }}'
+          $trimmedAuthor = $trimmedAuthor.Trim()
+          if ([string]::IsNullOrWhiteSpace($trimmedAuthor)) {
+            $trimmedAuthor = [string]'${{ github.triggering_actor }}'
+          }
+          if ([string]::IsNullOrWhiteSpace($trimmedAuthor)) {
+            $trimmedAuthor = [string]'${{ github.actor }}'
+          }
+
+          $coreVersion = $modloaderTag.Substring("release-".Length)
+          $pluginTag = "ML-$coreVersion-$pluginVersion"
+
+          $matchingRefs = gh api "repos/$env:REPO/git/matching-refs/tags/$pluginTag" | ConvertFrom-Json
+          if ($matchingRefs.Count -gt 0) {
+            throw "Tag '$pluginTag' already exists in $env:REPO."
+          }
+
+          "MODLOADER_TAG=$modloaderTag" >> $env:GITHUB_OUTPUT
+          "PLUGIN_TAG=$pluginTag" >> $env:GITHUB_OUTPUT
+          "BUILD_AUTHOR=$trimmedAuthor" >> $env:GITHUB_OUTPUT
+
+      - name: Checkout StarRupture-ModLoader
+        uses: actions/checkout@v4
+        with:
+          repository: AlienXAXS/StarRupture-ModLoader
+          ref: ${{ steps.meta.outputs.MODLOADER_TAG }}
+          path: modloader
+          submodules: recursive
+
+      - name: Checkout MapExtension_Plugin
+        uses: actions/checkout@v4
+        with:
+          path: modloader/MapExtension_Plugin
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Build plugin DLL
+        shell: pwsh
+        working-directory: modloader/MapExtension_Plugin
+        run: |
+          $repoRoot = (Resolve-Path ..).Path
+          $repoRootWithSlash = "$repoRoot\"
+
+          function Find-MSBuild {
+            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+            if (Test-Path $vswhere) {
+              $found = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+              if ($found) {
+                return $found.Trim()
+              }
+            }
+
+            $fallbacks = @(
+              "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
+              "${env:ProgramFiles}\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe",
+              "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
+              "${env:ProgramFiles}\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
+            )
+
+            foreach ($candidate in $fallbacks) {
+              if (Test-Path $candidate) {
+                return $candidate
+              }
+            }
+
+            throw 'MSBuild.exe introuvable. Installe Visual Studio 2022 ou Build Tools avec MSBuild.'
+          }
+
+          $msbuild = Find-MSBuild
+          Write-Host "Build de MapExtension_Plugin en Client Release|x64"
+          Write-Host "MSBuild : $msbuild"
+
+          & $msbuild "MapExtension_Plugin.sln" `
+            /t:MapExtension_Plugin `
+            /m `
+            /p:Configuration="Client Release" `
+            /p:Platform=x64 `
+            /p:SolutionDir="$repoRootWithSlash" `
+            /p:RepoRootDir="$repoRootWithSlash" `
+            /p:PostBuildEventUseInBuild=false `
+            /p:ModLoaderBuildTag="${{ steps.meta.outputs.PLUGIN_TAG }}" `
+            /p:ModLoaderBuildAuthor="${{ steps.meta.outputs.BUILD_AUTHOR }}"
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Build mapview bundle
+        shell: pwsh
+        working-directory: modloader/MapExtension_Plugin/mapview
+        run: |
+          npm install
+          npm run check
+          npm run build
+
+      - name: Package release assets
+        id: package
+        shell: pwsh
+        working-directory: modloader/MapExtension_Plugin
+        run: |
+          $tag = "${{ steps.meta.outputs.PLUGIN_TAG }}"
+          $packageRoot = Join-Path $env:GITHUB_WORKSPACE "package"
+          $stageRoot = Join-Path $packageRoot "MapExtension_Plugin"
+          $pluginsDir = Join-Path $stageRoot "Plugins"
+          $licensesDir = Join-Path $stageRoot "licenses"
+          $mapviewDir = Join-Path $stageRoot "mapview"
+
+          New-Item -ItemType Directory -Force -Path $pluginsDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $licensesDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $mapviewDir | Out-Null
+
+          Copy-Item "build\Client Release\Plugins\MapExtension_Plugin.dll" (Join-Path $pluginsDir "MapExtension_Plugin.dll") -Force
+          Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $mapviewDir "MapExtensionViewer.html") -Force
+          Copy-Item "README.md", "README.fr.md", "LICENSE", "THIRD_PARTY_NOTICES.md" $stageRoot -Force
+          Copy-Item "licenses\*" $licensesDir -Recurse -Force
+
+          if (Test-Path "mapview\licenses") {
+            Copy-Item "mapview\licenses" $mapviewDir -Recurse -Force
+          }
+          if (Test-Path "DEVELOPERS.md") {
+            Copy-Item "DEVELOPERS.md" $stageRoot -Force
+          }
+
+          $zipPath = Join-Path $env:GITHUB_WORKSPACE "MapExtension_Plugin-$tag.zip"
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+          Compress-Archive -Path "$stageRoot\*" -DestinationPath $zipPath
+
+          "ZIP_PATH=$zipPath" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ steps.meta.outputs.PLUGIN_TAG }}"
+          $modloaderTag = "${{ steps.meta.outputs.MODLOADER_TAG }}"
+          $buildAuthor = "${{ steps.meta.outputs.BUILD_AUTHOR }}"
+          $isDraft = '${{ inputs.draft }}'
+          $notes = @"
+          Built from StarRupture-ModLoader release: $modloaderTag
+          Plugin version input: ${{ inputs.plugin_version }}
+          Build author: $buildAuthor
+          "@
+
+          $args = @(
+            'release', 'create', $tag,
+            "${{ steps.package.outputs.ZIP_PATH }}",
+            '--repo', '${{ github.repository }}',
+            '--title', "MapExtension_Plugin $tag",
+            '--notes', $notes
+          )
+          if ($isDraft -eq 'true') {
+            $args += '--draft'
+          }
+
+          gh @args
+
+      - name: Publish summary
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "# Release created"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- ModLoader release: `${{ steps.meta.outputs.MODLOADER_TAG }}`"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Plugin tag: `${{ steps.meta.outputs.PLUGIN_TAG }}`"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Build author: `${{ steps.meta.outputs.BUILD_AUTHOR }}`"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Draft: `${{ inputs.draft }}`"

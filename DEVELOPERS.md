@@ -40,12 +40,14 @@ The DLL is written to `build\\<Configuration>\\Plugins\\MapExtension_Plugin.dll`
 
 ### Release identifier
 
-`plugin.cpp` exports `MODLOADER_BUILD_TAG`. For tagged builds, define the macro at compile time so the loader and `/health` endpoint expose the correct version string. Recommended approaches:
+`plugin.cpp` exports `MODLOADER_BUILD_TAG` and `PluginInfo.author`. For tagged builds, define the build tag at compile time so the loader and `/health` endpoint expose the correct version string. If needed, override the embedded author the same way.
 
 - add `MODLOADER_BUILD_TAG=\"vX.Y.Z\"` to `Shared.props` (propagates to every configuration), or
 - override the preprocessor definition in Visual Studio: **Project Properties → C/C++ → Preprocessor → Preprocessor Definitions**.
+- or pass MSBuild properties from the helper script:
+  - `../build_client.sh release --build-tag "ML-2026.04.04-214044-v0.2" --build-author "Mralexandresys"`
 
-If the macro is not set, release builds fall back to the placeholder value `"dev"`.
+If the tag macro is not set, builds fall back to `"dev"`. If the author macro is not set, builds fall back to `"Mralexandresys"`.
 
 ## Standalone developer workflow
 
@@ -88,7 +90,7 @@ MapExtension_Plugin/mapview/dist/MapExtensionViewer.html
 
 ## Packaging a release
 
-1. Set `MODLOADER_BUILD_TAG` to the version you want to publish (see above) and build `Client Release|x64` so that `build/Client Release/Plugins/MapExtension_Plugin.dll` is produced.
+1. Set `MODLOADER_BUILD_TAG` to the version you want to publish and, if needed, `MODLOADER_BUILD_AUTHOR` to the release author (see above), then build `Client Release|x64` so that `build/Client Release/Plugins/MapExtension_Plugin.dll` is produced.
 2. Move to `mapview/`, ensure Node.js ≥18 is active, then run `npm install && npm run check && npm run build`. The bundle lands in `mapview/dist/MapExtensionViewer.html`.
 3. Copy the following into a staging directory or archive:
    - `build/Client Release/Plugins/MapExtension_Plugin.dll`
@@ -97,6 +99,25 @@ MapExtension_Plugin/mapview/dist/MapExtensionViewer.html
    - `licenses/` and `mapview/licenses/` to keep third-party notices alongside the binaries
 4. (Optional) include a sample `Plugins/config/MapExtension_Plugin.ini` if you want to ship defaults with instructions.
 5. Verify that no files from `.gitignore` leaked into the package, then sign or checksum the archive before publishing it.
+
+## GitHub Actions release
+
+`MapExtension_Plugin` also ships a manual GitHub Actions release workflow.
+
+1. Open **Actions** in the `MapExtension_Plugin` repository.
+2. Run the `Release` workflow.
+3. Provide `plugin_version` such as `v0.2`.
+4. Optionally provide `build_author`. If left empty, the workflow uses the GitHub user who started it.
+5. Choose whether the GitHub release should be created as a draft.
+
+The workflow:
+
+1. fetches the latest published release tag from `AlienXAXS/StarRupture-ModLoader`
+2. checks out that modloader release
+3. checks out `MapExtension_Plugin` into the expected `StarRupture-ModLoader/MapExtension_Plugin` path
+4. builds the plugin and the `mapview` bundle against that modloader release
+5. creates a plugin tag in the format `ML-YYYY.MM.DD-HHMMSS-vX.Y`
+6. publishes a GitHub release in the plugin repository
 
 ## Runtime contract
 

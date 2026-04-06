@@ -18,10 +18,14 @@ IPluginHooks* GetHooks() { return g_hooks; }
 #define MODLOADER_BUILD_TAG "dev"
 #endif
 
+#ifndef MODLOADER_BUILD_AUTHOR
+#define MODLOADER_BUILD_AUTHOR "Mralexandresys"
+#endif
+
 static PluginInfo s_pluginInfo = {
 	"MapExtension_Plugin",
 	MODLOADER_BUILD_TAG,
-	"OpenAI",
+	MODLOADER_BUILD_AUTHOR,
 	"Exposes StarRupture map data, cargo links, teleporters, and players over local HTTP",
 	PLUGIN_INTERFACE_VERSION
 };
