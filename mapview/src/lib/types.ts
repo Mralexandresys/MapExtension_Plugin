@@ -1,7 +1,22 @@
+import type { Language, Messages } from "../lang";
+
 export type CargoKind = "sender" | "receiver";
 export type EntityToggleKey = "sender" | "receiver" | "teleporter" | "player";
 export type ViewMode = "network" | "resources" | "teleporters" | "players";
-export type SidebarTab = "entities" | "stats";
+export type StatusTone = "loading" | "online" | "stale" | "offline";
+export type SelectionTone =
+    | "sender"
+    | "receiver"
+    | "teleporter"
+    | "player"
+    | "neutral";
+export type CommandStatTone = "primary" | "neutral" | "warn" | "good";
+export type RupturePhaseKey =
+    | "burning"
+    | "cooling"
+    | "stabilizing"
+    | "stable"
+    | "incoming";
 
 export interface Point2D {
     x: number;
@@ -100,6 +115,11 @@ export interface EntityVisibility {
     player: boolean;
 }
 
+export interface MapCanvasHandle {
+    focusSelection: () => void;
+    resetView: () => void;
+}
+
 export interface EntityEntry {
     type: "cargo" | "teleporter" | "player";
     sortType: number;
@@ -139,4 +159,122 @@ export interface RuptureCycleResponse {
     world?: string;
     timeline?: RuptureTimelineInfo;
     rupture_cycle?: RuptureCycleState;
+}
+
+export interface DetailRow {
+    label: string;
+    value: string;
+}
+
+export interface CommandStat {
+    key: string;
+    label: string;
+    value: string;
+    tone: CommandStatTone;
+}
+
+export interface RupturePhaseView {
+    key: RupturePhaseKey;
+    label: string;
+    durationSeconds: number;
+    durationLabel: string;
+    startSeconds: number;
+    endSeconds: number;
+    visualStartPercent: number;
+    visualEndPercent: number;
+    widthPercent: number;
+    active: boolean;
+    statusLabel: string;
+    shortStatusLabel: string;
+    toneClass: string;
+}
+
+export interface RuptureTimelineTick {
+    key: string;
+    label: string;
+    leftPercent: number;
+    align: "left" | "center" | "right";
+    stackLevel: number;
+}
+
+export interface ShortcutItem {
+    keys: readonly string[];
+    label: string;
+    description: string;
+}
+
+export interface MapControlDockModel {
+    settingsOpen: boolean;
+    ui: Messages;
+    mapMetaLabel: string;
+    statusTone: StatusTone;
+    statusBadgeLabel: string;
+    commandStats: CommandStat[];
+    endpointDraft: string;
+    defaultEndpoint: string;
+    endpointHasPendingChanges: boolean;
+    normalizedEndpoint: string;
+    languageOptions: Language[];
+    lang: Language;
+    autoRefresh: boolean;
+    loading: boolean;
+    statusText: string;
+    statusError: string;
+    currentTimeLabel: string;
+    liveAgeLabel: string;
+}
+
+export interface MapRupturePanelModel {
+    collapsed: boolean;
+    ui: Messages;
+    currentPhaseKey: RupturePhaseKey;
+    currentPhaseLabel: string;
+    currentPhaseRemainingLabel: string;
+    phases: RupturePhaseView[];
+    markerPercent: number | null;
+    markerLabel: string;
+    hasLiveData: boolean;
+    timelineTicks: RuptureTimelineTick[];
+}
+
+export interface MapSelectionPanelModel {
+    detailsExpanded: boolean;
+    ui: Messages;
+    selectedEntityKeyLabel: string;
+    selectedEntitySummary: string;
+    selectedEntityTone: SelectionTone;
+    selectedDisplayName: string;
+    selectedPreviewFacts: DetailRow[];
+    selectedDetailRows: DetailRow[];
+    selectedEntityActive: boolean;
+    canEnableFocusMode: boolean;
+    focusMode: boolean;
+    totalCounts: { markers: number; teleporters: number; players: number };
+    visibleCargoConnectionsCount: number;
+    statsOverview: DetailRow[];
+}
+
+export interface MapFiltersPanelModel {
+    collapsed: boolean;
+    ui: Messages;
+    activeFilterChips: string[];
+    viewMode: ViewMode;
+    entityToggleOptions: Array<{
+        key: EntityToggleKey;
+        label: string;
+        count: number;
+    }>;
+    entityVisibility: EntityVisibility;
+    showAllLinks: boolean;
+    highlightOrphans: boolean;
+    canEnableFocusMode: boolean;
+    focusMode: boolean;
+}
+
+export interface MapCanvasToolbarModel {
+    ui: Messages;
+    selectedEntityActive: boolean;
+    canEnableFocusMode: boolean;
+    focusMode: boolean;
+    filtersOpen: boolean;
 }

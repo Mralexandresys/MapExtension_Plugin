@@ -106,6 +106,13 @@ function hideTooltip(): void {
   tooltip.value.visible = false;
 }
 
+function showTooltipAtPosition(title: string, lines: string[], clientX: number, clientY: number): void {
+  tooltip.value.visible = true;
+  tooltip.value.title = title;
+  tooltip.value.lines = lines;
+  updateTooltipPosition(clientX, clientY);
+}
+
 function updateTooltipPosition(clientX: number, clientY: number): void {
   if (!mapShell.value) return;
 
@@ -127,10 +134,12 @@ function updateTooltipPosition(clientX: number, clientY: number): void {
 }
 
 function showTooltip(title: string, lines: string[], event: MouseEvent): void {
-  tooltip.value.visible = true;
-  tooltip.value.title = title;
-  tooltip.value.lines = lines;
-  updateTooltipPosition(event.clientX, event.clientY);
+  showTooltipAtPosition(title, lines, event.clientX, event.clientY);
+}
+
+function showTooltipFromElement(title: string, lines: string[], element: Element): void {
+  const rect = element.getBoundingClientRect();
+  showTooltipAtPosition(title, lines, rect.left + rect.width / 2, rect.top + rect.height / 2);
 }
 
 function moveTooltip(event: MouseEvent): void {
@@ -242,22 +251,90 @@ function markerTypeLabel(marker: CargoMarker): string {
   return marker.kind === 'sender' ? ui.value.map.senderLabel : ui.value.map.receiverLabel;
 }
 
+function cargoTooltipLines(marker: CargoMarker): string[] {
+  return [
+    `${markerTypeLabel(marker)} | ${marker.resource || ui.value.map.noResource}`,
+    ui.value.format.relatedConnections(relatedConnectionCount(marker.unique_key)),
+    ui.value.map.clickToSelect,
+  ];
+}
+
+function teleporterLabel(teleporter: Teleporter): string {
+  return teleporter.label || ui.value.selection.teleporterFallback;
+}
+
+function playerLabel(player: Player): string {
+  return player.label || ui.value.selection.playerFallback;
+}
+
+function cargoAriaLabel(marker: CargoMarker): string {
+  return `${cargoLabel(marker)}. ${markerTypeLabel(marker)}. ${ui.value.format.relatedConnections(relatedConnectionCount(marker.unique_key))}.`;
+}
+
+function teleporterAriaLabel(teleporter: Teleporter): string {
+  return `${teleporterLabel(teleporter)}. ${teleporter.source || ui.value.map.unknownSource}.`;
+}
+
+function playerAriaLabel(player: Player): string {
+  return `${playerLabel(player)}. ${player.source || ui.value.map.unknownSource}.`;
+}
+
+function handleMarkerKeydown(event: KeyboardEvent, key: string): void {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    emit('select', key);
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    emit('clear-selection');
+  }
+}
+
+function handleCargoFocus(marker: CargoMarker, event: FocusEvent): void {
+  const target = event.target as Element | null;
+  if (!target) return;
+
+  emit('hover', marker.unique_key);
+  showTooltipFromElement(cargoLabel(marker), cargoTooltipLines(marker), target);
+}
+
+function handleTeleporterFocus(teleporter: Teleporter, event: FocusEvent): void {
+  const target = event.target as Element | null;
+  if (!target) return;
+
+  showTooltipFromElement(
+    teleporterLabel(teleporter),
+    [teleporter.source || ui.value.map.unknownSource, ui.value.map.clickToSelect],
+    target,
+  );
+}
+
+function handlePlayerFocus(player: Player, event: FocusEvent): void {
+  const target = event.target as Element | null;
+  if (!target) return;
+
+  showTooltipFromElement(
+    playerLabel(player),
+    [player.source || ui.value.map.unknownSource, ui.value.map.clickToSelect],
+    target,
+  );
+}
+
+function handleCargoBlur(): void {
+  emit('hover', null);
+  hideTooltip();
+}
+
 function showCargoTooltip(marker: CargoMarker, event: MouseEvent): void {
   emit('hover', marker.unique_key);
-  showTooltip(
-    cargoLabel(marker),
-    [
-      `${markerTypeLabel(marker)} | ${marker.resource || ui.value.map.noResource}`,
-      ui.value.format.relatedConnections(relatedConnectionCount(marker.unique_key)),
-      ui.value.map.clickToSelect,
-    ],
-    event,
-  );
+  showTooltip(cargoLabel(marker), cargoTooltipLines(marker), event);
 }
 
 function showTeleporterTooltip(teleporter: Teleporter, event: MouseEvent): void {
   showTooltip(
-    teleporter.label || ui.value.selection.teleporterFallback,
+    teleporterLabel(teleporter),
     [teleporter.source || ui.value.map.unknownSource, ui.value.map.clickToSelect],
     event,
   );
@@ -265,7 +342,7 @@ function showTeleporterTooltip(teleporter: Teleporter, event: MouseEvent): void 
 
 function showPlayerTooltip(player: Player, event: MouseEvent): void {
   showTooltip(
-    player.label || ui.value.selection.playerFallback,
+    playerLabel(player),
     [player.source || ui.value.map.unknownSource, ui.value.map.clickToSelect],
     event,
   );
@@ -305,6 +382,7 @@ defineExpose({
     ref="mapShell"
     class="map-canvas"
     :class="{ dragging: isDragging }"
+    :aria-busy="loading"
     @mousedown="handleMouseDown"
     @wheel="handleWheel"
   >
@@ -355,13 +433,20 @@ defineExpose({
                 orphan: orphanKeySet.has(marker.unique_key),
                 active: selectedKey === marker.unique_key,
                 dimmed: isDimmed(marker.unique_key),
-              },
-            ]"
+                },
+              ]"
+            tabindex="0"
+            role="button"
+            :aria-pressed="selectedKey === marker.unique_key"
+            :aria-label="cargoAriaLabel(marker)"
             @click.stop="emit('select', marker.unique_key)"
             @dblclick.stop
+            @keydown="handleMarkerKeydown($event, marker.unique_key)"
+            @focus.stop="handleCargoFocus(marker, $event)"
             @mouseenter.stop="showCargoTooltip(marker, $event)"
             @mousemove.stop="moveTooltip($event)"
-            @mouseleave.stop="emit('hover', null); hideTooltip()"
+            @blur.stop="handleCargoBlur"
+            @mouseleave.stop="handleCargoBlur"
           >
             <rect
               v-if="marker.kind === 'sender'"
@@ -382,10 +467,17 @@ defineExpose({
               active: selectedKey === teleporter.unique_key,
               dimmed: isDimmed(teleporter.unique_key),
             }"
+            tabindex="0"
+            role="button"
+            :aria-pressed="selectedKey === teleporter.unique_key"
+            :aria-label="teleporterAriaLabel(teleporter)"
             @click.stop="emit('select', teleporter.unique_key)"
             @dblclick.stop
+            @keydown="handleMarkerKeydown($event, teleporter.unique_key)"
+            @focus.stop="handleTeleporterFocus(teleporter, $event)"
             @mouseenter.stop="showTeleporterTooltip(teleporter, $event)"
             @mousemove.stop="moveTooltip($event)"
+            @blur.stop="hideTooltip"
             @mouseleave.stop="hideTooltip"
           >
             <rect
@@ -413,10 +505,17 @@ defineExpose({
               active: selectedKey === player.unique_key,
               dimmed: isDimmed(player.unique_key),
             }"
+            tabindex="0"
+            role="button"
+            :aria-pressed="selectedKey === player.unique_key"
+            :aria-label="playerAriaLabel(player)"
             @click.stop="emit('select', player.unique_key)"
             @dblclick.stop
+            @keydown="handleMarkerKeydown($event, player.unique_key)"
+            @focus.stop="handlePlayerFocus(player, $event)"
             @mouseenter.stop="showPlayerTooltip(player, $event)"
             @mousemove.stop="moveTooltip($event)"
+            @blur.stop="hideTooltip"
             @mouseleave.stop="hideTooltip"
           >
             <path
