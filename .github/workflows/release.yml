@@ -219,7 +219,7 @@ jobs:
         shell: pwsh
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "# Release created"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- ModLoader release: `${{ steps.meta.outputs.MODLOADER_TAG }}`"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Plugin tag: `${{ steps.meta.outputs.PLUGIN_TAG }}`"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Build author: `${{ steps.meta.outputs.BUILD_AUTHOR }}`"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Draft: `${{ inputs.draft }}`"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- ModLoader release: `{0}`' -f '${{ steps.meta.outputs.MODLOADER_TAG }}')
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Plugin tag: `{0}`' -f '${{ steps.meta.outputs.PLUGIN_TAG }}')
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Build author: `{0}`' -f '${{ steps.meta.outputs.BUILD_AUTHOR }}')
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Draft: `{0}`' -f '${{ inputs.draft }}')
