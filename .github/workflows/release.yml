@@ -129,6 +129,7 @@ jobs:
             /m `
             /p:Configuration="Client Release" `
             /p:Platform=x64 `
+            /p:PlatformToolset=v143 `
             /p:SolutionDir="$repoRootWithSlash" `
             /p:RepoRootDir="$repoRootWithSlash" `
             /p:PostBuildEventUseInBuild=false `
