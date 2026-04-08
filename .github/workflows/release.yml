@@ -158,24 +158,14 @@ jobs:
           $packageRoot = Join-Path $env:GITHUB_WORKSPACE "package"
           $stageRoot = Join-Path $packageRoot "MapExtension_Plugin"
           $pluginsDir = Join-Path $stageRoot "Plugins"
-          $licensesDir = Join-Path $stageRoot "licenses"
-          $mapviewDir = Join-Path $stageRoot "mapview"
 
+          if (Test-Path $stageRoot) {
+            Remove-Item $stageRoot -Recurse -Force
+          }
           New-Item -ItemType Directory -Force -Path $pluginsDir | Out-Null
-          New-Item -ItemType Directory -Force -Path $licensesDir | Out-Null
-          New-Item -ItemType Directory -Force -Path $mapviewDir | Out-Null
 
           Copy-Item (Join-Path $repoRoot "build\Client Release\Plugins\MapExtension_Plugin.dll") (Join-Path $pluginsDir "MapExtension_Plugin.dll") -Force
-          Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $mapviewDir "MapExtensionViewer.html") -Force
-          Copy-Item "README.md", "README.fr.md", "LICENSE", "THIRD_PARTY_NOTICES.md" $stageRoot -Force
-          Copy-Item "licenses\*" $licensesDir -Recurse -Force
-
-          if (Test-Path "mapview\licenses") {
-            Copy-Item "mapview\licenses" $mapviewDir -Recurse -Force
-          }
-          if (Test-Path "DEVELOPERS.md") {
-            Copy-Item "DEVELOPERS.md" $stageRoot -Force
-          }
+          Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $stageRoot "MapExtensionViewer.html") -Force
 
           $zipPath = Join-Path $env:GITHUB_WORKSPACE "MapExtension_Plugin-$tag.zip"
           if (Test-Path $zipPath) {
