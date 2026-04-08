@@ -154,6 +154,7 @@ jobs:
         working-directory: modloader/MapExtension_Plugin
         run: |
           $tag = "${{ steps.meta.outputs.PLUGIN_TAG }}"
+          $repoRoot = (Resolve-Path ..).Path
           $packageRoot = Join-Path $env:GITHUB_WORKSPACE "package"
           $stageRoot = Join-Path $packageRoot "MapExtension_Plugin"
           $pluginsDir = Join-Path $stageRoot "Plugins"
@@ -164,7 +165,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $licensesDir | Out-Null
           New-Item -ItemType Directory -Force -Path $mapviewDir | Out-Null
 
-          Copy-Item "build\Client Release\Plugins\MapExtension_Plugin.dll" (Join-Path $pluginsDir "MapExtension_Plugin.dll") -Force
+          Copy-Item (Join-Path $repoRoot "build\Client Release\Plugins\MapExtension_Plugin.dll") (Join-Path $pluginsDir "MapExtension_Plugin.dll") -Force
           Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $mapviewDir "MapExtensionViewer.html") -Force
           Copy-Item "README.md", "README.fr.md", "LICENSE", "THIRD_PARTY_NOTICES.md" $stageRoot -Force
           Copy-Item "licenses\*" $licensesDir -Recurse -Force
@@ -185,6 +186,7 @@ jobs:
           "ZIP_PATH=$zipPath" >> $env:GITHUB_OUTPUT
 
       - name: Create GitHub release
+        if: ${{ success() }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -213,6 +215,7 @@ jobs:
           gh @args
 
       - name: Publish summary
+        if: ${{ success() }}
         shell: pwsh
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "# Release created"
