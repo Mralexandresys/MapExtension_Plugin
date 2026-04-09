@@ -8,11 +8,13 @@ static IPluginLogger* g_logger = nullptr;
 static IPluginConfig* g_config = nullptr;
 static IPluginScanner* g_scanner = nullptr;
 static IPluginHooks* g_hooks = nullptr;
+static const IPluginSelf* g_pluginSelf = nullptr;
 
 IPluginLogger* GetLogger() { return g_logger; }
 IPluginConfig* GetConfig() { return g_config; }
 IPluginScanner* GetScanner() { return g_scanner; }
 IPluginHooks* GetHooks() { return g_hooks; }
+const IPluginSelf* GetPluginSelf() { return g_pluginSelf; }
 
 #ifndef MODLOADER_BUILD_TAG
 #define MODLOADER_BUILD_TAG "dev"
@@ -37,16 +39,17 @@ __declspec(dllexport) PluginInfo* GetPluginInfo()
 	return &s_pluginInfo;
 }
 
-__declspec(dllexport) bool PluginInit(IPluginLogger* logger, IPluginConfig* config, IPluginScanner* scanner, IPluginHooks* hooks)
+__declspec(dllexport) bool PluginInit(IPluginSelf* self)
 {
-	g_logger = logger;
-	g_config = config;
-	g_scanner = scanner;
-	g_hooks = hooks;
+	g_pluginSelf = self;
+	g_logger = self ? self->logger : nullptr;
+	g_config = self ? self->config : nullptr;
+	g_scanner = self ? self->scanner : nullptr;
+	g_hooks = self ? self->hooks : nullptr;
 
 	LOG_INFO("Plugin initializing...");
 
-	MapExtensionPluginConfig::Config::Initialize(config);
+	MapExtensionPluginConfig::Config::Initialize(self);
 	if (!MapExtensionPluginConfig::Config::IsEnabled())
 	{
 		LOG_WARN("Plugin is disabled in config");
@@ -72,6 +75,7 @@ __declspec(dllexport) void PluginShutdown()
 	g_scanner = nullptr;
 	g_config = nullptr;
 	g_logger = nullptr;
+	g_pluginSelf = nullptr;
 }
 
 } // extern "C"

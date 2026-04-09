@@ -59,7 +59,10 @@ namespace MapStateRuntime
 		}
 		if (hooks->World && hooks->World->RegisterOnSaveLoaded)
 		{
-			hooks->World->RegisterOnSaveLoaded(OnSaveLoaded);
+			// Disabled on the current build line: the process dies during OnSaveLoaded
+			// before the plugin callback is entered, so keep runtime refresh on the
+			// safer world/experience/tick paths instead.
+			LOG_WARN("SaveLoaded callback registration is disabled on this build line.");
 		}
 		if (hooks->World && hooks->World->RegisterOnExperienceLoadComplete)
 		{
@@ -97,10 +100,6 @@ namespace MapStateRuntime
 			if (hooks->World && hooks->World->UnregisterOnAnyWorldBeginPlay)
 			{
 				hooks->World->UnregisterOnAnyWorldBeginPlay(OnAnyWorldBeginPlay);
-			}
-			if (hooks->World && hooks->World->UnregisterOnSaveLoaded)
-			{
-				hooks->World->UnregisterOnSaveLoaded(OnSaveLoaded);
 			}
 			if (hooks->World && hooks->World->UnregisterOnExperienceLoadComplete)
 			{

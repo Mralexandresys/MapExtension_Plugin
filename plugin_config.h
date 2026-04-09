@@ -80,59 +80,60 @@ namespace MapExtensionPluginConfig
 	class Config
 	{
 	public:
-		static void Initialize(IPluginConfig* config)
+		static void Initialize(const IPluginSelf* self)
 		{
-			s_config = config;
-			if (s_config)
+			s_self = self;
+			s_config = self ? self->config : nullptr;
+			if (s_config && s_self)
 			{
-				s_config->InitializeFromSchema(kPluginName, &SCHEMA);
+				s_config->InitializeFromSchema(s_self, &SCHEMA);
 			}
 		}
 
 		static bool IsEnabled()
 		{
-			return s_config ? s_config->ReadBool(kPluginName, "General", "Enabled", true) : true;
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "General", "Enabled", true) : true;
 		}
 
 		static bool VerboseLifecycleLogs()
 		{
-			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "VerboseLifecycleLogs", false) : false;
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "VerboseLifecycleLogs", false) : false;
 		}
 
 		static bool LogRuntimePlanOnce()
 		{
-			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogRuntimePlanOnce", false) : false;
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogRuntimePlanOnce", false) : false;
 		}
 
 		static bool LogCargoSnapshots()
 		{
-			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogCargoSnapshots", false) : false;
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogCargoSnapshots", false) : false;
 		}
 
 		static bool LogRuptureCycleChat()
 		{
-			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogRuptureCycleChat", false) : false;
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogRuptureCycleChat", false) : false;
 		}
 
 		static bool LogActorScanFallback()
 		{
-			return s_config ? s_config->ReadBool(kPluginName, "Diagnostics", "LogActorScanFallback", false) : false;
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogActorScanFallback", false) : false;
 		}
 
 		static int HttpPort()
 		{
-			return s_config ? s_config->ReadInt(kPluginName, "Http", "Port", 9000) : 9000;
+			return (s_config && s_self) ? s_config->ReadInt(s_self, "Http", "Port", 9000) : 9000;
 		}
 
 		static int RefreshIntervalMs()
 		{
-			return s_config ? s_config->ReadInt(kPluginName, "Runtime", "RefreshIntervalMs", 500) : 500;
+			return (s_config && s_self) ? s_config->ReadInt(s_self, "Runtime", "RefreshIntervalMs", 500) : 500;
 		}
 
 		static const char* RuptureCyclePrefix()
 		{
 			static char buffer[64] = {};
-			if (s_config && s_config->ReadString(kPluginName, "Chat", "RuptureCyclePrefix", buffer, sizeof(buffer), "[RUPTURE_CYCLE]"))
+			if (s_config && s_self && s_config->ReadString(s_self, "Chat", "RuptureCyclePrefix", buffer, sizeof(buffer), "[RUPTURE_CYCLE]"))
 			{
 				return buffer;
 			}
@@ -141,5 +142,6 @@ namespace MapExtensionPluginConfig
 
 	private:
 		static IPluginConfig* s_config;
+		static const IPluginSelf* s_self;
 	};
 }

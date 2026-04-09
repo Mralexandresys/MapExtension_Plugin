@@ -49,6 +49,7 @@ namespace
 	constexpr int kMaxLoggedActorsPerKind = 4;
 	constexpr const wchar_t* kRuptureCycleInfoRequestCommand = L"get info arcadia";
 	constexpr int64_t kRuptureCycleInfoRequestRetryMs = 5000;
+	constexpr int64_t kCargoActorRefreshMinIntervalMs = 750;
 	struct TrackedChimeraWorldState final
 	{
 		SDK::UWorld* World = nullptr;
@@ -67,6 +68,7 @@ namespace
 	std::string g_lastWorldName;
 	bool g_chimeraWorldReady = false;
 	float g_engineTickAccumulatorSeconds = 0.0f;
+	int64_t g_lastCargoActorRefreshAtUnixMs = 0;
 
 	std::mutex g_runtimeStateMutex;
 	std::mutex g_snapshotMutex;
@@ -121,6 +123,12 @@ namespace
 		state.WorldName = g_lastWorldName;
 		state.Ready = g_chimeraWorldReady;
 		return state;
+	}
+
+	bool HasPackageTransportReplicatorSnapshot()
+	{
+		std::lock_guard<std::mutex> lock(g_snapshotMutex);
+		return g_snapshot.HasPackageTransportReplicator;
 	}
 
 	bool IsChimeraWorldName(const std::string& worldName)
@@ -1150,6 +1158,7 @@ namespace
 				g_lastChimeraWorld = nullptr;
 				g_lastWorldName.clear();
 				g_chimeraWorldReady = false;
+				g_lastCargoActorRefreshAtUnixMs = 0;
 				g_requestedCustomNameEntityIds.clear();
 			}
 		}
@@ -1484,7 +1493,10 @@ namespace
 
 	bool IsRealtimeRefreshReason(const char* reason)
 	{
-		return reason != nullptr && std::strcmp(reason, "EngineTick") == 0;
+		return reason != nullptr
+			&& (
+				std::strcmp(reason, "EngineTick") == 0
+				|| std::strncmp(reason, "ActorBeginPlay", std::strlen("ActorBeginPlay")) == 0);
 	}
 
 	bool IsRelevantRealtimeActorImpl(SDK::AActor* actor)
@@ -1497,8 +1509,7 @@ namespace
 				|| actor->IsA(SDK::ACrItemSenderBuilding::StaticClass())
 				|| actor->IsA(SDK::ACrTeleporter::StaticClass())
 				|| actor->IsA(SDK::ABP_Teleporter_C::StaticClass())
-				|| actor->IsA(SDK::ACrMegamachineTeleporterDevice::StaticClass())
-				|| actor->IsA(SDK::ACrCharacterPlayerBase::StaticClass()));
+				|| actor->IsA(SDK::ACrMegamachineTeleporterDevice::StaticClass()));
 	}
 
 	bool IsRelevantRuptureActorImpl(SDK::AActor* actor)
@@ -1944,11 +1955,11 @@ namespace
 			GetPlayerDisplayName(playerPawn));
 	}
 
-	void CaptureFromReplicator(
-		SDK::UWorld* world,
-		CargoSnapshot& snapshot,
-		SDK::ACrGameStateBase* gameState,
-		std::unordered_map<std::string, size_t>& markerIndexes)
+		void CaptureFromReplicator(
+			SDK::UWorld* world,
+			CargoSnapshot& snapshot,
+			SDK::ACrGameStateBase* gameState,
+			std::unordered_map<std::string, size_t>& markerIndexes)
 	{
 		if (!gameState)
 		{
@@ -1962,28 +1973,50 @@ namespace
 			return;
 		}
 
-		snapshot.UsedReplicator = true;
-		std::unordered_map<std::string, ReceiverLinkInfo> receiverLookup;
-		std::unordered_set<std::string> connectionKeys;
-
-		const SDK::FCrReceiversContainer& receivers = replicator->ReceiversContainer;
-		for (int index = 0; index < receivers.ReceiversData.Num(); ++index)
-		{
-			const SDK::FCrReceiverData& receiver = receivers.ReceiversData[index];
-			const std::string receiverKey = BuildReplicationHelperKey(receiver.Receiver);
-			const SDK::FVector worldLocation = MakeVector(receiver.Location.X, receiver.Location.Y, receiver.Location.Z);
-			CargoMarker* marker = AddOrUpdateMarker(
-				snapshot,
-				markerIndexes,
-				CargoKind::Receiver,
-				worldLocation,
-				receiverKey,
-				"package_transport_replicator.receiver",
-				GetBuildingCustomName(world, receiver.Receiver),
-				{});
-			if (marker)
+			snapshot.UsedReplicator = true;
+			std::unordered_map<std::string, ReceiverLinkInfo> receiverLookup;
+			struct SenderReplicationInfo
 			{
-				const auto markerIndex = markerIndexes.find(marker->InternalKey);
+				SDK::FVector WorldLocation{};
+				std::string DisplayName;
+			};
+			std::unordered_map<std::string, SenderReplicationInfo> senderLookup;
+			std::unordered_set<std::string> connectionKeys;
+
+			const SDK::FCrSenderReceiversContainer& senderReceivers = replicator->SenderReceiversContainer;
+			for (int index = 0; index < senderReceivers.AllSenderReceiversData.Num(); ++index)
+			{
+				const SDK::FCrSenderReceiverData& senderReceiver = senderReceivers.AllSenderReceiversData[index];
+				const std::string entityKey = BuildReplicationHelperKey(senderReceiver.Entity);
+				const SDK::FVector worldLocation = MakeVector(
+					senderReceiver.Location.X,
+					senderReceiver.Location.Y,
+					senderReceiver.Location.Z);
+				const std::string displayName = GetBuildingCustomName(world, senderReceiver.Entity);
+
+				if (senderReceiver.bIsSender)
+				{
+					senderLookup.emplace(
+						entityKey,
+						SenderReplicationInfo{
+							worldLocation,
+							displayName
+						});
+					continue;
+				}
+
+				CargoMarker* marker = AddOrUpdateMarker(
+					snapshot,
+					markerIndexes,
+					CargoKind::Receiver,
+					worldLocation,
+					entityKey,
+					"package_transport_replicator.receiver",
+					displayName,
+					{});
+				if (marker)
+				{
+					const auto markerIndex = markerIndexes.find(marker->InternalKey);
 				if (markerIndex == markerIndexes.end())
 				{
 					continue;
@@ -2002,21 +2035,27 @@ namespace
 		const SDK::FCrPackageTransportConnectionsContainer& connections = replicator->ConnectionsContainer;
 		snapshot.ConnectionCount = connections.ConnectionsData.Num();
 		for (int index = 0; index < connections.ConnectionsData.Num(); ++index)
-		{
-			const SDK::FCrPackageTransportConnectionData& connection = connections.ConnectionsData[index];
-			const std::string senderKey = BuildReplicationHelperKey(connection.Sender);
-			const std::string receiverKey = BuildReplicationHelperKey(connection.Receiver);
-			const std::string resourceName = GetItemDisplayName(connection.Item);
-			const SDK::FVector senderLocation = MakeVector(connection.SenderLocation.X, connection.SenderLocation.Y, connection.SenderLocation.Z);
-			CargoMarker* senderMarker = AddOrUpdateMarker(
-				snapshot,
-				markerIndexes,
-				CargoKind::Sender,
-				senderLocation,
-				senderKey,
-				"package_transport_replicator.connection",
-				GetBuildingCustomName(world, connection.Sender),
-				resourceName);
+			{
+				const SDK::FCrPackageTransportConnectionData& connection = connections.ConnectionsData[index];
+				const std::string senderKey = BuildReplicationHelperKey(connection.Sender);
+				const std::string receiverKey = BuildReplicationHelperKey(connection.Receiver);
+				const std::string resourceName = GetItemDisplayName(connection.Item);
+				const auto senderIt = senderLookup.find(senderKey);
+				if (senderIt == senderLookup.end())
+				{
+					continue;
+				}
+
+				const SDK::FVector& senderLocation = senderIt->second.WorldLocation;
+				CargoMarker* senderMarker = AddOrUpdateMarker(
+					snapshot,
+					markerIndexes,
+					CargoKind::Sender,
+					senderLocation,
+					senderKey,
+					"package_transport_replicator.connection",
+					senderIt->second.DisplayName,
+					resourceName);
 
 			auto receiverIt = receiverLookup.find(receiverKey);
 			if (!senderMarker || receiverIt == receiverLookup.end())
@@ -2600,6 +2639,7 @@ namespace MapStateRuntime
 			g_lastChimeraWorld = nullptr;
 			g_lastWorldName.clear();
 			g_chimeraWorldReady = false;
+			g_lastCargoActorRefreshAtUnixMs = 0;
 			g_requestedCustomNameEntityIds.clear();
 		}
 		ResetRuptureCycleState();
@@ -2692,6 +2732,25 @@ namespace MapStateRuntime
 			return;
 		}
 
+		// Once the transport replicator is active, EngineTick already refreshes the
+		// authoritative cargo snapshot. Refreshing again on every cargo actor callback
+		// only adds hitching during spawn bursts.
+		if (HasPackageTransportReplicatorSnapshot())
+		{
+			return;
+		}
+
+		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (g_lastCargoActorRefreshAtUnixMs > 0
+				&& nowUnixMs - g_lastCargoActorRefreshAtUnixMs < kCargoActorRefreshMinIntervalMs)
+			{
+				return;
+			}
+			g_lastCargoActorRefreshAtUnixMs = nowUnixMs;
+		}
+
 		if (ShouldLogLifecycle())
 		{
 			LOG_INFO("ActorBeginPlay refresh trigger: class=%s actor=%s source=%s",
@@ -2725,6 +2784,7 @@ namespace MapStateRuntime
 				g_lastChimeraWorld = world;
 				g_lastWorldName = safeName;
 				g_chimeraWorldReady = false;
+				g_lastCargoActorRefreshAtUnixMs = 0;
 				g_requestedCustomNameEntityIds.clear();
 			}
 			g_engineTickAccumulatorSeconds = 0.0f;
