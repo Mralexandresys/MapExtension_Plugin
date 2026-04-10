@@ -69,6 +69,7 @@ Port=9000
 RefreshIntervalMs=500
 
 [Chat]
+EnableRuptureCycleInfoRequest=1
 RuptureCyclePrefix=[RUPTURE_CYCLE]
 ```
 
@@ -80,6 +81,7 @@ RuptureCyclePrefix=[RUPTURE_CYCLE]
 - `LogActorScanFallback`: logs actor scan fallback (`1` or `0`)
 - `Port`: sets the local HTTP port used by the plugin
 - `RefreshIntervalMs`: sets the runtime refresh interval in milliseconds
+- `EnableRuptureCycleInfoRequest`: enables or disables the client chat request `get info arcadia` used in dedicated-server sessions (`1` or `0`)
 - `RuptureCyclePrefix`: chat prefix expected from the server-side rupture plugin
 
 ## Credits

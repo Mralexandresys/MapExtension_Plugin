@@ -65,6 +65,13 @@ namespace MapExtensionPluginConfig
 		},
 		{
 			"Chat",
+			"EnableRuptureCycleInfoRequest",
+			ConfigValueType::Boolean,
+			"1",
+			"Enable or disable the client chat request used to ask the server for rupture cycle info"
+		},
+		{
+			"Chat",
 			"RuptureCyclePrefix",
 			ConfigValueType::String,
 			"[RUPTURE_CYCLE]",
@@ -128,6 +135,11 @@ namespace MapExtensionPluginConfig
 		static int RefreshIntervalMs()
 		{
 			return (s_config && s_self) ? s_config->ReadInt(s_self, "Runtime", "RefreshIntervalMs", 500) : 500;
+		}
+
+		static bool EnableRuptureCycleInfoRequest()
+		{
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Chat", "EnableRuptureCycleInfoRequest", true) : true;
 		}
 
 		static const char* RuptureCyclePrefix()
