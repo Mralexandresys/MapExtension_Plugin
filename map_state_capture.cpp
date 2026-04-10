@@ -245,6 +245,37 @@ namespace
 		bool HasElapsed = false;
 	};
 
+	bool TryReadLocalRuptureCycleState(
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem,
+		RuptureCycleLocalState& outState)
+	{
+		if (!waveSubsystem)
+		{
+			return false;
+		}
+
+		__try
+		{
+			outState.Wave = waveSubsystem->GetCurrentType();
+			outState.Stage = waveSubsystem->GetCurrentStage();
+			outState.PreWaveSubstage = waveSubsystem->CurrentPreWaveSubstage;
+			outState.FadeoutSubstage = waveSubsystem->CurrentFadeoutSubstage;
+			outState.GrowbackSubstage = waveSubsystem->CurrentGrowbackSubstage;
+			outState.ElapsedSeconds = waveSubsystem->GetTimeSinceLastWaveStarted();
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	struct BuildingCustomNameLookup final
+	{
+		SDK::UCrBuildingCustomNameSubsystem* Subsystem = nullptr;
+		std::unordered_map<uint32_t, std::string> ByEntityId;
+	};
+
 	template <typename TSubsystem>
 	TSubsystem* TryGetWorldSubsystem(SDK::UWorld* world, SDK::UClass* subsystemClass)
 	{
@@ -783,12 +814,11 @@ namespace
 			return false;
 		}
 
-		outState.Wave = waveSubsystem->GetCurrentType();
-		outState.Stage = waveSubsystem->GetCurrentStage();
-		outState.PreWaveSubstage = waveSubsystem->CurrentPreWaveSubstage;
-		outState.FadeoutSubstage = waveSubsystem->CurrentFadeoutSubstage;
-		outState.GrowbackSubstage = waveSubsystem->CurrentGrowbackSubstage;
-		outState.ElapsedSeconds = waveSubsystem->GetTimeSinceLastWaveStarted();
+		if (!TryReadLocalRuptureCycleState(waveSubsystem, outState))
+		{
+			return false;
+		}
+
 		outState.HasElapsed = std::isfinite(outState.ElapsedSeconds);
 		return true;
 	}
@@ -809,24 +839,38 @@ namespace
 		return snapshot;
 	}
 
-	MapStateRuntime::Detail::RuptureCycleSnapshot CapturePreferredRuptureCycleSnapshot(SDK::UWorld* world)
+	MapStateRuntime::Detail::RuptureCycleSnapshot CapturePreferredRuptureCycleSnapshot(
+		SDK::UWorld* world,
+		bool* outDedicatedChatAvailable = nullptr)
 	{
+		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+		const bool dedicatedSession = gameState && gameState->bIsDedicatedServer;
+
+		RuptureCycleLocalState localState{};
+		if (!dedicatedSession && CaptureLocalRuptureCycleState(world, localState))
+		{
+			if (outDedicatedChatAvailable)
+			{
+				*outDedicatedChatAvailable = false;
+			}
+			return ToRuptureCycleSnapshot(localState);
+		}
+
 		RuptureCycleChatState chatState = CaptureRuptureCycleChatState(world);
 		if (!chatState.Available)
 		{
 			chatState = CaptureRuptureCycleRichTextState(world);
 		}
 
-		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
-		if (gameState && gameState->bIsDedicatedServer && chatState.Available)
+		const bool dedicatedChatAvailable = dedicatedSession && chatState.Available;
+		if (outDedicatedChatAvailable)
 		{
-			return ToRuptureCycleSnapshot(chatState);
+			*outDedicatedChatAvailable = dedicatedChatAvailable;
 		}
 
-		RuptureCycleLocalState localState{};
-		if (CaptureLocalRuptureCycleState(world, localState))
+		if (dedicatedSession && chatState.Available)
 		{
-			return ToRuptureCycleSnapshot(localState);
+			return ToRuptureCycleSnapshot(chatState);
 		}
 
 		if (chatState.Available)
@@ -834,29 +878,12 @@ namespace
 			return ToRuptureCycleSnapshot(chatState);
 		}
 
+		if (dedicatedSession && CaptureLocalRuptureCycleState(world, localState))
+		{
+			return ToRuptureCycleSnapshot(localState);
+		}
+
 		return {};
-	}
-
-	bool HasDedicatedServerChatRuptureCycle(SDK::UWorld* world)
-	{
-		if (!world)
-		{
-			return false;
-		}
-
-		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
-		if (!gameState || !gameState->bIsDedicatedServer)
-		{
-			return false;
-		}
-
-		RuptureCycleChatState chatState = CaptureRuptureCycleChatState(world);
-		if (!chatState.Available)
-		{
-			chatState = CaptureRuptureCycleRichTextState(world);
-		}
-
-		return chatState.Available;
 	}
 
 	std::string BuildRuptureCycleChatSignature(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
@@ -874,6 +901,19 @@ namespace
 			oss.precision(3);
 			oss << '|' << snapshot.ElapsedSeconds;
 		}
+		return oss.str();
+	}
+
+	// Key covering only the discrete state fields (wave/stage/step). Used to suppress
+	// repeated log entries when only ElapsedSeconds advances (e.g. local solo runtime).
+	std::string BuildRuptureCycleStateChangeKey(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		std::ostringstream oss;
+		oss
+			<< snapshot.Available << '|'
+			<< snapshot.Wave << '|'
+			<< snapshot.Stage << '|'
+			<< snapshot.Step;
 		return oss.str();
 	}
 
@@ -920,11 +960,9 @@ namespace
 
 	void UpdateDedicatedServerRuptureCycleRequestState(
 		SDK::UWorld* world,
-		const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot,
+		bool hasDedicatedServerChatSnapshot,
 		const char* reason)
 	{
-		(void)snapshot;
-
 		if (!world)
 		{
 			ResetRuptureCycleRequestState();
@@ -938,7 +976,7 @@ namespace
 			return;
 		}
 
-		if (HasDedicatedServerChatRuptureCycle(world))
+		if (hasDedicatedServerChatSnapshot)
 		{
 			ResetRuptureCycleRequestState();
 			return;
@@ -987,12 +1025,6 @@ namespace
 
 		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
 		if (!gameState || !gameState->bIsDedicatedServer)
-		{
-			ResetRuptureCycleRequestState();
-			return false;
-		}
-
-		if (HasDedicatedServerChatRuptureCycle(world))
 		{
 			ResetRuptureCycleRequestState();
 			return false;
@@ -1099,13 +1131,14 @@ namespace
 			return;
 		}
 
-		const std::string signature = BuildRuptureCycleChatSignature(snapshot);
-		if (g_lastRuptureCycleChatSignatureValid && signature == g_lastRuptureCycleChatSignature)
+		// Suppress repeated log entries when only ElapsedSeconds changes (solo runtime).
+		const std::string stateKey = BuildRuptureCycleStateChangeKey(snapshot);
+		if (g_lastRuptureCycleChatSignatureValid && stateKey == g_lastRuptureCycleChatSignature)
 		{
 			return;
 		}
 
-		g_lastRuptureCycleChatSignature = signature;
+		g_lastRuptureCycleChatSignature = stateKey;
 		g_lastRuptureCycleChatSignatureValid = true;
 
 		const std::string elapsedText = snapshot.HasElapsed ? std::to_string(snapshot.ElapsedSeconds) : "--";
@@ -1184,6 +1217,26 @@ namespace
 	std::string CargoKindToString(CargoKind kind)
 	{
 		return kind == CargoKind::Sender ? "sender" : "receiver";
+	}
+
+	bool IsCargoRealtimeActorImpl(SDK::AActor* actor)
+	{
+		return actor
+			&& (
+				actor->IsA(SDK::ABP_PackageReceiver_C::StaticClass())
+				|| actor->IsA(SDK::ABP_PackageSender_C::StaticClass())
+				|| actor->IsA(SDK::ACrItemReceiverBuilding::StaticClass())
+				|| actor->IsA(SDK::ACrItemSenderBuilding::StaticClass()));
+	}
+
+	bool IsAuxiliaryRealtimeActorImpl(SDK::AActor* actor)
+	{
+		return actor
+			&& (
+				actor->IsA(SDK::ACrTeleporter::StaticClass())
+				|| actor->IsA(SDK::ABP_Teleporter_C::StaticClass())
+				|| actor->IsA(SDK::ACrMegamachineTeleporterDevice::StaticClass())
+				|| actor->IsA(SDK::ACrCharacterPlayerBase::StaticClass()));
 	}
 
 	std::string NormalizeCargoBuildingName(CargoKind kind, const std::string& value)
@@ -1501,15 +1554,7 @@ namespace
 
 	bool IsRelevantRealtimeActorImpl(SDK::AActor* actor)
 	{
-		return actor
-			&& (
-				actor->IsA(SDK::ABP_PackageReceiver_C::StaticClass())
-				|| actor->IsA(SDK::ABP_PackageSender_C::StaticClass())
-				|| actor->IsA(SDK::ACrItemReceiverBuilding::StaticClass())
-				|| actor->IsA(SDK::ACrItemSenderBuilding::StaticClass())
-				|| actor->IsA(SDK::ACrTeleporter::StaticClass())
-				|| actor->IsA(SDK::ABP_Teleporter_C::StaticClass())
-				|| actor->IsA(SDK::ACrMegamachineTeleporterDevice::StaticClass()));
+		return IsCargoRealtimeActorImpl(actor) || IsAuxiliaryRealtimeActorImpl(actor);
 	}
 
 	bool IsRelevantRuptureActorImpl(SDK::AActor* actor)
@@ -1667,6 +1712,38 @@ namespace
 			SDK::UCrBuildingCustomNameSubsystem::StaticClass());
 	}
 
+	uint32_t GetPersistentEntityIdValue(const SDK::FCrMassPersistentEntityID& entityId);
+	uint32_t GetReplicationHelperEntityIdValue(const SDK::FCrMassEntityReplicationHelper& helper);
+
+	BuildingCustomNameLookup BuildBuildingCustomNameLookup(SDK::UWorld* world)
+	{
+		BuildingCustomNameLookup lookup{};
+		lookup.Subsystem = TryGetBuildingCustomNameSubsystem(world);
+		if (!lookup.Subsystem)
+		{
+			return lookup;
+		}
+
+		for (const auto& entry : lookup.Subsystem->CustomNames)
+		{
+			const uint32_t entityId = GetPersistentEntityIdValue(entry.Key());
+			if (entityId == 0)
+			{
+				continue;
+			}
+
+			std::string displayName = entry.Value().ToString();
+			if (displayName.empty())
+			{
+				continue;
+			}
+
+			lookup.ByEntityId.emplace(entityId, std::move(displayName));
+		}
+
+		return lookup;
+	}
+
 	std::string GetBuildingCustomName(SDK::UWorld* world, SDK::AActor* buildingActor)
 	{
 		if (!world || !buildingActor)
@@ -1717,29 +1794,22 @@ namespace
 	}
 
 	std::string FindCachedBuildingCustomName(
-		SDK::UCrBuildingCustomNameSubsystem* customNameSubsystem,
+		const BuildingCustomNameLookup& customNameLookup,
 		const SDK::FCrMassEntityReplicationHelper& helper)
 	{
-		if (!customNameSubsystem)
-		{
-			return {};
-		}
-
 		const uint32_t targetId = GetReplicationHelperEntityIdValue(helper);
 		if (targetId == 0)
 		{
 			return {};
 		}
 
-		for (const auto& entry : customNameSubsystem->CustomNames)
+		const auto entry = customNameLookup.ByEntityId.find(targetId);
+		if (entry == customNameLookup.ByEntityId.end())
 		{
-			if (GetPersistentEntityIdValue(entry.Key()) == targetId)
-			{
-				return entry.Value().ToString();
-			}
+			return {};
 		}
 
-		return {};
+		return entry->second;
 	}
 
 	void RequestBuildingCustomNameIfNeeded(
@@ -1773,16 +1843,15 @@ namespace
 
 	std::string GetBuildingCustomName(
 		SDK::UWorld* world,
-		const SDK::FCrMassEntityReplicationHelper& helper)
+		const SDK::FCrMassEntityReplicationHelper& helper,
+		const BuildingCustomNameLookup& customNameLookup)
 	{
 		if (!world)
 		{
 			return {};
 		}
 
-		SDK::UCrBuildingCustomNameSubsystem* customNameSubsystem =
-			TryGetBuildingCustomNameSubsystem(world);
-		const std::string cachedName = FindCachedBuildingCustomName(customNameSubsystem, helper);
+		const std::string cachedName = FindCachedBuildingCustomName(customNameLookup, helper);
 		if (!cachedName.empty())
 		{
 			return cachedName;
@@ -1826,6 +1895,22 @@ namespace
 			}
 
 			if (BuildLocationKey(kind, marker.WorldLocation) == locationKey)
+			{
+				return &marker;
+			}
+		}
+
+		return nullptr;
+	}
+
+	const CargoMarker* FindMarkerByInternalKey(
+		const CargoSnapshot& snapshot,
+		CargoKind kind,
+		const std::string& internalKey)
+	{
+		for (const CargoMarker& marker : snapshot.Markers)
+		{
+			if (marker.Kind == kind && marker.InternalKey == internalKey)
 			{
 				return &marker;
 			}
@@ -1955,11 +2040,13 @@ namespace
 			GetPlayerDisplayName(playerPawn));
 	}
 
-		void CaptureFromReplicator(
-			SDK::UWorld* world,
-			CargoSnapshot& snapshot,
-			SDK::ACrGameStateBase* gameState,
-			std::unordered_map<std::string, size_t>& markerIndexes)
+	void CaptureFromReplicator(
+		SDK::UWorld* world,
+		CargoSnapshot& snapshot,
+		SDK::ACrGameStateBase* gameState,
+		const CargoSnapshot* previousSnapshot,
+		const BuildingCustomNameLookup& customNameLookup,
+		std::unordered_map<std::string, size_t>& markerIndexes)
 	{
 		if (!gameState)
 		{
@@ -1973,89 +2060,106 @@ namespace
 			return;
 		}
 
-			snapshot.UsedReplicator = true;
-			std::unordered_map<std::string, ReceiverLinkInfo> receiverLookup;
-			struct SenderReplicationInfo
+		snapshot.UsedReplicator = true;
+		std::unordered_map<std::string, ReceiverLinkInfo> receiverLookup;
+		struct SenderReplicationInfo
+		{
+			SDK::FVector WorldLocation{};
+			std::string DisplayName;
+		};
+		std::unordered_map<std::string, SenderReplicationInfo> senderLookup;
+		std::unordered_set<std::string> connectionKeys;
+
+		const SDK::FCrSenderReceiversContainer& senderReceivers = replicator->SenderReceiversContainer;
+		for (int index = 0; index < senderReceivers.AllSenderReceiversData.Num(); ++index)
+		{
+			const SDK::FCrSenderReceiverData& senderReceiver = senderReceivers.AllSenderReceiversData[index];
+			const std::string entityKey = BuildReplicationHelperKey(senderReceiver.Entity);
+			const SDK::FVector worldLocation = MakeVector(
+				senderReceiver.Location.X,
+				senderReceiver.Location.Y,
+				senderReceiver.Location.Z);
+			const std::string displayName = GetBuildingCustomName(world, senderReceiver.Entity, customNameLookup);
+
+			if (senderReceiver.bIsSender)
 			{
-				SDK::FVector WorldLocation{};
-				std::string DisplayName;
-			};
-			std::unordered_map<std::string, SenderReplicationInfo> senderLookup;
-			std::unordered_set<std::string> connectionKeys;
-
-			const SDK::FCrSenderReceiversContainer& senderReceivers = replicator->SenderReceiversContainer;
-			for (int index = 0; index < senderReceivers.AllSenderReceiversData.Num(); ++index)
-			{
-				const SDK::FCrSenderReceiverData& senderReceiver = senderReceivers.AllSenderReceiversData[index];
-				const std::string entityKey = BuildReplicationHelperKey(senderReceiver.Entity);
-				const SDK::FVector worldLocation = MakeVector(
-					senderReceiver.Location.X,
-					senderReceiver.Location.Y,
-					senderReceiver.Location.Z);
-				const std::string displayName = GetBuildingCustomName(world, senderReceiver.Entity);
-
-				if (senderReceiver.bIsSender)
-				{
-					senderLookup.emplace(
-						entityKey,
-						SenderReplicationInfo{
-							worldLocation,
-							displayName
-						});
-					continue;
-				}
-
-				CargoMarker* marker = AddOrUpdateMarker(
-					snapshot,
-					markerIndexes,
-					CargoKind::Receiver,
-					worldLocation,
+				senderLookup.emplace(
 					entityKey,
-					"package_transport_replicator.receiver",
-					displayName,
-					{});
-				if (marker)
-				{
-					const auto markerIndex = markerIndexes.find(marker->InternalKey);
-				if (markerIndex == markerIndexes.end())
-				{
-					continue;
-				}
-				receiverLookup.emplace(
-					marker->InternalKey,
-					ReceiverLinkInfo{
-						markerIndex->second,
-						marker->WorldLocation,
-						marker->MapLocation,
-						marker->PublicKey
+					SenderReplicationInfo{
+						worldLocation,
+						displayName
 					});
+				continue;
 			}
+
+			CargoMarker* marker = AddOrUpdateMarker(
+				snapshot,
+				markerIndexes,
+				CargoKind::Receiver,
+				worldLocation,
+				entityKey,
+				"package_transport_replicator.receiver",
+				displayName,
+				{});
+			if (!marker)
+			{
+				continue;
+			}
+
+			const auto markerIndex = markerIndexes.find(marker->InternalKey);
+			if (markerIndex == markerIndexes.end())
+			{
+				continue;
+			}
+
+			receiverLookup.emplace(
+				marker->InternalKey,
+				ReceiverLinkInfo{
+					markerIndex->second,
+					marker->WorldLocation,
+					marker->MapLocation,
+					marker->PublicKey
+				});
 		}
 
 		const SDK::FCrPackageTransportConnectionsContainer& connections = replicator->ConnectionsContainer;
 		snapshot.ConnectionCount = connections.ConnectionsData.Num();
 		for (int index = 0; index < connections.ConnectionsData.Num(); ++index)
+		{
+			const SDK::FCrPackageTransportConnectionData& connection = connections.ConnectionsData[index];
+			const std::string senderKey = BuildReplicationHelperKey(connection.Sender);
+			const std::string receiverKey = BuildReplicationHelperKey(connection.Receiver);
+			const std::string resourceName = GetItemDisplayName(connection.Item);
+			const auto senderIt = senderLookup.find(senderKey);
+			const CargoMarker* previousSenderMarker = nullptr;
+			if (senderIt == senderLookup.end() && previousSnapshot)
 			{
-				const SDK::FCrPackageTransportConnectionData& connection = connections.ConnectionsData[index];
-				const std::string senderKey = BuildReplicationHelperKey(connection.Sender);
-				const std::string receiverKey = BuildReplicationHelperKey(connection.Receiver);
-				const std::string resourceName = GetItemDisplayName(connection.Item);
-				const auto senderIt = senderLookup.find(senderKey);
-				if (senderIt == senderLookup.end())
-				{
-					continue;
-				}
+				previousSenderMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Sender, senderKey);
+			}
+			if (senderIt == senderLookup.end() && !previousSenderMarker)
+			{
+				continue;
+			}
 
-				const SDK::FVector& senderLocation = senderIt->second.WorldLocation;
-				CargoMarker* senderMarker = AddOrUpdateMarker(
-					snapshot,
-					markerIndexes,
-					CargoKind::Sender,
-					senderLocation,
-					senderKey,
-					"package_transport_replicator.connection",
-					senderIt->second.DisplayName,
-					resourceName);
+			const SDK::FVector senderLocation = senderIt != senderLookup.end()
+				? senderIt->second.WorldLocation
+				: previousSenderMarker->WorldLocation;
+			std::string senderDisplayName = senderIt != senderLookup.end()
+				? senderIt->second.DisplayName
+				: previousSenderMarker->DisplayName;
+			if (senderDisplayName.empty())
+			{
+				senderDisplayName = GetBuildingCustomName(world, connection.Sender, customNameLookup);
+			}
+			CargoMarker* senderMarker = AddOrUpdateMarker(
+				snapshot,
+				markerIndexes,
+				CargoKind::Sender,
+				senderLocation,
+				senderKey,
+				"package_transport_replicator.connection",
+				senderDisplayName,
+				resourceName);
 
 			auto receiverIt = receiverLookup.find(receiverKey);
 			if (!senderMarker || receiverIt == receiverLookup.end())
@@ -2208,7 +2312,8 @@ namespace
 	void CaptureTeleporters(
 		SDK::UWorld* world,
 		CargoSnapshot& snapshot,
-		SDK::ACrGameStateBase* gameState)
+		SDK::ACrGameStateBase* gameState,
+		const BuildingCustomNameLookup& customNameLookup)
 	{
 		std::unordered_map<std::string, size_t> teleporterIndexes;
 		std::unordered_map<std::string, size_t> teleporterIndexesByLocation;
@@ -2226,13 +2331,13 @@ namespace
 					MakeVector(teleporter.Location.X, teleporter.Location.Y, teleporter.Location.Z);
 				const std::string internalKey = BuildReplicationHelperKey(teleporter.Teleporter);
 
-					AddOrUpdateTeleporter(
-						snapshot,
-						teleporterIndexes,
-						worldLocation,
-						internalKey,
-						"teleport_replicator",
-						GetBuildingCustomName(world, teleporter.Teleporter));
+				AddOrUpdateTeleporter(
+					snapshot,
+					teleporterIndexes,
+					worldLocation,
+					internalKey,
+					"teleport_replicator",
+					GetBuildingCustomName(world, teleporter.Teleporter, customNameLookup));
 				teleporterIndexesByLocation.emplace(
 					BuildLocationKey("teleporter", worldLocation),
 					snapshot.Teleporters.size() - 1);
@@ -2453,6 +2558,7 @@ namespace
 		const TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
 		CargoSnapshot nextSnapshot{};
 		CargoSnapshot previousSnapshot{};
+		bool hasDedicatedServerChatSnapshot = false;
 		{
 			std::lock_guard<std::mutex> lock(g_snapshotMutex);
 			nextSnapshot.Generation = g_snapshot.Generation + 1;
@@ -2463,7 +2569,18 @@ namespace
 
 		std::unordered_map<std::string, size_t> markerIndexes;
 		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
-		CaptureFromReplicator(world, nextSnapshot, gameState, markerIndexes);
+		const bool needsCustomNameLookup =
+			gameState
+			&& (gameState->PackageTransportReplicator != nullptr || gameState->TeleportReplicator != nullptr);
+		const BuildingCustomNameLookup customNameLookup =
+			needsCustomNameLookup ? BuildBuildingCustomNameLookup(world) : BuildingCustomNameLookup{};
+		CaptureFromReplicator(
+			world,
+			nextSnapshot,
+			gameState,
+			&previousSnapshot,
+			customNameLookup,
+			markerIndexes);
 		if (ShouldLogLifecycle())
 		{
 			LOG_INFO("Cargo refresh '%s': replicator stage completed", nextSnapshot.Reason.c_str());
@@ -2476,7 +2593,7 @@ namespace
 				LOG_INFO("Cargo refresh '%s': actor fallback stage completed", nextSnapshot.Reason.c_str());
 			}
 		}
-		CaptureTeleporters(world, nextSnapshot, gameState);
+		CaptureTeleporters(world, nextSnapshot, gameState, customNameLookup);
 		if (ShouldLogLifecycle())
 		{
 			LOG_INFO("Cargo refresh '%s': teleporter stage completed", nextSnapshot.Reason.c_str());
@@ -2487,12 +2604,14 @@ namespace
 			LOG_INFO("Cargo refresh '%s': player stage completed", nextSnapshot.Reason.c_str());
 		}
 
-		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(world);
+		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(
+			world,
+			&hasDedicatedServerChatSnapshot);
 		ApplyRuptureCycleObservationTimestamp(nextSnapshot.RuptureCycle);
 		StorePersistentRuptureCycleSnapshot(nextSnapshot.RuptureCycle);
 		UpdateDedicatedServerRuptureCycleRequestState(
 			world,
-			nextSnapshot.RuptureCycle,
+			hasDedicatedServerChatSnapshot,
 			nextSnapshot.Reason.c_str());
 
 		nextSnapshot.SenderCount = 0;
@@ -2718,14 +2837,15 @@ namespace MapStateRuntime
 		{
 			return;
 		}
-		const bool cargoActor = Detail::IsRelevantRealtimeActor(beginPlayActor);
+		const bool cargoActor = IsCargoRealtimeActorImpl(beginPlayActor);
+		const bool auxiliaryActor = IsAuxiliaryRealtimeActorImpl(beginPlayActor);
 		const bool ruptureActor = IsRelevantRuptureActorImpl(beginPlayActor);
-		if (!cargoActor && !ruptureActor)
+		if (!cargoActor && !auxiliaryActor && !ruptureActor)
 		{
 			return;
 		}
 
-		if (!cargoActor)
+		if (!cargoActor && !auxiliaryActor)
 		{
 			// Rupture visuals can spawn in bursts while the player moves. Avoid a full cargo scan here.
 			TryRequestDedicatedServerRuptureCycle(trackedState.World, "ActorBeginPlay(Rupture)");
@@ -2733,9 +2853,17 @@ namespace MapStateRuntime
 		}
 
 		// Once the transport replicator is active, EngineTick already refreshes the
-		// authoritative cargo snapshot. Refreshing again on every cargo actor callback
-		// only adds hitching during spawn bursts.
-		if (HasPackageTransportReplicatorSnapshot())
+		// authoritative cargo snapshot. Refreshing again on every cargo-network actor
+		// callback only adds hitching during spawn bursts. Keep teleporter/player
+		// begin-play refreshes active because they are not covered by that replicator.
+		if (cargoActor && HasPackageTransportReplicatorSnapshot())
+		{
+			return;
+		}
+
+		// When EngineTick is running, auxiliary actor callbacks (teleporters, players)
+		// are already captured by the 500 ms tick scan. Skip the redundant refresh.
+		if (!cargoActor && auxiliaryActor && g_engineTickSeen)
 		{
 			return;
 		}
@@ -2756,7 +2884,7 @@ namespace MapStateRuntime
 			LOG_INFO("ActorBeginPlay refresh trigger: class=%s actor=%s source=%s",
 				beginPlayActor->Class ? beginPlayActor->Class->GetName().c_str() : "(null)",
 				beginPlayActor->GetName().c_str(),
-				ruptureActor ? "rupture" : "cargo");
+				ruptureActor ? "rupture" : (auxiliaryActor ? "auxiliary" : "cargo"));
 		}
 
 		g_engineTickAccumulatorSeconds = 0.0f;
@@ -2804,13 +2932,18 @@ namespace MapStateRuntime
 				false,
 				invalidPointer))
 			{
+				// A new world has begun play while ChimeraMain was tracked.
+				// This is a reliable signal that ChimeraMain is being torn down.
+				// Clear the stale pointer immediately to prevent ExperienceLoadComplete
+				// or EngineTick from calling into a freed UWorld (crash on return to menu).
 				if (ShouldLogLifecycle())
 				{
 					LOG_INFO(
-						"Ignoring non-Chimera world begin play while ChimeraMain is tracked: world=%p name=%s",
+						"Non-Chimera world supersedes ChimeraMain: clearing tracked state (new world=%p name=%s)",
 						static_cast<void*>(world),
 						safeName);
 				}
+				ClearChimeraWorldState("Non-Chimera world superseded ChimeraMain");
 			}
 			else if (invalidPointer)
 			{
