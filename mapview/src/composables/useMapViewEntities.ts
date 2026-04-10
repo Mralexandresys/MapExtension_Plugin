@@ -86,17 +86,49 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         allCargoMarkers.value.filter(isCargoMarkerAllowedByMode),
     );
 
+    const allCargoMarkerKeys = computed(
+        () => new Set(allCargoMarkers.value.map((marker) => marker.unique_key)),
+    );
+
+    const visibleCargoMarkerKeys = computed(
+        () => new Set(visibleCargoMarkers.value.map((marker) => marker.unique_key)),
+    );
+
+    function isMissingEndpointKindVisible(kind: "sender" | "receiver"): boolean {
+        if (!isCargoViewMode.value) return false;
+        return kind === "sender"
+            ? entityVisibility.sender
+            : entityVisibility.receiver;
+    }
+
     const renderableCargoConnections = computed(() => {
         if (!isCargoViewMode.value) return [];
 
-        const visibleKeys = new Set(
-            visibleCargoMarkers.value.map((marker) => marker.unique_key),
-        );
-
         return allCargoConnections.value.filter(
-            (connection) =>
-                visibleKeys.has(connection.sender_key) &&
-                visibleKeys.has(connection.receiver_key),
+            (connection) => {
+                const senderVisible = visibleCargoMarkerKeys.value.has(
+                    connection.sender_key,
+                );
+                const receiverVisible = visibleCargoMarkerKeys.value.has(
+                    connection.receiver_key,
+                );
+
+                const senderKnown = allCargoMarkerKeys.value.has(
+                    connection.sender_key,
+                );
+                const receiverKnown = allCargoMarkerKeys.value.has(
+                    connection.receiver_key,
+                );
+
+                const senderAllowed = senderVisible
+                    ? true
+                    : !senderKnown && isMissingEndpointKindVisible("sender");
+                const receiverAllowed = receiverVisible
+                    ? true
+                    : !receiverKnown && isMissingEndpointKindVisible("receiver");
+
+                return senderAllowed && receiverAllowed;
+            },
         );
     });
 

@@ -15,6 +15,7 @@
 #include "UMG_classes.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -50,6 +51,7 @@ namespace
 	constexpr const wchar_t* kRuptureCycleInfoRequestCommand = L"get info arcadia";
 	constexpr int64_t kRuptureCycleInfoRequestRetryMs = 5000;
 	constexpr int64_t kCargoActorRefreshMinIntervalMs = 750;
+	constexpr int64_t kConnectionRetentionMs = 15000;
 	struct TrackedChimeraWorldState final
 	{
 		SDK::UWorld* World = nullptr;
@@ -84,6 +86,8 @@ namespace
 	bool g_shouldRequestDedicatedServerRuptureCycle = false;
 	int64_t g_lastRuptureCycleRequestAtUnixMs = 0;
 	int g_ruptureCycleRequestAttemptCount = 0;
+	std::atomic<bool> g_httpCargoRefreshRequested = false;
+	std::atomic<int64_t> g_lastHttpCargoRefreshRequestAtUnixMs = 0;
 
 	bool ShouldLogLifecycle()
 	{
@@ -105,6 +109,11 @@ namespace
 		return MapExtensionPluginConfig::Config::LogActorScanFallback();
 	}
 
+	bool ShouldRequestDedicatedServerRuptureCycle()
+	{
+		return MapExtensionPluginConfig::Config::EnableRuptureCycleInfoRequest();
+	}
+
 	float GetRefreshIntervalSeconds()
 	{
 		int refreshMs = MapExtensionPluginConfig::Config::RefreshIntervalMs();
@@ -113,6 +122,16 @@ namespace
 			refreshMs = 100;
 		}
 		return static_cast<float>(refreshMs) / 1000.0f;
+	}
+
+	const char* ConsumeRequestedCargoRefreshReason()
+	{
+		if (!g_httpCargoRefreshRequested.exchange(false))
+		{
+			return nullptr;
+		}
+
+		return "HttpRequest(/cargo)";
 	}
 
 	TrackedChimeraWorldState CopyTrackedChimeraWorldState()
@@ -933,6 +952,12 @@ namespace
 
 	void ScheduleDedicatedServerRuptureCycleRequest(const char* reason)
 	{
+		if (!ShouldRequestDedicatedServerRuptureCycle())
+		{
+			ResetRuptureCycleRequestState();
+			return;
+		}
+
 		bool scheduled = false;
 		{
 			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
@@ -987,6 +1012,12 @@ namespace
 
 	bool TryRequestDedicatedServerRuptureCycle(SDK::UWorld* world, const char* reason)
 	{
+		if (!ShouldRequestDedicatedServerRuptureCycle())
+		{
+			ResetRuptureCycleRequestState();
+			return false;
+		}
+
 		const TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
 		if (!world)
 		{
@@ -1919,6 +1950,80 @@ namespace
 		return nullptr;
 	}
 
+	const CargoConnection* FindConnectionByPublicKeys(
+		const CargoSnapshot& snapshot,
+		const std::string& senderKey,
+		const std::string& receiverKey,
+		const std::string& itemDisplayName)
+	{
+		for (const CargoConnection& connection : snapshot.Connections)
+		{
+			if (connection.SenderKey == senderKey
+				&& connection.ReceiverKey == receiverKey
+				&& connection.ItemDisplayName == itemDisplayName)
+			{
+				return &connection;
+			}
+		}
+
+		return nullptr;
+	}
+
+	std::string BuildConnectionSignature(const CargoConnection& connection)
+	{
+		std::string signature = connection.SenderKey;
+		signature.push_back('\x1F');
+		signature += connection.ReceiverKey;
+		signature.push_back('\x1F');
+		signature += connection.ItemDisplayName;
+		return signature;
+	}
+
+	void MergeRetainedConnections(
+		CargoSnapshot& snapshot,
+		const CargoSnapshot& previousSnapshot,
+		int64_t nowUnixMs)
+	{
+		if (!snapshot.HasPackageTransportReplicator || !previousSnapshot.HasPackageTransportReplicator)
+		{
+			return;
+		}
+
+		std::unordered_set<std::string> signatures;
+		signatures.reserve(snapshot.Connections.size());
+		for (const CargoConnection& connection : snapshot.Connections)
+		{
+			signatures.insert(BuildConnectionSignature(connection));
+		}
+
+		size_t retainedCount = 0;
+		for (const CargoConnection& previousConnection : previousSnapshot.Connections)
+		{
+			const std::string signature = BuildConnectionSignature(previousConnection);
+			if (signatures.find(signature) != signatures.end())
+			{
+				continue;
+			}
+			if (previousConnection.LastObservedAtUnixMs <= 0
+				|| nowUnixMs - previousConnection.LastObservedAtUnixMs > kConnectionRetentionMs)
+			{
+				continue;
+			}
+
+			snapshot.Connections.push_back(previousConnection);
+			signatures.insert(signature);
+			++retainedCount;
+		}
+
+		if (retainedCount > 0 && ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"Cargo refresh '%s': retained %zu recent connection(s) missing from current replicator snapshot",
+				snapshot.Reason.c_str(),
+				retainedCount);
+		}
+	}
+
 	std::string GetTeleporterDisplayName(SDK::ACrTeleporter* teleporter)
 	{
 		if (!teleporter)
@@ -2045,6 +2150,7 @@ namespace
 		CargoSnapshot& snapshot,
 		SDK::ACrGameStateBase* gameState,
 		const CargoSnapshot* previousSnapshot,
+		int64_t observedAtUnixMs,
 		const BuildingCustomNameLookup& customNameLookup,
 		std::unordered_map<std::string, size_t>& markerIndexes)
 	{
@@ -2129,50 +2235,140 @@ namespace
 			const SDK::FCrPackageTransportConnectionData& connection = connections.ConnectionsData[index];
 			const std::string senderKey = BuildReplicationHelperKey(connection.Sender);
 			const std::string receiverKey = BuildReplicationHelperKey(connection.Receiver);
+			const std::string previousReceiverKey = BuildReplicationHelperKey(connection.PrevReceiver);
 			const std::string resourceName = GetItemDisplayName(connection.Item);
+			const std::string senderPublicKey = MakePublicKey(CargoKind::Sender, senderKey);
+			const std::string receiverPublicKey = MakePublicKey(CargoKind::Receiver, receiverKey);
+			const std::string previousReceiverPublicKey = previousReceiverKey.empty()
+				? std::string{}
+				: MakePublicKey(CargoKind::Receiver, previousReceiverKey);
 			const auto senderIt = senderLookup.find(senderKey);
 			const CargoMarker* previousSenderMarker = nullptr;
 			if (senderIt == senderLookup.end() && previousSnapshot)
 			{
 				previousSenderMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Sender, senderKey);
 			}
-			if (senderIt == senderLookup.end() && !previousSenderMarker)
-			{
-				continue;
-			}
 
-			const SDK::FVector senderLocation = senderIt != senderLookup.end()
-				? senderIt->second.WorldLocation
-				: previousSenderMarker->WorldLocation;
-			std::string senderDisplayName = senderIt != senderLookup.end()
-				? senderIt->second.DisplayName
-				: previousSenderMarker->DisplayName;
-			if (senderDisplayName.empty())
+			CargoMarker* senderMarker = nullptr;
+			if (senderIt != senderLookup.end() || previousSenderMarker)
 			{
-				senderDisplayName = GetBuildingCustomName(world, connection.Sender, customNameLookup);
+				const SDK::FVector senderLocation = senderIt != senderLookup.end()
+					? senderIt->second.WorldLocation
+					: previousSenderMarker->WorldLocation;
+				std::string senderDisplayName = senderIt != senderLookup.end()
+					? senderIt->second.DisplayName
+					: previousSenderMarker->DisplayName;
+				if (senderDisplayName.empty())
+				{
+					senderDisplayName = GetBuildingCustomName(world, connection.Sender, customNameLookup);
+				}
+				senderMarker = AddOrUpdateMarker(
+					snapshot,
+					markerIndexes,
+					CargoKind::Sender,
+					senderLocation,
+					senderKey,
+					"package_transport_replicator.connection",
+					senderDisplayName,
+					resourceName);
 			}
-			CargoMarker* senderMarker = AddOrUpdateMarker(
-				snapshot,
-				markerIndexes,
-				CargoKind::Sender,
-				senderLocation,
-				senderKey,
-				"package_transport_replicator.connection",
-				senderDisplayName,
-				resourceName);
 
 			auto receiverIt = receiverLookup.find(receiverKey);
-			if (!senderMarker || receiverIt == receiverLookup.end())
+			const CargoMarker* previousReceiverMarker = nullptr;
+			if (receiverIt == receiverLookup.end() && previousSnapshot)
+			{
+				previousReceiverMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Receiver, receiverKey);
+				if (!previousReceiverMarker && !previousReceiverKey.empty())
+				{
+					previousReceiverMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Receiver, previousReceiverKey);
+				}
+			}
+
+			const CargoConnection* previousConnection = nullptr;
+			if (previousSnapshot)
+			{
+				previousConnection = FindConnectionByPublicKeys(
+					*previousSnapshot,
+					senderPublicKey,
+					receiverPublicKey,
+					resourceName);
+				if (!previousConnection && !previousReceiverPublicKey.empty())
+				{
+					previousConnection = FindConnectionByPublicKeys(
+						*previousSnapshot,
+						senderPublicKey,
+						previousReceiverPublicKey,
+						resourceName);
+				}
+			}
+
+			std::string resolvedSenderPublicKey = senderPublicKey;
+			std::string resolvedSenderLabel;
+			SDK::FVector resolvedSenderWorldLocation{};
+			SDK::FVector2f resolvedSenderMapLocation{};
+			bool hasResolvedSender = false;
+			if (senderMarker)
+			{
+				resolvedSenderPublicKey = senderMarker->PublicKey;
+				resolvedSenderLabel = ComposeMarkerDisplayName(*senderMarker);
+				resolvedSenderWorldLocation = senderMarker->WorldLocation;
+				resolvedSenderMapLocation = senderMarker->MapLocation;
+				hasResolvedSender = true;
+			}
+			else if (previousConnection)
+			{
+				resolvedSenderPublicKey = previousConnection->SenderKey;
+				resolvedSenderLabel = previousConnection->SenderLabel;
+				resolvedSenderWorldLocation = previousConnection->SenderWorldLocation;
+				resolvedSenderMapLocation = previousConnection->SenderMapLocation;
+				hasResolvedSender = true;
+			}
+
+			if (!hasResolvedSender)
 			{
 				continue;
 			}
 
-			CargoMarker& receiverMarker = snapshot.Markers[receiverIt->second.MarkerIndex];
-			AppendResourceName(receiverMarker, resourceName);
+			std::string resolvedReceiverPublicKey = receiverPublicKey;
+			std::string resolvedReceiverLabel;
+			SDK::FVector resolvedReceiverWorldLocation{};
+			SDK::FVector2f resolvedReceiverMapLocation{};
+			bool hasResolvedReceiver = false;
+			if (receiverIt != receiverLookup.end())
+			{
+				CargoMarker& receiverMarker = snapshot.Markers[receiverIt->second.MarkerIndex];
+				AppendResourceName(receiverMarker, resourceName);
+				resolvedReceiverPublicKey = receiverIt->second.PublicKey;
+				resolvedReceiverLabel = receiverMarker.DisplayName;
+				resolvedReceiverWorldLocation = receiverMarker.WorldLocation;
+				resolvedReceiverMapLocation = receiverMarker.MapLocation;
+				hasResolvedReceiver = true;
+			}
+			else if (previousReceiverMarker)
+			{
+				resolvedReceiverPublicKey = previousReceiverMarker->PublicKey;
+				resolvedReceiverLabel = previousReceiverMarker->DisplayName;
+				resolvedReceiverWorldLocation = previousReceiverMarker->WorldLocation;
+				resolvedReceiverMapLocation = previousReceiverMarker->MapLocation;
+				hasResolvedReceiver = true;
+			}
+			else if (previousConnection)
+			{
+				resolvedReceiverPublicKey = previousConnection->ReceiverKey;
+				resolvedReceiverLabel = previousConnection->ReceiverLabel;
+				resolvedReceiverWorldLocation = previousConnection->ReceiverWorldLocation;
+				resolvedReceiverMapLocation = previousConnection->ReceiverMapLocation;
+				hasResolvedReceiver = true;
+			}
 
-			std::string dedupeKey = senderMarker->InternalKey;
+			if (!hasResolvedReceiver)
+			{
+				continue;
+			}
+
+			std::string dedupeKey = resolvedSenderPublicKey;
 			dedupeKey.push_back('\x1F');
-			dedupeKey += receiverKey;
+			dedupeKey += resolvedReceiverPublicKey;
 			dedupeKey.push_back('\x1F');
 			dedupeKey += resourceName;
 			if (!connectionKeys.insert(dedupeKey).second)
@@ -2181,16 +2377,17 @@ namespace
 			}
 
 			CargoConnection route{};
-			route.SenderKey = senderMarker->PublicKey;
-			route.ReceiverKey = receiverIt->second.PublicKey;
-			route.SenderLabel = ComposeMarkerDisplayName(*senderMarker);
-			route.ReceiverLabel = receiverMarker.DisplayName;
+			route.SenderKey = resolvedSenderPublicKey;
+			route.ReceiverKey = resolvedReceiverPublicKey;
+			route.SenderLabel = resolvedSenderLabel;
+			route.ReceiverLabel = resolvedReceiverLabel;
 			route.ItemDisplayName = resourceName;
 			route.RequestedAmount = connection.RequestedAmount;
-			route.SenderWorldLocation = senderMarker->WorldLocation;
-			route.ReceiverWorldLocation = receiverMarker.WorldLocation;
-			route.SenderMapLocation = senderMarker->MapLocation;
-			route.ReceiverMapLocation = receiverMarker.MapLocation;
+			route.SenderWorldLocation = resolvedSenderWorldLocation;
+			route.ReceiverWorldLocation = resolvedReceiverWorldLocation;
+			route.SenderMapLocation = resolvedSenderMapLocation;
+			route.ReceiverMapLocation = resolvedReceiverMapLocation;
+			route.LastObservedAtUnixMs = observedAtUnixMs;
 			snapshot.Connections.push_back(std::move(route));
 		}
 	}
@@ -2559,6 +2756,7 @@ namespace
 		CargoSnapshot nextSnapshot{};
 		CargoSnapshot previousSnapshot{};
 		bool hasDedicatedServerChatSnapshot = false;
+		const int64_t observedAtUnixMs = GetCurrentUnixTimeMilliseconds();
 		{
 			std::lock_guard<std::mutex> lock(g_snapshotMutex);
 			nextSnapshot.Generation = g_snapshot.Generation + 1;
@@ -2579,6 +2777,7 @@ namespace
 			nextSnapshot,
 			gameState,
 			&previousSnapshot,
+			observedAtUnixMs,
 			customNameLookup,
 			markerIndexes);
 		if (ShouldLogLifecycle())
@@ -2603,6 +2802,7 @@ namespace
 		{
 			LOG_INFO("Cargo refresh '%s': player stage completed", nextSnapshot.Reason.c_str());
 		}
+		MergeRetainedConnections(nextSnapshot, previousSnapshot, observedAtUnixMs);
 
 		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(
 			world,
@@ -2726,6 +2926,25 @@ namespace MapStateRuntime
 		return RefreshCargoSnapshotImpl(world, reason);
 	}
 
+	void RequestCargoSnapshotRefresh(const char* reason)
+	{
+		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
+		const int64_t lastRequestAtUnixMs = g_lastHttpCargoRefreshRequestAtUnixMs.load();
+		if (lastRequestAtUnixMs > 0 && nowUnixMs - lastRequestAtUnixMs < 250)
+		{
+			return;
+		}
+
+		g_lastHttpCargoRefreshRequestAtUnixMs.store(nowUnixMs);
+		g_httpCargoRefreshRequested.store(true);
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"Scheduled cargo snapshot refresh from %s",
+				reason ? reason : "unknown");
+		}
+	}
+
 	void TryRefreshCurrentWorld(const char* reason)
 	{
 		TryRefreshCurrentWorldImpl(reason);
@@ -2793,6 +3012,14 @@ namespace MapStateRuntime
 		}
 
 		const float refreshIntervalSeconds = GetRefreshIntervalSeconds();
+		if (const char* requestedReason = ConsumeRequestedCargoRefreshReason())
+		{
+			Detail::RefreshCargoSnapshot(trackedState.World, requestedReason);
+			TryRequestDedicatedServerRuptureCycle(trackedState.World, requestedReason);
+			g_engineTickAccumulatorSeconds = 0.0f;
+			return;
+		}
+
 		if (deltaSeconds <= 0.0f || deltaSeconds > 5.0f)
 		{
 			g_engineTickAccumulatorSeconds = refreshIntervalSeconds;

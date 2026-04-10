@@ -65,6 +65,7 @@ namespace Detail
 		SDK::FVector ReceiverWorldLocation{};
 		SDK::FVector2f SenderMapLocation{};
 		SDK::FVector2f ReceiverMapLocation{};
+		int64_t LastObservedAtUnixMs = 0;
 	};
 
 	struct TeleporterMarker

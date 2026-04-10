@@ -16,6 +16,7 @@ namespace MapStateRuntime
 		void LogRuntimePlanIfNeeded();
 		bool IsRelevantRealtimeActor(SDK::AActor* actor);
 		bool RefreshCargoSnapshot(SDK::UWorld* world, const char* reason);
+		void RequestCargoSnapshotRefresh(const char* reason);
 		void TryRefreshCurrentWorld(const char* reason);
 }
 }
