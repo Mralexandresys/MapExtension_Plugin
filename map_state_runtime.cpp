@@ -1,8 +1,19 @@
 #include "map_state_runtime.h"
 
 #include "map_state_capture.h"
-#include "map_state_http.h"
 #include "plugin_helpers.h"
+
+#if defined(MODLOADER_CLIENT_BUILD)
+#include "map_state_http.h"
+#endif
+
+#if defined(MODLOADER_CLIENT_BUILD)
+#include "client/map_sync_client.h"
+#endif
+
+#if defined(MODLOADER_SERVER_BUILD)
+#include "server/map_sync_server.h"
+#endif
 
 namespace
 {
@@ -23,10 +34,13 @@ namespace MapStateRuntime
 		{
 			return true;
 		}
+
+#if defined(MODLOADER_CLIENT_BUILD)
 		if (!Detail::StartHttpServer())
 		{
 			return false;
 		}
+#endif
 
 		if (hooks->Engine && hooks->Engine->RegisterOnInit)
 		{
@@ -69,6 +83,37 @@ namespace MapStateRuntime
 			hooks->World->RegisterOnExperienceLoadComplete(OnExperienceLoadComplete);
 		}
 
+		// WorldEndPlay hooks (v20)
+		if (hooks->World && hooks->World->RegisterOnBeforeWorldEndPlay)
+		{
+			hooks->World->RegisterOnBeforeWorldEndPlay(OnBeforeWorldEndPlay);
+		}
+		if (hooks->World && hooks->World->RegisterOnAfterWorldEndPlay)
+		{
+			hooks->World->RegisterOnAfterWorldEndPlay(OnAfterWorldEndPlay);
+		}
+
+		// PlayerJoined hook (v14)
+		if (hooks->Players && hooks->Players->RegisterOnPlayerJoined)
+		{
+			hooks->Players->RegisterOnPlayerJoined(OnPlayerJoined);
+		}
+
+		// Initialize network sync modules
+#if defined(MODLOADER_CLIENT_BUILD)
+		if (!MapExtensionClient::Sync::Initialize())
+		{
+			LOG_WARN("Client network sync initialization failed; dedicated snapshot sync disabled.");
+		}
+#endif
+
+#if defined(MODLOADER_SERVER_BUILD)
+		if (!MapExtensionServer::Sync::Initialize())
+		{
+			LOG_WARN("Server network sync initialization failed; snapshot requests will not be served.");
+		}
+#endif
+
 		g_registered = true;
 		LOG_INFO("Runtime callbacks registered");
 		Detail::LogRuntimePlanIfNeeded();
@@ -105,15 +150,42 @@ namespace MapStateRuntime
 			{
 				hooks->World->UnregisterOnExperienceLoadComplete(OnExperienceLoadComplete);
 			}
+			if (hooks->World && hooks->World->UnregisterOnBeforeWorldEndPlay)
+			{
+				hooks->World->UnregisterOnBeforeWorldEndPlay(OnBeforeWorldEndPlay);
+			}
+			if (hooks->World && hooks->World->UnregisterOnAfterWorldEndPlay)
+			{
+				hooks->World->UnregisterOnAfterWorldEndPlay(OnAfterWorldEndPlay);
+			}
+			if (hooks->Players && hooks->Players->UnregisterOnPlayerJoined)
+			{
+				hooks->Players->UnregisterOnPlayerJoined(OnPlayerJoined);
+			}
 		}
 
+		// Shutdown network sync modules
+#if defined(MODLOADER_CLIENT_BUILD)
+		MapExtensionClient::Sync::Shutdown();
+#endif
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::Shutdown();
+#endif
+
 		g_registered = false;
+#if defined(MODLOADER_CLIENT_BUILD)
 		Detail::StopHttpServer();
+#endif
 		LOG_INFO("Runtime callbacks unregistered");
 	}
 
 	void HandleProcessDetach(bool processTerminating)
 	{
+#if defined(MODLOADER_CLIENT_BUILD)
 		Detail::HandleHttpProcessDetach(processTerminating);
+#else
+		(void)processTerminating;
+#endif
 	}
 }
