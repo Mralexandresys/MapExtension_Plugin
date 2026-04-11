@@ -3,6 +3,10 @@
 #include "plugin_config.h"
 #include "plugin_helpers.h"
 
+#if !defined(MODLOADER_SERVER_BUILD)
+#include "client/map_sync_client.h"
+#endif
+
 #include "AuItems_classes.hpp"
 #include "BP_PackageReceiver_classes.hpp"
 #include "BP_PackageSender_classes.hpp"
@@ -504,6 +508,16 @@ namespace
 			return ToRuptureCycleSnapshot(localState);
 		}
 
+#if !defined(MODLOADER_SERVER_BUILD)
+		// Local subsystem unavailable (typical on a dedicated-server client).
+		// Fall back to the remote cache populated by the network sync layer.
+		MapStateRuntime::Detail::RuptureCycleSnapshot remoteSnapshot{};
+		if (MapExtensionClient::Sync::TryCopyRemoteRuptureCycleSnapshot(remoteSnapshot))
+		{
+			return remoteSnapshot;
+		}
+#endif
+
 		return {};
 	}
 
@@ -666,6 +680,10 @@ namespace
 		g_engineTickAccumulatorSeconds = 0.0f;
 		g_engineTickSeen = false;
 		ResetRuptureCycleState();
+
+#if !defined(MODLOADER_SERVER_BUILD)
+		MapExtensionClient::Sync::ResetRuntimeState();
+#endif
 
 		if (ShouldLogLifecycle())
 		{
@@ -2268,6 +2286,42 @@ namespace
 				nextSnapshot.ActorSenderCount);
 		}
 
+#if !defined(MODLOADER_SERVER_BUILD)
+		// On a dedicated-server client, prefer the authoritative snapshot received
+		// from the server plugin over the local runtime scan. The local scan on a
+		// dedicated client often yields incomplete data because the replication
+		// state is partial.
+		MapStateRuntime::Detail::CargoSnapshot remoteCargoSnapshot{};
+		if (MapExtensionClient::Sync::TryCopyRemoteCargoSnapshot(remoteCargoSnapshot))
+		{
+			// Preserve the generation counter and reason from the local refresh
+			// so the HTTP endpoint and log output remain consistent.
+			remoteCargoSnapshot.Generation = nextSnapshot.Generation;
+			remoteCargoSnapshot.Reason = nextSnapshot.Reason;
+			// Use remote rupture cycle if available, else keep whatever the local
+			// or remote-fallback already resolved.
+			if (!remoteCargoSnapshot.RuptureCycle.Available && nextSnapshot.RuptureCycle.Available)
+			{
+				remoteCargoSnapshot.RuptureCycle = nextSnapshot.RuptureCycle;
+			}
+			ApplyRuptureCycleObservationTimestamp(remoteCargoSnapshot.RuptureCycle);
+			StorePersistentRuptureCycleSnapshot(remoteCargoSnapshot.RuptureCycle);
+
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO(
+					"Using remote server snapshot: markers=%zu, connections=%zu, teleporters=%zu, players=%zu (local had markers=%zu)",
+					remoteCargoSnapshot.Markers.size(),
+					remoteCargoSnapshot.Connections.size(),
+					remoteCargoSnapshot.Teleporters.size(),
+					remoteCargoSnapshot.Players.size(),
+					nextSnapshot.Markers.size());
+			}
+
+			nextSnapshot = remoteCargoSnapshot;
+		}
+#endif
+
 		{
 			std::lock_guard<std::mutex> lock(g_snapshotMutex);
 			g_snapshot = nextSnapshot;
@@ -2434,6 +2488,13 @@ namespace MapStateRuntime
 					MapExtensionPluginConfig::Config::RefreshIntervalMs());
 			}
 		}
+
+#if !defined(MODLOADER_SERVER_BUILD)
+		// On a dedicated-server client, periodically request an authoritative
+		// snapshot from the server plugin. The sync client handles rate-limiting
+		// and dedicated-session detection internally.
+		MapExtensionClient::Sync::RequestSnapshotIfNeeded(trackedState.World, "EngineTick");
+#endif
 
 		const float refreshIntervalSeconds = GetRefreshIntervalSeconds();
 		if (const char* requestedReason = ConsumeRequestedCargoRefreshReason())
