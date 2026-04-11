@@ -37,6 +37,8 @@ Il s'agit d'une premiere ebauche fonctionnelle.
 
 Le projet va continuer a evoluer prochainement, mais les retours, corrections et contributions sont les bienvenus.
 
+Le plugin se build maintenant contre `StarRupture-Plugin-SDK`. Pour le developpement local, il suffit d'avoir le SDK public et une release du modloader au runtime ; il n'est plus necessaire de builder tout le source tree du modloader.
+
 Pour tout ce qui concerne le build et le developpement, voir `DEVELOPERS.md`.
 
 ## Licence

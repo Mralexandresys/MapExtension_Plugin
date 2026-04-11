@@ -36,6 +36,7 @@
   </PropertyGroup>
   <PropertyGroup>
     <RepoRootDir Condition="'$(RepoRootDir)' == ''">$(MSBuildThisFileDirectory)..\</RepoRootDir>
+    <PluginSdkRootDir Condition="'$(PluginSdkRootDir)' == ''">$(MSBuildThisFileDirectory)..\StarRupture-Plugin-SDK\</PluginSdkRootDir>
     <SolutionDir Condition="'$(SolutionDir)' == ''">$(RepoRootDir)</SolutionDir>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -81,7 +82,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings" />
   <ImportGroup Label="Shared">
-    <Import Project="$(RepoRootDir)Shared.props" />
+    <Import Project="$(PluginSdkRootDir)Shared.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -107,35 +108,43 @@
     <TargetName>MapExtension_Plugin</TargetName>
     <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
-    <StarRuptureSDKSourceDir>$(RepoRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
-    <StarRuptureSDKConfigDir>$(RepoRootDir)StarRupture SDK\Client\;$(RepoRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
+    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Client\;$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
     <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
+    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Client\;$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
     <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
-    <StarRuptureSDKSourceDir>$(RepoRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
-    <StarRuptureSDKConfigDir>$(RepoRootDir)StarRupture SDK\Client\;$(RepoRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
+    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Client\;$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
     <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
+    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Client\;$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Server Debug|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
     <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
+    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Server\;$(PluginSdkRootDir)StarRupture SDK\Server\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Server Release|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
     <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
+    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Server\;$(PluginSdkRootDir)StarRupture SDK\Server\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -145,7 +154,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);$(RepoRootDir)src;$(RepoRootDir)Version_Mod_Loader;$(RepoRootDir)Version_Mod_Loader\plugins;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -161,7 +170,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);$(RepoRootDir)src;$(RepoRootDir)Version_Mod_Loader;$(RepoRootDir)Version_Mod_Loader\plugins;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -179,7 +188,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);$(RepoRootDir)src;$(RepoRootDir)Version_Mod_Loader;$(RepoRootDir)Version_Mod_Loader\plugins;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -199,7 +208,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);$(RepoRootDir)src;$(RepoRootDir)Version_Mod_Loader;$(RepoRootDir)Version_Mod_Loader\plugins;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -217,7 +226,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);$(RepoRootDir)src;$(RepoRootDir)Version_Mod_Loader;$(RepoRootDir)Version_Mod_Loader\plugins;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -235,7 +244,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);$(RepoRootDir)src;$(RepoRootDir)Version_Mod_Loader;$(RepoRootDir)Version_Mod_Loader\plugins;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

@@ -51,7 +51,6 @@ namespace
 	constexpr const wchar_t* kRuptureCycleInfoRequestCommand = L"get info arcadia";
 	constexpr int64_t kRuptureCycleInfoRequestRetryMs = 5000;
 	constexpr int64_t kCargoActorRefreshMinIntervalMs = 750;
-	constexpr int64_t kConnectionRetentionMs = 15000;
 	struct TrackedChimeraWorldState final
 	{
 		SDK::UWorld* World = nullptr;
@@ -71,10 +70,14 @@ namespace
 	bool g_chimeraWorldReady = false;
 	float g_engineTickAccumulatorSeconds = 0.0f;
 	int64_t g_lastCargoActorRefreshAtUnixMs = 0;
+	SDK::UWorld* g_lastCargoBootstrapWorld = nullptr;
+	bool g_cargoSubsystemBootstrapAttempted = false;
+	SDK::ACrPackageTransportReplicator* g_lastBootstrappedPackageTransportReplicator = nullptr;
 
 	std::mutex g_runtimeStateMutex;
 	std::mutex g_snapshotMutex;
 	CargoSnapshot g_snapshot{};
+	std::unordered_map<std::string, CargoConnection> g_sessionConnectionCache;
 	std::unordered_set<uint32_t> g_requestedCustomNameEntityIds;
 	std::string g_lastRuptureCycleChatSignature;
 	bool g_lastRuptureCycleChatSignatureValid = false;
@@ -82,6 +85,8 @@ namespace
 	bool g_lastPersistentRuptureCycleSnapshotValid = false;
 	std::string g_lastRuptureCycleObservedSignature;
 	bool g_lastRuptureCycleObservedSignatureValid = false;
+	std::string g_lastRuptureCycleProbeSignature;
+	bool g_lastRuptureCycleProbeSignatureValid = false;
 	int64_t g_lastRuptureCycleObservedAtUnixMs = 0;
 	bool g_shouldRequestDedicatedServerRuptureCycle = false;
 	int64_t g_lastRuptureCycleRequestAtUnixMs = 0;
@@ -449,28 +454,90 @@ namespace
 		return value;
 	}
 
-	std::string FindLastLineContainingPrefix(const std::string& text, const std::string& prefix)
+	std::string StripRichTextMarkup(const std::string& value);
+
+	struct RuptureCycleLineMatch
+	{
+		std::string RawLine;
+		std::string CleanLine;
+	};
+
+	void LogRuptureCycleProbeIfNeeded(
+		const char* source,
+		const char* outcome,
+		const std::string& rawLine,
+		const std::string& cleanLine,
+		const std::string& payload,
+		const char* detail = nullptr)
+	{
+		if (!ShouldLogRuptureCycleChat())
+		{
+			return;
+		}
+
+		std::ostringstream signature;
+		signature
+			<< (source ? source : "unknown") << '|'
+			<< (outcome ? outcome : "unknown") << '|'
+			<< rawLine << '|'
+			<< cleanLine << '|'
+			<< payload << '|'
+			<< (detail ? detail : "");
+		if (g_lastRuptureCycleProbeSignatureValid
+			&& g_lastRuptureCycleProbeSignature == signature.str())
+		{
+			return;
+		}
+
+		g_lastRuptureCycleProbeSignature = signature.str();
+		g_lastRuptureCycleProbeSignatureValid = true;
+
+		LOG_INFO(
+			"Rupture chat probe [%s] %s%s%s raw='%s' clean='%s' payload='%s'",
+			source ? source : "unknown",
+			outcome ? outcome : "unknown",
+			detail ? " detail='" : "",
+			detail ? detail : "",
+			detail ? "'" : "",
+			rawLine.c_str(),
+			cleanLine.c_str(),
+			payload.c_str());
+	}
+
+	RuptureCycleLineMatch FindLastLineContainingPrefixMatch(const std::string& text, const std::string& prefix)
 	{
 		if (text.empty() || prefix.empty())
 		{
-			return std::string();
+			return {};
 		}
 
-		const size_t prefixPos = text.rfind(prefix);
-		if (prefixPos == std::string::npos)
+		RuptureCycleLineMatch match{};
+		size_t lineStart = 0;
+		while (lineStart < text.size())
 		{
-			return std::string();
+			size_t lineEnd = text.find('\n', lineStart);
+			if (lineEnd == std::string::npos)
+			{
+				lineEnd = text.size();
+			}
+
+			std::string rawLine = TrimWhitespace(text.substr(lineStart, lineEnd - lineStart));
+			std::string cleanLine = TrimWhitespace(StripRichTextMarkup(rawLine));
+			if (!cleanLine.empty() && cleanLine.find(prefix) != std::string::npos)
+			{
+				match.RawLine = std::move(rawLine);
+				match.CleanLine = std::move(cleanLine);
+			}
+
+			if (lineEnd >= text.size())
+			{
+				break;
+			}
+
+			lineStart = lineEnd + 1;
 		}
 
-		size_t lineStart = text.rfind('\n', prefixPos);
-		lineStart = (lineStart == std::string::npos) ? 0 : (lineStart + 1);
-		size_t lineEnd = text.find('\n', prefixPos);
-		if (lineEnd == std::string::npos)
-		{
-			lineEnd = text.size();
-		}
-
-		return TrimWhitespace(text.substr(lineStart, lineEnd - lineStart));
+		return match;
 	}
 
 	std::string StripRichTextMarkup(const std::string& value)
@@ -683,6 +750,7 @@ namespace
 
 		const std::string prefix = GetRuptureCycleChatPrefix();
 		RuptureCycleChatState fallbackState{};
+		bool sawMatchingLine = false;
 
 		for (int32_t index = 0; index < objectArray->NumElements; ++index)
 		{
@@ -699,26 +767,46 @@ namespace
 				continue;
 			}
 
-			const std::string line = FindLastLineContainingPrefix(chatText, prefix);
-			if (line.empty())
+			const RuptureCycleLineMatch match = FindLastLineContainingPrefixMatch(chatText, prefix);
+			if (match.CleanLine.empty())
 			{
 				continue;
 			}
+			sawMatchingLine = true;
 
-			const size_t prefixPos = line.rfind(prefix);
+			const size_t prefixPos = match.CleanLine.rfind(prefix);
 			if (prefixPos == std::string::npos)
 			{
+				LogRuptureCycleProbeIfNeeded(
+					"ChatHud",
+					"prefix_missing_after_clean",
+					match.RawLine,
+					match.CleanLine,
+					{});
 				continue;
 			}
 
 			RuptureCycleChatState candidate{};
-			const std::string payload = TrimWhitespace(StripRichTextMarkup(line.substr(prefixPos + prefix.size())));
+			const std::string payload = TrimWhitespace(match.CleanLine.substr(prefixPos + prefix.size()));
 			if (!TryParseRuptureCyclePayload(payload, candidate))
 			{
+				LogRuptureCycleProbeIfNeeded(
+					"ChatHud",
+					"parse_failed",
+					match.RawLine,
+					match.CleanLine,
+					payload);
 				continue;
 			}
 
 			const bool belongsToWorld = !world || TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world));
+			LogRuptureCycleProbeIfNeeded(
+				"ChatHud",
+				"accepted",
+				match.RawLine,
+				match.CleanLine,
+				payload,
+				belongsToWorld ? "world_match" : "fallback_world");
 			if (belongsToWorld)
 			{
 				return candidate;
@@ -728,6 +816,11 @@ namespace
 			{
 				fallbackState = candidate;
 			}
+		}
+
+		if (!sawMatchingLine)
+		{
+			LogRuptureCycleProbeIfNeeded("ChatHud", "no_prefix", {}, {}, {});
 		}
 
 		return fallbackState;
@@ -750,6 +843,7 @@ namespace
 
 		const std::string prefix = GetRuptureCycleChatPrefix();
 		RuptureCycleChatState fallbackState{};
+		bool sawMatchingLine = false;
 
 		for (int32_t index = 0; index < objectArray->NumElements; ++index)
 		{
@@ -766,27 +860,46 @@ namespace
 			}
 
 			const std::string textValue = richText.ToString();
-			const std::string line = FindLastLineContainingPrefix(textValue, prefix);
-			if (line.empty())
+			const RuptureCycleLineMatch match = FindLastLineContainingPrefixMatch(textValue, prefix);
+			if (match.CleanLine.empty())
 			{
 				continue;
 			}
+			sawMatchingLine = true;
 
-			const size_t prefixPos = line.rfind(prefix);
+			const size_t prefixPos = match.CleanLine.rfind(prefix);
 			if (prefixPos == std::string::npos)
 			{
+				LogRuptureCycleProbeIfNeeded(
+					"RichText",
+					"prefix_missing_after_clean",
+					match.RawLine,
+					match.CleanLine,
+					{});
 				continue;
 			}
 
 			RuptureCycleChatState candidate{};
-			const std::string payload =
-				TrimWhitespace(StripRichTextMarkup(line.substr(prefixPos + prefix.size())));
+			const std::string payload = TrimWhitespace(match.CleanLine.substr(prefixPos + prefix.size()));
 			if (!TryParseRuptureCyclePayload(payload, candidate))
 			{
+				LogRuptureCycleProbeIfNeeded(
+					"RichText",
+					"parse_failed",
+					match.RawLine,
+					match.CleanLine,
+					payload);
 				continue;
 			}
 
 			const bool belongsToWorld = !world || TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world));
+			LogRuptureCycleProbeIfNeeded(
+				"RichText",
+				"accepted",
+				match.RawLine,
+				match.CleanLine,
+				payload,
+				belongsToWorld ? "world_match" : "fallback_world");
 			if (belongsToWorld)
 			{
 				return candidate;
@@ -796,6 +909,11 @@ namespace
 			{
 				fallbackState = candidate;
 			}
+		}
+
+		if (!sawMatchingLine)
+		{
+			LogRuptureCycleProbeIfNeeded("RichText", "no_prefix", {}, {}, {});
 		}
 
 		return fallbackState;
@@ -1148,6 +1266,8 @@ namespace
 		g_lastPersistentRuptureCycleSnapshotValid = false;
 		g_lastRuptureCycleObservedSignature.clear();
 		g_lastRuptureCycleObservedSignatureValid = false;
+		g_lastRuptureCycleProbeSignature.clear();
+		g_lastRuptureCycleProbeSignatureValid = false;
 		g_lastRuptureCycleObservedAtUnixMs = 0;
 		ResetRuptureCycleRequestState();
 	}
@@ -1234,6 +1354,13 @@ namespace
 
 		g_engineTickAccumulatorSeconds = 0.0f;
 		g_engineTickSeen = false;
+		g_lastCargoBootstrapWorld = nullptr;
+		g_cargoSubsystemBootstrapAttempted = false;
+		g_lastBootstrappedPackageTransportReplicator = nullptr;
+		{
+			std::lock_guard<std::mutex> lock(g_snapshotMutex);
+			g_sessionConnectionCache.clear();
+		}
 		ResetRuptureCycleState();
 
 		if (ShouldLogLifecycle())
@@ -1979,12 +2106,138 @@ namespace
 		return signature;
 	}
 
-	void MergeRetainedConnections(
-		CargoSnapshot& snapshot,
-		const CargoSnapshot& previousSnapshot,
-		int64_t nowUnixMs)
+	bool HasConnectionEndpointMarker(
+		const CargoSnapshot& snapshot,
+		CargoKind kind,
+		const std::string& publicKey,
+		const SDK::FVector& worldLocation)
 	{
-		if (!snapshot.HasPackageTransportReplicator || !previousSnapshot.HasPackageTransportReplicator)
+		const std::string locationKey = BuildLocationKey(kind, worldLocation);
+		for (const CargoMarker& marker : snapshot.Markers)
+		{
+			if (marker.Kind != kind)
+			{
+				continue;
+			}
+
+			if (!publicKey.empty() && marker.PublicKey == publicKey)
+			{
+				return true;
+			}
+
+			if (BuildLocationKey(kind, marker.WorldLocation) == locationKey)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	CargoMarker* FindMarkerByPublicKey(CargoSnapshot& snapshot, const std::string& publicKey)
+	{
+		if (publicKey.empty())
+		{
+			return nullptr;
+		}
+
+		for (CargoMarker& marker : snapshot.Markers)
+		{
+			if (marker.PublicKey == publicKey)
+			{
+				return &marker;
+			}
+		}
+
+		return nullptr;
+	}
+
+	CargoMarker* EnsureConnectionEndpointMarker(
+		CargoSnapshot& snapshot,
+		CargoKind kind,
+		const std::string& publicKey,
+		const std::string& label,
+		const SDK::FVector& worldLocation,
+		const SDK::FVector2f& mapLocation,
+		const std::string& resourceName,
+		const char* source)
+	{
+		CargoMarker* marker = FindMarkerByPublicKey(snapshot, publicKey);
+		if (!marker)
+		{
+			marker = FindMarkerByLocation(snapshot, kind, worldLocation);
+		}
+
+		if (marker)
+		{
+			if (!publicKey.empty())
+			{
+				marker->PublicKey = publicKey;
+			}
+			if (marker->DisplayName.empty() && !label.empty())
+			{
+				marker->DisplayName = NormalizeCargoBuildingName(kind, label);
+			}
+			AppendResourceName(*marker, resourceName);
+			return marker;
+		}
+
+		CargoMarker restored{};
+		restored.Kind = kind;
+		restored.WorldLocation = worldLocation;
+		restored.MapLocation = mapLocation;
+		restored.DisplayName = !label.empty()
+			? NormalizeCargoBuildingName(kind, label)
+			: GetConfiguredCargoBuildingName(kind);
+		AppendResourceName(restored, resourceName);
+		restored.Source = source ? source : "retained_connection";
+		restored.InternalKey = BuildLocationKey(kind, worldLocation);
+		restored.PublicKey = !publicKey.empty() ? publicKey : MakePublicKey(kind, restored.InternalKey);
+		snapshot.Markers.push_back(std::move(restored));
+		return &snapshot.Markers.back();
+	}
+
+	void RehydrateMarkersFromConnections(CargoSnapshot& snapshot)
+	{
+		for (const CargoConnection& connection : snapshot.Connections)
+		{
+			EnsureConnectionEndpointMarker(
+				snapshot,
+				CargoKind::Sender,
+				connection.SenderKey,
+				connection.SenderLabel,
+				connection.SenderWorldLocation,
+				connection.SenderMapLocation,
+				connection.ItemDisplayName,
+				"connection_rehydrate.sender");
+			EnsureConnectionEndpointMarker(
+				snapshot,
+				CargoKind::Receiver,
+				connection.ReceiverKey,
+				connection.ReceiverLabel,
+				connection.ReceiverWorldLocation,
+				connection.ReceiverMapLocation,
+				connection.ItemDisplayName,
+				"connection_rehydrate.receiver");
+		}
+	}
+
+	void UpdateSessionConnectionCache(const CargoSnapshot& snapshot)
+	{
+		if (!snapshot.HasPackageTransportReplicator)
+		{
+			return;
+		}
+
+		for (const CargoConnection& connection : snapshot.Connections)
+		{
+			g_sessionConnectionCache[BuildConnectionSignature(connection)] = connection;
+		}
+	}
+
+	void MergeRetainedConnections(CargoSnapshot& snapshot)
+	{
+		if (!snapshot.HasPackageTransportReplicator)
 		{
 			return;
 		}
@@ -1997,20 +2250,14 @@ namespace
 		}
 
 		size_t retainedCount = 0;
-		for (const CargoConnection& previousConnection : previousSnapshot.Connections)
+		for (const auto& [signature, cachedConnection] : g_sessionConnectionCache)
 		{
-			const std::string signature = BuildConnectionSignature(previousConnection);
 			if (signatures.find(signature) != signatures.end())
 			{
 				continue;
 			}
-			if (previousConnection.LastObservedAtUnixMs <= 0
-				|| nowUnixMs - previousConnection.LastObservedAtUnixMs > kConnectionRetentionMs)
-			{
-				continue;
-			}
 
-			snapshot.Connections.push_back(previousConnection);
+			snapshot.Connections.push_back(cachedConnection);
 			signatures.insert(signature);
 			++retainedCount;
 		}
@@ -2018,7 +2265,7 @@ namespace
 		if (retainedCount > 0 && ShouldLogLifecycle())
 		{
 			LOG_INFO(
-				"Cargo refresh '%s': retained %zu recent connection(s) missing from current replicator snapshot",
+				"Cargo refresh '%s': restored %zu cached session connection(s) missing from current replicator snapshot",
 				snapshot.Reason.c_str(),
 				retainedCount);
 		}
@@ -2168,35 +2415,18 @@ namespace
 
 		snapshot.UsedReplicator = true;
 		std::unordered_map<std::string, ReceiverLinkInfo> receiverLookup;
-		struct SenderReplicationInfo
-		{
-			SDK::FVector WorldLocation{};
-			std::string DisplayName;
-		};
-		std::unordered_map<std::string, SenderReplicationInfo> senderLookup;
 		std::unordered_set<std::string> connectionKeys;
 
-		const SDK::FCrSenderReceiversContainer& senderReceivers = replicator->SenderReceiversContainer;
-		for (int index = 0; index < senderReceivers.AllSenderReceiversData.Num(); ++index)
+		const SDK::FCrReceiversContainer& receivers = replicator->ReceiversContainer;
+		for (int index = 0; index < receivers.ReceiversData.Num(); ++index)
 		{
-			const SDK::FCrSenderReceiverData& senderReceiver = senderReceivers.AllSenderReceiversData[index];
-			const std::string entityKey = BuildReplicationHelperKey(senderReceiver.Entity);
+			const SDK::FCrReceiverData& receiver = receivers.ReceiversData[index];
+			const std::string entityKey = BuildReplicationHelperKey(receiver.Receiver);
 			const SDK::FVector worldLocation = MakeVector(
-				senderReceiver.Location.X,
-				senderReceiver.Location.Y,
-				senderReceiver.Location.Z);
-			const std::string displayName = GetBuildingCustomName(world, senderReceiver.Entity, customNameLookup);
-
-			if (senderReceiver.bIsSender)
-			{
-				senderLookup.emplace(
-					entityKey,
-					SenderReplicationInfo{
-						worldLocation,
-						displayName
-					});
-				continue;
-			}
+				receiver.Location.X,
+				receiver.Location.Y,
+				receiver.Location.Z);
+			const std::string displayName = GetBuildingCustomName(world, receiver.Receiver, customNameLookup);
 
 			CargoMarker* marker = AddOrUpdateMarker(
 				snapshot,
@@ -2235,53 +2465,25 @@ namespace
 			const SDK::FCrPackageTransportConnectionData& connection = connections.ConnectionsData[index];
 			const std::string senderKey = BuildReplicationHelperKey(connection.Sender);
 			const std::string receiverKey = BuildReplicationHelperKey(connection.Receiver);
-			const std::string previousReceiverKey = BuildReplicationHelperKey(connection.PrevReceiver);
 			const std::string resourceName = GetItemDisplayName(connection.Item);
 			const std::string senderPublicKey = MakePublicKey(CargoKind::Sender, senderKey);
 			const std::string receiverPublicKey = MakePublicKey(CargoKind::Receiver, receiverKey);
-			const std::string previousReceiverPublicKey = previousReceiverKey.empty()
-				? std::string{}
-				: MakePublicKey(CargoKind::Receiver, previousReceiverKey);
-			const auto senderIt = senderLookup.find(senderKey);
-			const CargoMarker* previousSenderMarker = nullptr;
-			if (senderIt == senderLookup.end() && previousSnapshot)
-			{
-				previousSenderMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Sender, senderKey);
-			}
 
-			CargoMarker* senderMarker = nullptr;
-			if (senderIt != senderLookup.end() || previousSenderMarker)
-			{
-				const SDK::FVector senderLocation = senderIt != senderLookup.end()
-					? senderIt->second.WorldLocation
-					: previousSenderMarker->WorldLocation;
-				std::string senderDisplayName = senderIt != senderLookup.end()
-					? senderIt->second.DisplayName
-					: previousSenderMarker->DisplayName;
-				if (senderDisplayName.empty())
-				{
-					senderDisplayName = GetBuildingCustomName(world, connection.Sender, customNameLookup);
-				}
-				senderMarker = AddOrUpdateMarker(
-					snapshot,
-					markerIndexes,
-					CargoKind::Sender,
-					senderLocation,
-					senderKey,
-					"package_transport_replicator.connection",
-					senderDisplayName,
-					resourceName);
-			}
+			CargoMarker* senderMarker = AddOrUpdateMarker(
+				snapshot,
+				markerIndexes,
+				CargoKind::Sender,
+				MakeVector(connection.SenderLocation.X, connection.SenderLocation.Y, connection.SenderLocation.Z),
+				senderKey,
+				"package_transport_replicator.connection",
+				GetBuildingCustomName(world, connection.Sender, customNameLookup),
+				resourceName);
 
 			auto receiverIt = receiverLookup.find(receiverKey);
 			const CargoMarker* previousReceiverMarker = nullptr;
 			if (receiverIt == receiverLookup.end() && previousSnapshot)
 			{
 				previousReceiverMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Receiver, receiverKey);
-				if (!previousReceiverMarker && !previousReceiverKey.empty())
-				{
-					previousReceiverMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Receiver, previousReceiverKey);
-				}
 			}
 
 			const CargoConnection* previousConnection = nullptr;
@@ -2292,14 +2494,6 @@ namespace
 					senderPublicKey,
 					receiverPublicKey,
 					resourceName);
-				if (!previousConnection && !previousReceiverPublicKey.empty())
-				{
-					previousConnection = FindConnectionByPublicKeys(
-						*previousSnapshot,
-						senderPublicKey,
-						previousReceiverPublicKey,
-						resourceName);
-				}
 			}
 
 			std::string resolvedSenderPublicKey = senderPublicKey;
@@ -2743,6 +2937,65 @@ namespace
 		snapshot.PlayerCount = static_cast<int>(snapshot.Players.size());
 	}
 
+	void TryBootstrapCargoSaveState(SDK::UWorld* world, SDK::ACrGameStateBase* gameState, const char* reason)
+	{
+		if (!world)
+		{
+			return;
+		}
+
+		if (g_lastCargoBootstrapWorld != world)
+		{
+			g_lastCargoBootstrapWorld = world;
+			g_cargoSubsystemBootstrapAttempted = false;
+			g_lastBootstrappedPackageTransportReplicator = nullptr;
+		}
+
+		if (!g_cargoSubsystemBootstrapAttempted)
+		{
+			if (SDK::UCrMassSaveSubsystem* massSaveSubsystem =
+					TryGetWorldSubsystem<SDK::UCrMassSaveSubsystem>(world, SDK::UCrMassSaveSubsystem::StaticClass()))
+			{
+				massSaveSubsystem->OnSaveLoaded();
+				massSaveSubsystem->OnPostSaveLoaded();
+				if (ShouldLogLifecycle())
+				{
+					LOG_INFO(
+						"Cargo bootstrap '%s': called UCrMassSaveSubsystem::OnSaveLoaded/OnPostSaveLoaded",
+						reason ? reason : "unknown");
+				}
+			}
+
+			if (SDK::UCrLogisticsRequestSubsystem* logisticsSubsystem =
+					TryGetWorldSubsystem<SDK::UCrLogisticsRequestSubsystem>(world, SDK::UCrLogisticsRequestSubsystem::StaticClass()))
+			{
+				logisticsSubsystem->OnSaveLoaded();
+				if (ShouldLogLifecycle())
+				{
+					LOG_INFO(
+						"Cargo bootstrap '%s': called UCrLogisticsRequestSubsystem::OnSaveLoaded",
+						reason ? reason : "unknown");
+				}
+			}
+
+			g_cargoSubsystemBootstrapAttempted = true;
+		}
+
+		SDK::ACrPackageTransportReplicator* replicator =
+			gameState ? gameState->PackageTransportReplicator : nullptr;
+		if (replicator && replicator != g_lastBootstrappedPackageTransportReplicator)
+		{
+			replicator->OnSaveLoaded();
+			g_lastBootstrappedPackageTransportReplicator = replicator;
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO(
+					"Cargo bootstrap '%s': called ACrPackageTransportReplicator::OnSaveLoaded",
+					reason ? reason : "unknown");
+			}
+		}
+	}
+
 	CargoSnapshot CopySnapshotImpl()
 	{
 		std::lock_guard<std::mutex> lock(g_snapshotMutex);
@@ -2767,6 +3020,11 @@ namespace
 
 		std::unordered_map<std::string, size_t> markerIndexes;
 		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+		if (trackedState.Ready)
+		{
+			TryBootstrapCargoSaveState(world, gameState, nextSnapshot.Reason.c_str());
+			gameState = TryGetGameState(world);
+		}
 		const bool needsCustomNameLookup =
 			gameState
 			&& (gameState->PackageTransportReplicator != nullptr || gameState->TeleportReplicator != nullptr);
@@ -2802,7 +3060,9 @@ namespace
 		{
 			LOG_INFO("Cargo refresh '%s': player stage completed", nextSnapshot.Reason.c_str());
 		}
-		MergeRetainedConnections(nextSnapshot, previousSnapshot, observedAtUnixMs);
+		UpdateSessionConnectionCache(nextSnapshot);
+		MergeRetainedConnections(nextSnapshot);
+		RehydrateMarkersFromConnections(nextSnapshot);
 
 		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(
 			world,

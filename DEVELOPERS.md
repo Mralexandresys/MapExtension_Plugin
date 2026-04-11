@@ -27,14 +27,16 @@ Keep the runtime split along these boundaries. Do not move HTTP or JSON formatti
 ## Prerequisites
 
 - Visual Studio 2022 (17.8 or newer) with the Desktop development with C++ workload and the Windows 10 SDK.
-- A checkout of `StarRupture-ModLoader` that sits next to this repository so that `Shared.props` and `StarRupture SDK/` are resolvable.
+- An accessible checkout of `StarRupture-Plugin-SDK` that provides `include/`, `Shared.props`, and `StarRupture SDK/`.
 - Node.js 18 LTS (or newer) and npm for the `mapview` build; run `node --version` before working to ensure you are not on an unsupported runtime.
 
 ## Plugin build
 
-1. Open `StarRupture-ModLoader.sln` in Visual Studio 2022.
+1. Open `MapExtension_Plugin.sln` in Visual Studio 2022.
 2. Select `Client Debug|x64` or `Client Release|x64`.
 3. Build `MapExtension_Plugin`.
+
+By default the project looks for the SDK at `..\StarRupture-Plugin-SDK\`. Override that location with the MSBuild property `PluginSdkRootDir` when your workspace uses a different layout.
 
 The DLL is written to `build\\<Configuration>\\Plugins\\MapExtension_Plugin.dll`.
 
@@ -42,35 +44,35 @@ The DLL is written to `build\\<Configuration>\\Plugins\\MapExtension_Plugin.dll`
 
 `plugin.cpp` exports `MODLOADER_BUILD_TAG` and `PluginInfo.author`. For tagged builds, define the build tag at compile time so the loader and `/health` endpoint expose the correct version string. If needed, override the embedded author the same way.
 
-- add `MODLOADER_BUILD_TAG=\"vX.Y.Z\"` to `Shared.props` (propagates to every configuration), or
 - override the preprocessor definition in Visual Studio: **Project Properties → C/C++ → Preprocessor → Preprocessor Definitions**.
 - or pass MSBuild properties from the helper script:
   - `../build_client.sh release --build-tag "ML-2026.04.04-214044-v0.2" --build-author "Mralexandresys"`
+- or call MSBuild directly with properties such as `/p:ModLoaderBuildTag=ML-2026.04.04-214044-v0.2 /p:ModLoaderBuildAuthor=Mralexandresys`.
 
 If the tag macro is not set, builds fall back to `"dev"`. If the author macro is not set, builds fall back to `"Mralexandresys"`.
 
 ## Standalone developer workflow
 
-`MapExtension_Plugin` can also be built without editing `StarRupture-ModLoader.sln`.
+`MapExtension_Plugin` is intended to build as its own repository against the public SDK.
 
 Expected checkout layout:
 
 ```text
-StarRupture-ModLoader/
-  Shared.props
-  Version_Mod_Loader/
-  StarRupture SDK/
+workspace/
   MapExtension_Plugin/
+  StarRupture-Plugin-SDK/
 ```
+
+Equivalent layouts are supported as long as `PluginSdkRootDir` points at the SDK root.
 
 Workflow:
 
-1. Clone `StarRupture-ModLoader`.
-2. Clone the plugin repository into `StarRupture-ModLoader/MapExtension_Plugin/`.
+1. Clone `MapExtension_Plugin`.
+2. Clone `StarRupture-Plugin-SDK` next to it, or note the path you will pass through `PluginSdkRootDir`.
 3. Open `MapExtension_Plugin/MapExtension_Plugin.sln`.
 4. Build `Client Debug|x64` or `Client Release|x64`.
 
-No manual edit of the parent `.sln` or other `.vcxproj` files is required for this workflow.
+No manual edit of a parent modloader solution is required for this workflow.
 
 ## Frontend build
 
@@ -113,9 +115,10 @@ MapExtension_Plugin/mapview/dist/MapExtensionViewer.html
 The workflow:
 
 1. fetches the latest published release tag from `AlienXAXS/StarRupture-ModLoader`
-2. checks out that modloader release
+2. checks out that modloader release as the packaging root
 3. checks out `MapExtension_Plugin` into the expected `StarRupture-ModLoader/MapExtension_Plugin` path
-4. builds the plugin and the `mapview` bundle against that modloader release
+4. checks out `StarRupture-Plugin-SDK` into a known path and passes `PluginSdkRootDir` explicitly to MSBuild
+5. builds the plugin and the `mapview` bundle against the public SDK while preserving the current packaging layout
 5. creates a plugin tag in the format `ML-YYYY.MM.DD-HHMMSS-vX.Y`
 6. publishes a GitHub release in the plugin repository
 

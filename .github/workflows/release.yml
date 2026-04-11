@@ -83,6 +83,12 @@ jobs:
         with:
           path: modloader/MapExtension_Plugin
 
+      - name: Checkout StarRupture-Plugin-SDK
+        uses: actions/checkout@v4
+        with:
+          repository: AlienXAXS/StarRupture-Plugin-SDK
+          path: modloader/StarRupture-Plugin-SDK
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -94,6 +100,8 @@ jobs:
         run: |
           $repoRoot = (Resolve-Path ..).Path
           $repoRootWithSlash = "$repoRoot\"
+          $sdkRoot = (Resolve-Path ..\StarRupture-Plugin-SDK).Path
+          $sdkRootWithSlash = "$sdkRoot\"
 
           function Find-MSBuild {
             $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -132,6 +140,7 @@ jobs:
             /p:PlatformToolset=v143 `
             /p:SolutionDir="$repoRootWithSlash" `
             /p:RepoRootDir="$repoRootWithSlash" `
+            /p:PluginSdkRootDir="$sdkRootWithSlash" `
             /p:PostBuildEventUseInBuild=false `
             /p:ModLoaderBuildTag="${{ steps.meta.outputs.PLUGIN_TAG }}" `
             /p:ModLoaderBuildAuthor="${{ steps.meta.outputs.BUILD_AUTHOR }}"
