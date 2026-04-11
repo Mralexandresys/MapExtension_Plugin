@@ -126,7 +126,9 @@ namespace Detail
 			}
 			if (path == "/rupture-cycle")
 			{
-				SendJsonResponse(clientSocket, 200, "OK", BuildRuptureCycleJson(snapshot));
+				RequestCargoSnapshotRefresh("HTTP /rupture-cycle");
+				const CargoSnapshot refreshedSnapshot = CopySnapshot();
+				SendJsonResponse(clientSocket, 200, "OK", BuildRuptureCycleJson(refreshedSnapshot));
 				return;
 			}
 			if (path == "/" || path == "/index.html")
