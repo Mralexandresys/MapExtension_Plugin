@@ -14,18 +14,18 @@ namespace Detail
 {
 	constexpr float kMapSrcX1 = -358583.0f;
 	constexpr float kMapSrcY1 = -263782.0f;
-	constexpr float kMapDstX1 = 380.0f;
-	constexpr float kMapDstY1 = 567.0f;
+	constexpr float kMapDstX1 = 1518.414983f;
+	constexpr float kMapDstY1 = 2272.832995f;
 	constexpr float kMapSrcX2 = -98583.0f;
 	constexpr float kMapSrcY2 = -9439.0f;
-	constexpr float kMapDstX2 = 3927.0f;
-	constexpr float kMapDstY2 = 4038.0f;
+	constexpr float kMapDstX2 = 6895.078786f;
+	constexpr float kMapDstY2 = 7535.110312f;
 	constexpr float kMapScaleX = (kMapDstX2 - kMapDstX1) / (kMapSrcX2 - kMapSrcX1);
 	constexpr float kMapScaleY = (kMapDstY2 - kMapDstY1) / (kMapSrcY2 - kMapSrcY1);
 	constexpr float kMapContentWidth = kMapDstX2 - kMapDstX1;
 	constexpr float kMapContentHeight = kMapDstY2 - kMapDstY1;
-	constexpr int kMapImageWidth = 4352;
-	constexpr int kMapImageHeight = 5120;
+	constexpr int kMapImageWidth = 9019;
+	constexpr int kMapImageHeight = 11691;
 
 	inline SDK::FVector2f WorldToMap(const SDK::FVector& worldLocation)
 	{

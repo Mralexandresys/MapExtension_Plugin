@@ -44,7 +44,7 @@ Ce fichier contient :
 - L'endpoint plugin est editable dans l'UI.
 - L'app consomme `GET /health`, `GET /cargo` et `GET /rupture-cycle`.
 - Les labels d'interface utilisent `Cargo Dispatchers` et `Cargo Receivers`.
-- Le fond de carte est embarque depuis `src/assets/base-map.webp` pour garder un build autonome.
+- Le fond de carte est embarque depuis `src/assets/base_newmap.webp` pour garder un build autonome.
 - La timeline du cycle de rupture reste animee localement a partir de `elapsed_seconds` et `observed_at_unix_ms`.
 - Raccourcis utiles : `?`, `/`, `R`, `L`, `G`, `E`, `S`, `F`, `0`, `Esc`.
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import baseMapUrl from '../assets/base-map.webp';
+import baseMapUrl from '../assets/base_newmap.webp';
 import teleporterSvg from '../assets/teleporter.svg?raw';
 import { getMessages } from '../lang';
 import type { Language } from '../lang';
@@ -55,12 +55,12 @@ const emit = defineEmits<{
 }>(); 
 
 const DEFAULT_MAP = {
-  content_width: 3547,
-  content_height: 3471,
-  dst_x1: 380,
-  dst_y1: 567,
-  image_width: 4352,
-  image_height: 5120,
+  content_width: 5376.663803,
+  content_height: 5262.277317,
+  dst_x1: 1518.414983,
+  dst_y1: 2272.832995,
+  image_width: 9019,
+  image_height: 11691,
 };
 
 const TELEPORTER_SYMBOL_ID = 'teleporter-marker-icon';
