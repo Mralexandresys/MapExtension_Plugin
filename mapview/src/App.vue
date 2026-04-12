@@ -1,21 +1,28 @@
 <script setup lang="ts">
 import { computed, readonly, ref } from "vue";
 
+import MapAnnotationFab from "./components/mapview/MapAnnotationFab.vue";
 import MapCanvas from "./components/MapCanvas.vue";
 import MapCanvasToolbar from "./components/mapview/MapCanvasToolbar.vue";
 import MapControlDock from "./components/mapview/MapControlDock.vue";
 import MapFiltersPanel from "./components/mapview/MapFiltersPanel.vue";
+import MapNotesPanel from "./components/mapview/MapNotesPanel.vue";
 import MapRupturePanel from "./components/mapview/MapRupturePanel.vue";
 import MapSelectionPanel from "./components/mapview/MapSelectionPanel.vue";
 import MapShortcutDialog from "./components/mapview/MapShortcutDialog.vue";
 import { useMapViewState } from "./composables/useMapViewState";
+import { useUserAnnotations } from "./composables/useUserAnnotations";
 import type {
     MapCanvasHandle,
     MapCanvasToolbarModel,
     MapControlDockModel,
     MapFiltersPanelModel,
+    MapNotesPanelModel,
     MapRupturePanelModel,
     MapSelectionPanelModel,
+    Rect2D,
+    UserAnnotationDraft,
+    UserAnnotationSelection,
 } from "./lib/types";
 
 const mapCanvasRef = ref<MapCanvasHandle | null>(null);
@@ -96,6 +103,103 @@ const {
     closeShortcuts,
 } = useMapViewState(mapCanvasRef);
 
+// ── Annotations ───────────────────────────────────────────────────────────────
+
+const {
+    markers: userMarkers,
+    zones: userZones,
+    annotationMode,
+    annotationEditMode,
+    selectedAnnotation,
+    selectedZoneLocked,
+    importError,
+    draft: annotationDraft,
+    setAnnotationMode,
+    setAnnotationEditMode,
+    selectMarker,
+    selectZone,
+    clearAnnotationSelection,
+    addMarker,
+    addZone,
+    moveSelectedMarker,
+    updateSelectedZoneRect,
+    toggleSelectedZoneLock,
+    updateSelectedDraft,
+    deleteSelectedAnnotation,
+    exportAnnotations,
+    importAnnotations,
+} = useUserAnnotations();
+
+function handleAnnotationSelect(sel: UserAnnotationSelection): void {
+    if (!sel) {
+        clearAnnotationSelection();
+        return;
+    }
+    if (sel.type === "marker") selectMarker(sel.id);
+    else selectZone(sel.id);
+    // clear entity selection when an annotation is selected
+    clearSelection();
+}
+
+function handleEntitySelect(key: string): void {
+    clearAnnotationSelection();
+    selectEntity(key);
+}
+
+function clearAllSelection(): void {
+    clearSelection();
+    clearAnnotationSelection();
+}
+
+function centerSelectedAnnotation(): void {
+    const sel = selectedAnnotation.value;
+    if (!sel) return;
+    if (sel.type === "marker") {
+        const m = userMarkers.value.find((x) => x.id === sel.id);
+        if (m) mapCanvasRef.value?.focusPoint(m.map.x, m.map.y);
+    } else {
+        const z = userZones.value.find((x) => x.id === sel.id);
+        if (z) mapCanvasRef.value?.focusPoint(
+            z.rect.x + z.rect.width / 2,
+            z.rect.y + z.rect.height / 2,
+        );
+    }
+}
+
+function handleCreateMarker(point: { x: number; y: number }): void {
+    clearSelection();
+    addMarker(point);
+}
+
+function handleDraftUpdate(d: UserAnnotationDraft): void {
+    updateSelectedDraft(d);
+}
+
+function startSelectedAnnotationEdit(): void {
+    const sel = selectedAnnotation.value;
+    if (!sel) return;
+    setAnnotationEditMode(sel.type === "marker" ? "move-marker" : "edit-zone");
+}
+
+function handleMoveMarker(point: { x: number; y: number }): void {
+    moveSelectedMarker(point);
+}
+
+function handleUpdateZone(rect: Rect2D): void {
+    updateSelectedZoneRect(rect);
+}
+
+async function handleImport(file: File): Promise<void> {
+    await importAnnotations(file);
+}
+
+function handleCreateZone(rect: Rect2D): void {
+    clearSelection();
+    addZone(rect);
+}
+
+// ── Panel models ──────────────────────────────────────────────────────────────
+
 const controlDockPanel = computed<MapControlDockModel>(() => ({
     settingsOpen: controlSettingsOpen.value,
     ui: ui.value,
@@ -168,6 +272,16 @@ const canvasToolbarPanel = computed<MapCanvasToolbarModel>(() => ({
     focusMode: focusMode.value,
     filtersOpen: !filtersPanelCollapsed.value,
 }));
+
+const notesPanel = computed<MapNotesPanelModel>(() => ({
+    ui: ui.value,
+    annotationMode: annotationMode.value,
+    annotationEditMode: annotationEditMode.value,
+    selectedAnnotation: selectedAnnotation.value,
+    draft: annotationDraft.value,
+    selectedZoneLocked: selectedZoneLocked.value,
+    importError: importError.value,
+}));
 </script>
 
 <template>
@@ -184,6 +298,8 @@ const canvasToolbarPanel = computed<MapCanvasToolbarModel>(() => ({
                 @update:icon-scale="iconScale = $event"
                 @open-shortcuts="openShortcuts"
                 @update:lang="lang = $event"
+                @export-json="exportAnnotations"
+                @import-json="handleImport"
             />
         </header>
 
@@ -202,10 +318,25 @@ const canvasToolbarPanel = computed<MapCanvasToolbarModel>(() => ({
                 :focus-keys="Array.from(focusKeys)"
                 :focus-cargo-key="focusCargoKey"
                 :lang="lang"
+<<<<<<< HEAD
                 :icon-scale="iconScale"
                 @select="selectEntity"
                 @clear-selection="clearSelection"
+=======
+                :user-markers="userMarkers"
+                :user-zones="userZones"
+                :annotation-mode="annotationMode"
+                :annotation-edit-mode="annotationEditMode"
+                :selected-annotation="selectedAnnotation"
+                @select="handleEntitySelect"
+                @clear-selection="clearAllSelection"
+>>>>>>> feature/marker-zone
                 @hover="hoveredKey = $event"
+                @select-annotation="handleAnnotationSelect"
+                @create-marker="handleCreateMarker"
+                @create-zone="handleCreateZone"
+                @move-marker="handleMoveMarker"
+                @update-zone="handleUpdateZone"
             />
 
             <MapCanvasToolbar
@@ -224,6 +355,23 @@ const canvasToolbarPanel = computed<MapCanvasToolbarModel>(() => ({
             <MapRupturePanel
                 :panel="rupturePanel"
                 @toggle-collapse="toggleRupturePanel"
+            />
+
+            <MapNotesPanel
+                v-if="notesPanel.selectedAnnotation || annotationMode !== 'idle' || notesPanel.importError"
+                :panel="notesPanel"
+                @toggle-mode="setAnnotationMode"
+                @select-annotation="handleAnnotationSelect"
+                @update:draft="handleDraftUpdate"
+                @clear-selection="clearAnnotationSelection"
+                @delete-selected="deleteSelectedAnnotation"
+                @center-selected="startSelectedAnnotationEdit"
+                @toggle-zone-lock="toggleSelectedZoneLock"
+            />
+
+            <MapAnnotationFab
+                :annotation-mode="annotationMode"
+                @toggle-mode="setAnnotationMode"
             />
 
             <MapSelectionPanel

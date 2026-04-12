@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import baseMapUrl from '../assets/base-map.webp';
 import teleporterSvg from '../assets/teleporter.svg?raw';
@@ -10,8 +10,13 @@ import type {
   CargoMarker,
   CargoResponse,
   Player,
+  Rect2D,
   SelectedEntity,
   Teleporter,
+  UserAnnotationEditMode,
+  UserAnnotationSelection,
+  UserMarker,
+  UserZone,
 } from '../lib/types';
 import { useMapTooltip } from '../composables/useMapTooltip';
 import { useMapPanZoom } from '../composables/useMapPanZoom';
@@ -30,13 +35,24 @@ const props = defineProps<{
   focusCargoKey: string | null;
   lang: Language;
   iconScale: number;
+  userMarkers?: UserMarker[];
+  userZones?: UserZone[];
+  annotationMode?: 'idle' | 'marker' | 'zone';
+  annotationEditMode?: UserAnnotationEditMode;
+  selectedAnnotation?: UserAnnotationSelection;
+
 }>();
 
 const emit = defineEmits<{
   "select": [key: string];
   "clear-selection": [];
   "hover": [key: string | null];
-}>();
+  "select-annotation": [sel: UserAnnotationSelection];
+  "create-marker": [point: { x: number; y: number }];
+  "create-zone": [rect: Rect2D];
+  "move-marker": [point: { x: number; y: number }];
+  "update-zone": [rect: Rect2D];
+}>(); 
 
 const DEFAULT_MAP = {
   content_width: 3547,
@@ -72,11 +88,16 @@ const imageX = computed(() => -(Number(projection.value.dst_x1) || 380));
 const imageY = computed(() => -(Number(projection.value.dst_y1) || 567));
 const orphanKeySet = computed(() => new Set(props.orphanKeys));
 const focusKeySet = computed(() => new Set(props.focusKeys));
+
 const markerScaleTransform = computed(() => `scale(${props.iconScale})`);
 
 function markerTranslateTransform(x: number, y: number): string {
   return `translate(${x} ${y}) ${markerScaleTransform.value} translate(${-x} ${-y})`;
 }
+
+const lockedUserZones = computed(() => (props.userZones ?? []).filter((zone) => zone.locked));
+const unlockedUserZones = computed(() => (props.userZones ?? []).filter((zone) => !zone.locked));
+
 
 const {
   tooltip,
@@ -86,22 +107,128 @@ const {
   moveTooltip,
 } = useMapTooltip(mapShell);
 
+const panZoom = useMapPanZoom(mapShell, viewBoxWidth, viewBoxHeight);
+
 const {
+  mapScale,
+  mapTranslateX,
+  mapTranslateY,
   transform,
   isDragging,
   resetView,
   centerOnPoint,
   handleMouseDown: panZoomHandleMouseDown,
   handleWheel,
-} = useMapPanZoom(mapShell, viewBoxWidth, viewBoxHeight);
+} = panZoom;
+
+// ── annotation interaction ───────────────────────────────────────────────────
+
+// Draft zone being drawn (map coords)
+interface ZoneDraft { x: number; y: number; w: number; h: number; startX: number; startY: number }
+const zoneDraft = ref<ZoneDraft | null>(null);
+const ghostPoint = ref<{ x: number; y: number } | null>(null);
+type ActiveDrag =
+  | { type: 'marker'; id: string }
+  | { type: 'zone'; id: string; originRect: Rect2D; originPoint: { x: number; y: number } };
+const activeDrag = ref<ActiveDrag | null>(null);
+
+// Keep zone labels readable regardless of zoom.
+const zoneLabelFontSize = computed(() => Math.max(20, Math.round(26 / mapScale.value)));
+
+/**
+ * Convert a client mouse position to SVG viewBox (map) coordinates.
+ * Takes into account the container bounding rect, the fit-scale that the SVG
+ * applies automatically (xMidYMid meet) and the current pan/zoom transform.
+ */
+function screenToMapPoint(clientX: number, clientY: number): { x: number; y: number } {
+  if (!mapShell.value) return { x: 0, y: 0 };
+  const rect = mapShell.value.getBoundingClientRect();
+  const fitScale = Math.min(rect.width / viewBoxWidth.value, rect.height / viewBoxHeight.value);
+  // offset due to "meet" centering
+  const svgLeft = rect.left + (rect.width - viewBoxWidth.value * fitScale) / 2;
+  const svgTop  = rect.top  + (rect.height - viewBoxHeight.value * fitScale) / 2;
+  // position in viewBox space (before pan/zoom transform)
+  const vx = (clientX - svgLeft) / fitScale;
+  const vy = (clientY - svgTop) / fitScale;
+  // undo the pan/zoom transform: map = (viewBox - translate) / scale
+  return {
+    x: (vx - mapTranslateX.value) / mapScale.value,
+    y: (vy - mapTranslateY.value) / mapScale.value,
+  };
+}
+
+function handleWindowMouseMove(event: MouseEvent): void {
+  if (activeDrag.value) {
+    const pt = screenToMapPoint(event.clientX, event.clientY);
+    if (activeDrag.value.type === 'marker') {
+      ghostPoint.value = pt;
+      return;
+    }
+
+    const dx = pt.x - activeDrag.value.originPoint.x;
+    const dy = pt.y - activeDrag.value.originPoint.y;
+    zoneDraft.value = {
+      x: activeDrag.value.originRect.x + dx,
+      y: activeDrag.value.originRect.y + dy,
+      w: activeDrag.value.originRect.width,
+      h: activeDrag.value.originRect.height,
+      startX: activeDrag.value.originRect.x + dx,
+      startY: activeDrag.value.originRect.y + dy,
+    };
+    return;
+  }
+
+  if (zoneDraft.value) {
+    const pt = screenToMapPoint(event.clientX, event.clientY);
+    const dx = pt.x - zoneDraft.value.startX;
+    const dy = pt.y - zoneDraft.value.startY;
+    zoneDraft.value = {
+      ...zoneDraft.value,
+      x: dx >= 0 ? zoneDraft.value.startX : pt.x,
+      y: dy >= 0 ? zoneDraft.value.startY : pt.y,
+      w: Math.abs(dx),
+      h: Math.abs(dy),
+    };
+  }
+}
+
+function handleWindowMouseUp(event: MouseEvent): void {
+  if (activeDrag.value) {
+    const pt = screenToMapPoint(event.clientX, event.clientY);
+    if (activeDrag.value.type === 'marker') {
+      emit('move-marker', pt);
+      activeDrag.value = null;
+      ghostPoint.value = null;
+      return;
+    }
+
+    emit('update-zone', {
+      x: activeDrag.value.originRect.x + (pt.x - activeDrag.value.originPoint.x),
+      y: activeDrag.value.originRect.y + (pt.y - activeDrag.value.originPoint.y),
+      width: activeDrag.value.originRect.width,
+      height: activeDrag.value.originRect.height,
+    });
+    activeDrag.value = null;
+    zoneDraft.value = null;
+    return;
+  }
+
+  if (zoneDraft.value) {
+    const { x, y, w, h } = zoneDraft.value;
+    if (w > 10 && h > 10) {
+      emit('create-zone', { x, y, width: w, height: h });
+    }
+    zoneDraft.value = null;
+  }
+}
 
 function focusSelection(): void {
   if (!props.selectedEntity) return;
   centerOnPoint(props.selectedEntity.raw.map.x, props.selectedEntity.raw.map.y);
 }
 
-function handleMouseDown(event: MouseEvent): void {
-  panZoomHandleMouseDown(event, hideTooltip);
+function focusPoint(mapX: number, mapY: number, desiredScale?: number): void {
+  centerOnPoint(mapX, mapY, desiredScale);
 }
 
 function isDimmed(entityKey: string): boolean {
@@ -228,6 +355,41 @@ function showPlayerTooltip(player: Player, event: MouseEvent): void {
   );
 }
 
+function userMarkerLabel(marker: UserMarker): string {
+  return marker.label || ui.value.notes.markerSingular;
+}
+
+function userZoneLabel(zone: UserZone): string {
+  return zone.label || ui.value.notes.zoneSingular;
+}
+
+function showUserMarkerTooltip(marker: UserMarker, event: MouseEvent): void {
+  showTooltip(userMarkerLabel(marker), [ui.value.map.clickToSelect], event);
+}
+
+function userZoneTooltipLines(zone: UserZone): string[] {
+  const description = zone.description.trim();
+  const label = userZoneLabel(zone);
+  const lines = description && description !== label ? [description] : [];
+  return [...lines, ui.value.map.clickToSelect];
+}
+
+function handleUserMarkerFocus(marker: UserMarker, event: FocusEvent): void {
+  const target = event.target as Element | null;
+  if (!target) return;
+  showTooltipFromElement(userMarkerLabel(marker), [ui.value.map.clickToSelect], target);
+}
+
+function showUserZoneTooltip(zone: UserZone, event: MouseEvent): void {
+  showTooltip(userZoneLabel(zone), userZoneTooltipLines(zone), event);
+}
+
+function handleUserZoneFocus(zone: UserZone, event: FocusEvent): void {
+  const target = event.target as Element | null;
+  if (!target) return;
+  showTooltipFromElement(userZoneLabel(zone), userZoneTooltipLines(zone), target);
+}
+
 function showConnectionTooltip(connection: CargoConnection, event: MouseEvent): void {
   showTooltip(
     ui.value.map.cargoConnection,
@@ -241,8 +403,106 @@ function showConnectionTooltip(connection: CargoConnection, event: MouseEvent): 
   );
 }
 
+function handleMouseDown(event: MouseEvent): void {
+  const target = event.target as Element | null;
+  if (target?.closest('.map-marker, .connection-line, .user-marker, .user-zone')) return;
+
+  const mode = props.annotationMode ?? 'idle';
+
+  if (mode === 'zone') {
+    const pt = screenToMapPoint(event.clientX, event.clientY);
+    zoneDraft.value = { x: pt.x, y: pt.y, w: 0, h: 0, startX: pt.x, startY: pt.y };
+    return;
+  }
+
+  panZoomHandleMouseDown(event, hideTooltip);
+}
+
+function handleUserMarkerMouseDown(marker: UserMarker, event: MouseEvent): void {
+  if (props.annotationEditMode !== 'move-marker' || !isAnnotationSelected('marker', marker.id)) return;
+  event.stopPropagation();
+  event.preventDefault();
+  activeDrag.value = { type: 'marker', id: marker.id };
+  ghostPoint.value = { ...marker.map };
+  hideTooltip();
+}
+
+function handleUserZoneMouseDown(zone: UserZone, event: MouseEvent): void {
+  if (props.annotationEditMode !== 'edit-zone' || !isAnnotationSelected('zone', zone.id)) return;
+  event.stopPropagation();
+  event.preventDefault();
+  activeDrag.value = {
+    type: 'zone',
+    id: zone.id,
+    originRect: { ...zone.rect },
+    originPoint: screenToMapPoint(event.clientX, event.clientY),
+  };
+  zoneDraft.value = {
+    x: zone.rect.x,
+    y: zone.rect.y,
+    w: zone.rect.width,
+    h: zone.rect.height,
+    startX: zone.rect.x,
+    startY: zone.rect.y,
+  };
+  hideTooltip();
+}
+
+function handleCanvasClick(event: MouseEvent): void {
+  const mode = props.annotationMode ?? 'idle';
+  if (mode === 'marker') {
+    const pt = screenToMapPoint(event.clientX, event.clientY);
+    emit('create-marker', pt);
+  }
+}
+
+function handleMouseMove(event: MouseEvent): void {
+  const mode = props.annotationMode ?? 'idle';
+  if (mode === 'marker') {
+    ghostPoint.value = screenToMapPoint(event.clientX, event.clientY);
+  } else {
+    ghostPoint.value = null;
+  }
+}
+
+function handleMouseLeave(): void {
+  ghostPoint.value = null;
+}
+
+function isAnnotationSelected(type: 'marker' | 'zone', id: string): boolean {
+  const sel = props.selectedAnnotation;
+  if (!sel) return false;
+  return sel.type === type && sel.id === id;
+}
+
+function zoneLabelX(zone: UserZone): number {
+  return zone.rect.x + 10 / mapScale.value;
+}
+
+function zoneLabelY(zone: UserZone): number {
+  return zone.rect.y + 10 / mapScale.value;
+}
+
+function zoneGroupClass(zone: UserZone): Record<string, boolean> {
+  return {
+    active: isAnnotationSelected('zone', zone.id),
+    locked: zone.locked,
+  };
+}
+
+onMounted(() => {
+  window.addEventListener('mousemove', handleWindowMouseMove);
+  window.addEventListener('mouseup', handleWindowMouseUp);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', handleWindowMouseMove);
+  window.removeEventListener('mouseup', handleWindowMouseUp);
+});
+
 defineExpose({
   focusSelection,
+  focusPoint,
   resetView,
 });
 </script>
@@ -251,10 +511,18 @@ defineExpose({
   <div
     ref="mapShell"
     class="map-canvas"
-    :class="{ dragging: isDragging }"
+    :class="{
+      dragging: isDragging,
+      'is-placing-marker': (annotationMode ?? 'idle') === 'marker',
+      'is-drawing-zone': (annotationMode ?? 'idle') === 'zone',
+      'is-moving-annotation': (annotationEditMode ?? 'idle') !== 'idle',
+    }"
     :aria-busy="loading"
     @mousedown="handleMouseDown"
     @wheel="handleWheel"
+    @mousemove="handleMouseMove"
+    @mouseleave="handleMouseLeave"
+    @click="handleCanvasClick"
   >
     <svg
       class="map-svg"
@@ -272,6 +540,40 @@ defineExpose({
           :width="imageWidth"
           :height="imageHeight"
         />
+
+        <!-- Locked user zones under everything else -->
+        <g v-if="lockedUserZones.length">
+          <g
+            v-for="zone in lockedUserZones"
+            :key="zone.id"
+            class="user-zone"
+            :class="zoneGroupClass(zone)"
+            :style="{ '--annotation-color': zone.color }"
+            tabindex="0"
+            role="button"
+            @click.stop="emit('select-annotation', { type: 'zone', id: zone.id })"
+            @focus.stop="handleUserZoneFocus(zone, $event)"
+            @mouseenter.stop="showUserZoneTooltip(zone, $event)"
+            @mousemove.stop="moveTooltip($event)"
+            @blur.stop="hideTooltip"
+            @mouseleave.stop="hideTooltip"
+          >
+            <rect
+              :x="zone.rect.x"
+              :y="zone.rect.y"
+              :width="zone.rect.width"
+              :height="zone.rect.height"
+            />
+            <text
+              class="user-zone-label"
+              :x="zoneLabelX(zone)"
+              :y="zoneLabelY(zone)"
+              :font-size="zoneLabelFontSize"
+              text-anchor="start"
+              dominant-baseline="hanging"
+            >{{ zone.label }}</text>
+          </g>
+        </g>
 
         <g>
           <line
@@ -303,8 +605,8 @@ defineExpose({
                 orphan: orphanKeySet.has(marker.unique_key),
                 active: selectedKey === marker.unique_key,
                 dimmed: isDimmed(marker.unique_key),
-                },
-              ]"
+              },
+            ]"
             tabindex="0"
             role="button"
             :aria-pressed="selectedKey === marker.unique_key"
@@ -391,6 +693,81 @@ defineExpose({
             />
           </g>
         </g>
+
+        <!-- User zones -->
+        <g v-if="unlockedUserZones.length">
+          <g
+            v-for="zone in unlockedUserZones"
+            :key="zone.id"
+            class="user-zone"
+            :class="zoneGroupClass(zone)"
+            :style="{ '--annotation-color': zone.color }"
+            tabindex="0"
+            role="button"
+            @click.stop="emit('select-annotation', { type: 'zone', id: zone.id })"
+            @mousedown.stop="handleUserZoneMouseDown(zone, $event)"
+            @focus.stop="handleUserZoneFocus(zone, $event)"
+            @mouseenter.stop="showUserZoneTooltip(zone, $event)"
+            @mousemove.stop="moveTooltip($event)"
+            @blur.stop="hideTooltip"
+            @mouseleave.stop="hideTooltip"
+          >
+            <rect
+              :x="zone.rect.x"
+              :y="zone.rect.y"
+              :width="zone.rect.width"
+              :height="zone.rect.height"
+            />
+              <text
+                class="user-zone-label"
+                :x="zoneLabelX(zone)"
+                :y="zoneLabelY(zone)"
+                :font-size="zoneLabelFontSize"
+                text-anchor="start"
+                dominant-baseline="hanging"
+             >{{ zone.label }}</text>
+          </g>
+        </g>
+
+        <!-- Zone draft preview -->
+        <rect
+          v-if="zoneDraft && zoneDraft.w > 4 && zoneDraft.h > 4"
+          class="zone-draft-preview"
+          :x="zoneDraft.x"
+          :y="zoneDraft.y"
+          :width="zoneDraft.w"
+          :height="zoneDraft.h"
+        />
+
+        <!-- User markers -->
+        <g v-if="userMarkers && userMarkers.length">
+          <g
+            v-for="marker in userMarkers"
+            :key="marker.id"
+            class="map-marker user-marker"
+            :class="{ active: isAnnotationSelected('marker', marker.id) }"
+            :style="{ '--annotation-color': marker.color }"
+            tabindex="0"
+            role="button"
+            @click.stop="emit('select-annotation', { type: 'marker', id: marker.id })"
+            @mousedown.stop="handleUserMarkerMouseDown(marker, $event)"
+            @focus.stop="handleUserMarkerFocus(marker, $event)"
+            @mouseenter.stop="showUserMarkerTooltip(marker, $event)"
+            @mousemove.stop="moveTooltip($event)"
+            @blur.stop="hideTooltip"
+            @mouseleave.stop="hideTooltip"
+          >
+            <circle :cx="marker.map.x" :cy="marker.map.y" r="9" class="user-marker-outer" />
+            <circle :cx="marker.map.x" :cy="marker.map.y" r="4" class="user-marker-core" />
+          </g>
+        </g>
+
+        <!-- Ghost marker (placement preview) -->
+        <g v-if="ghostPoint" class="ghost-marker">
+          <circle :cx="ghostPoint.x" :cy="ghostPoint.y" r="9" />
+          <circle :cx="ghostPoint.x" :cy="ghostPoint.y" r="4" class="ghost-marker-core" />
+        </g>
+
       </g>
     </svg>
 
@@ -580,6 +957,106 @@ defineExpose({
 .map-tooltip span {
     color: #d7e4ff;
     font-size: 0.92rem;
+}
+
+.map-canvas.is-placing-marker {
+    cursor: crosshair;
+}
+
+.map-canvas.is-drawing-zone {
+    cursor: cell;
+}
+
+.map-canvas.is-moving-annotation {
+    cursor: move;
+}
+
+:deep(.user-marker) {
+    cursor: pointer;
+}
+
+.map-canvas.is-moving-annotation :deep(.user-marker.active),
+.map-canvas.is-moving-annotation :deep(.user-zone.active) {
+    cursor: move;
+}
+
+:deep(.user-marker-outer) {
+    fill: color-mix(in srgb, var(--annotation-color, var(--amber)) 18%, transparent);
+    stroke: var(--annotation-color, var(--amber));
+    stroke-width: 1.5;
+}
+
+:deep(.user-marker-core) {
+    fill: var(--annotation-color, var(--amber));
+    stroke: none;
+}
+
+:deep(.user-marker.active .user-marker-outer) {
+    stroke-width: 2.2;
+    filter: drop-shadow(0 0 6px var(--annotation-color, var(--amber)));
+}
+
+:deep(.ghost-marker) {
+    pointer-events: none;
+    opacity: 0.55;
+}
+
+:deep(.ghost-marker circle) {
+    fill: var(--amber-soft);
+    stroke: var(--amber);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 2;
+}
+
+:deep(.ghost-marker-core) {
+    fill: var(--amber);
+    stroke: none !important;
+    stroke-dasharray: none !important;
+}
+
+:deep(.user-zone) {
+    cursor: pointer;
+}
+
+:deep(.user-zone.locked rect) {
+    stroke-dasharray: 3 4;
+    opacity: 0.55;
+}
+
+:deep(.user-zone.locked .user-zone-label) {
+    opacity: 0.72;
+}
+
+:deep(.user-zone rect) {
+    fill: color-mix(in srgb, var(--annotation-color, var(--accent)) 10%, transparent);
+    stroke: var(--annotation-color, var(--accent));
+    stroke-width: 1.2;
+    stroke-dasharray: 6 3;
+}
+
+:deep(.user-zone.active rect) {
+    stroke: var(--annotation-color, var(--accent));
+    stroke-width: 1.8;
+    stroke-dasharray: none;
+    fill: color-mix(in srgb, var(--annotation-color, var(--accent)) 16%, transparent);
+}
+
+:deep(.user-zone-label) {
+    fill: var(--annotation-color, #fff4cf);
+    font-family: var(--font-mono);
+    pointer-events: none;
+    paint-order: stroke fill;
+    stroke: rgba(0, 0, 0, 0.78);
+    stroke-width: 4px;
+    font-weight: 700;
+}
+
+:deep(.zone-draft-preview) {
+    fill: rgba(232, 184, 75, 0.08);
+    stroke: var(--amber);
+    stroke-width: 1.2;
+    stroke-dasharray: 4 3;
+    pointer-events: none;
 }
 
 .map-empty-state {
