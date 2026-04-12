@@ -23,6 +23,13 @@ export interface Point2D {
     y: number;
 }
 
+export interface Rect2D {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
 export interface Point3D extends Point2D {
     z: number;
 }
@@ -117,6 +124,7 @@ export interface EntityVisibility {
 
 export interface MapCanvasHandle {
     focusSelection: () => void;
+    focusPoint: (mapX: number, mapY: number, desiredScale?: number) => void;
     resetView: () => void;
 }
 
@@ -277,4 +285,65 @@ export interface MapCanvasToolbarModel {
     canEnableFocusMode: boolean;
     focusMode: boolean;
     filtersOpen: boolean;
+}
+
+// ── User Annotations ──────────────────────────────────────────────────────────
+
+export type UserAnnotationMode = "idle" | "marker" | "zone";
+export type UserAnnotationEditMode = "idle" | "move-marker" | "edit-zone";
+
+export interface UserMarker {
+    id: string;
+    label: string;
+    description: string;
+    color: string;
+    map: Point2D;
+    createdAt: string;
+}
+
+export interface UserZone {
+    id: string;
+    label: string;
+    description: string;
+    color: string;
+    locked: boolean;
+    rect: Rect2D;
+    createdAt: string;
+}
+
+export type UserAnnotationSelection =
+    | { type: "marker"; id: string }
+    | { type: "zone"; id: string }
+    | null;
+
+export interface UserAnnotationExport {
+    version: 1;
+    exportedAt: string;
+    markers: UserMarker[];
+    zones: UserZone[];
+}
+
+export interface UserAnnotationDraft {
+    label: string;
+    description: string;
+    color: string;
+}
+
+export interface UserAnnotationSummary {
+    id: string;
+    type: "marker" | "zone";
+    label: string;
+    description: string;
+    meta: string;
+    createdAt: string;
+}
+
+export interface MapNotesPanelModel {
+    ui: Messages;
+    annotationMode: UserAnnotationMode;
+    annotationEditMode: UserAnnotationEditMode;
+    selectedAnnotation: UserAnnotationSelection;
+    draft: UserAnnotationDraft;
+    selectedZoneLocked: boolean;
+    importError: string;
 }

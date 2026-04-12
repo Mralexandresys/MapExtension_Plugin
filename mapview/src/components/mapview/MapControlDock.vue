@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useTemplateRef } from "vue";
+
 import type { Language } from "../../lang";
 import type { MapControlDockModel } from "../../lib/types";
 
@@ -15,7 +17,11 @@ const emit = defineEmits<{
     "toggle-auto-refresh": [];
     "update:lang": [value: Language];
     "open-shortcuts": [];
+    "export-json": [];
+    "import-json": [file: File];
 }>();
+
+const fileInput = useTemplateRef<HTMLInputElement>("fileInput");
 
 function handleEndpointInput(event: Event): void {
     emit("update:endpoint-draft", (event.target as HTMLInputElement).value);
@@ -23,6 +29,18 @@ function handleEndpointInput(event: Event): void {
 
 function handleLanguageChange(event: Event): void {
     emit("update:lang", (event.target as HTMLSelectElement).value as Language);
+}
+
+function triggerImport(): void {
+    fileInput.value?.click();
+}
+
+function handleFileChange(event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    emit("import-json", file);
+    // reset so the same file can be re-imported
+    (event.target as HTMLInputElement).value = "";
 }
 </script>
 
@@ -59,6 +77,48 @@ function handleLanguageChange(event: Event): void {
                                 : panel.ui.buttons.refresh
                         }}
                     </button>
+
+                    <!-- Export annotations -->
+                    <button
+                        class="icon-button"
+                        type="button"
+                        :title="panel.ui.notes.exportJson"
+                        :aria-label="panel.ui.notes.exportJson"
+                        @click="emit('export-json')"
+                    >
+                        <!-- Arrow down to line (export) -->
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="10" y1="3" x2="10" y2="14" />
+                            <polyline points="6,10 10,14 14,10" />
+                            <line x1="4" y1="17" x2="16" y2="17" />
+                        </svg>
+                    </button>
+
+                    <!-- Import annotations -->
+                    <button
+                        class="icon-button"
+                        type="button"
+                        :title="panel.ui.notes.importJson"
+                        :aria-label="panel.ui.notes.importJson"
+                        @click="triggerImport"
+                    >
+                        <!-- Arrow up from line (import) -->
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="10" y1="17" x2="10" y2="6" />
+                            <polyline points="6,10 10,6 14,10" />
+                            <line x1="4" y1="3" x2="16" y2="3" />
+                        </svg>
+                    </button>
+                    <input
+                        ref="fileInput"
+                        type="file"
+                        accept=".json,application/json"
+                        class="sr-only"
+                        tabindex="-1"
+                        aria-hidden="true"
+                        @change="handleFileChange"
+                    />
+
                     <button
                         class="button subtle small"
                         type="button"
@@ -352,6 +412,42 @@ function handleLanguageChange(event: Event): void {
     display: inline-flex;
     align-items: center;
     gap: 8px;
+}
+
+.icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 0;
+    background: rgba(12, 19, 35, 0.86);
+    color: var(--muted);
+    cursor: pointer;
+    transition:
+        background 0.15s,
+        border-color 0.15s,
+        color 0.15s;
+}
+
+.icon-button:hover {
+    background: rgba(34, 211, 238, 0.1);
+    border-color: var(--border-strong);
+    color: var(--text);
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .settings-trigger.active {
