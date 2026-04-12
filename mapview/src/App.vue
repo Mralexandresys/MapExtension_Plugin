@@ -318,11 +318,7 @@ const notesPanel = computed<MapNotesPanelModel>(() => ({
                 :focus-keys="Array.from(focusKeys)"
                 :focus-cargo-key="focusCargoKey"
                 :lang="lang"
-<<<<<<< HEAD
                 :icon-scale="iconScale"
-                @select="selectEntity"
-                @clear-selection="clearSelection"
-=======
                 :user-markers="userMarkers"
                 :user-zones="userZones"
                 :annotation-mode="annotationMode"
@@ -330,7 +326,6 @@ const notesPanel = computed<MapNotesPanelModel>(() => ({
                 :selected-annotation="selectedAnnotation"
                 @select="handleEntitySelect"
                 @clear-selection="clearAllSelection"
->>>>>>> feature/marker-zone
                 @hover="hoveredKey = $event"
                 @select-annotation="handleAnnotationSelect"
                 @create-marker="handleCreateMarker"

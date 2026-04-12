@@ -40,6 +40,7 @@ function handleLanguageChange(event: Event): void {
 
 function handleIconScaleInput(event: Event): void {
     emit("update:icon-scale", Number((event.target as HTMLInputElement).value));
+}
 
 function triggerImport(): void {
     fileInput.value?.click();
@@ -51,7 +52,6 @@ function handleFileChange(event: Event): void {
     emit("import-json", file);
     // reset so the same file can be re-imported
     (event.target as HTMLInputElement).value = "";
-
 }
 </script>
 
