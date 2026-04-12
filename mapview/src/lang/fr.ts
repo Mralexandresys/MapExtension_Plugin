@@ -58,6 +58,8 @@ export const fr = {
         eyebrow: "mapview",
         title: "Carte StarRupture",
         endpoint: "Endpoint",
+        iconScale: "Taille des icones",
+        iconScaleHelp: "Ajuste la taille des marqueurs sur la carte.",
     },
     rupture: {
         title: "Timeline d'Arcadia",

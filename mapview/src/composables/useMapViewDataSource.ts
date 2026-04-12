@@ -22,6 +22,15 @@ const DEFAULT_ENDPOINT = "http://127.0.0.1:9000";
 const LIVE_REFRESH_MS = 2000;
 const STORAGE_KEY = "starrupture-mapview:v3";
 const LANGUAGE_OPTIONS: Language[] = ["en", "fr"];
+const DEFAULT_ICON_SCALE = 1;
+const MIN_ICON_SCALE = 0.75;
+const MAX_ICON_SCALE = 2;
+
+function clampIconScale(value: unknown): number {
+    const numericValue = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numericValue)) return DEFAULT_ICON_SCALE;
+    return Math.min(MAX_ICON_SCALE, Math.max(MIN_ICON_SCALE, numericValue));
+}
 
 interface MapViewStatus {
     loading: boolean;
@@ -33,6 +42,7 @@ interface MapViewStatus {
 interface PersistedPreferences {
     endpoint?: string;
     autoRefresh?: boolean;
+    iconScale?: number;
     showAllLinks?: boolean;
     highlightOrphans?: boolean;
     viewMode?: ViewMode;
@@ -50,6 +60,7 @@ export function useMapViewDataSource() {
     const showAllLinks = ref(true);
     const highlightOrphans = ref(false);
     const autoRefresh = ref(true);
+    const iconScale = ref(DEFAULT_ICON_SCALE);
     const lastUpdatedAt = ref(0);
     const now = ref(Date.now());
     const viewMode = ref<ViewMode>("network");
@@ -93,6 +104,7 @@ export function useMapViewDataSource() {
             endpoint.value = saved.endpoint || DEFAULT_ENDPOINT;
             endpointDraft.value = endpoint.value;
             autoRefresh.value = saved.autoRefresh ?? true;
+            iconScale.value = clampIconScale(saved.iconScale);
             showAllLinks.value = saved.showAllLinks ?? true;
             highlightOrphans.value = saved.highlightOrphans ?? false;
             viewMode.value = saved.viewMode || "network";
@@ -117,6 +129,7 @@ export function useMapViewDataSource() {
             JSON.stringify({
                 endpoint: endpoint.value,
                 autoRefresh: autoRefresh.value,
+                iconScale: iconScale.value,
                 showAllLinks: showAllLinks.value,
                 highlightOrphans: highlightOrphans.value,
                 viewMode: viewMode.value,
@@ -269,6 +282,7 @@ export function useMapViewDataSource() {
         showAllLinks,
         highlightOrphans,
         autoRefresh,
+        iconScale,
         lastUpdatedAt,
         now,
         viewMode,

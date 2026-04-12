@@ -13,9 +13,14 @@ const emit = defineEmits<{
     "apply-endpoint": [];
     "refresh": [];
     "toggle-auto-refresh": [];
+    "update:icon-scale": [value: number];
     "update:lang": [value: Language];
     "open-shortcuts": [];
 }>();
+
+const ICON_SCALE_MIN = 0.75;
+const ICON_SCALE_MAX = 2;
+const ICON_SCALE_STEP = 0.25;
 
 function handleEndpointInput(event: Event): void {
     emit("update:endpoint-draft", (event.target as HTMLInputElement).value);
@@ -23,6 +28,10 @@ function handleEndpointInput(event: Event): void {
 
 function handleLanguageChange(event: Event): void {
     emit("update:lang", (event.target as HTMLSelectElement).value as Language);
+}
+
+function handleIconScaleInput(event: Event): void {
+    emit("update:icon-scale", Number((event.target as HTMLInputElement).value));
 }
 </script>
 
@@ -146,6 +155,25 @@ function handleLanguageChange(event: Event): void {
                                 {{ panel.ui.languages[option] }}
                             </option>
                         </select>
+                    </label>
+
+                    <label class="field compact icon-scale-field">
+                        <span>
+                            {{ panel.ui.hero.iconScale }}
+                            <strong>{{ Math.round(panel.iconScale * 100) }}%</strong>
+                        </span>
+                        <input
+                            class="icon-scale-slider"
+                            :value="panel.iconScale"
+                            type="range"
+                            :min="ICON_SCALE_MIN"
+                            :max="ICON_SCALE_MAX"
+                            :step="ICON_SCALE_STEP"
+                            @input="handleIconScaleInput"
+                        />
+                        <small class="field-note">
+                            {{ panel.ui.hero.iconScaleHelp }}
+                        </small>
                     </label>
 
                     <div
@@ -334,9 +362,24 @@ function handleLanguageChange(event: Event): void {
 
 .control-dock-utility-row {
     display: grid;
-    grid-template-columns: auto minmax(100px, 132px) minmax(0, 1fr);
+    grid-template-columns: auto minmax(100px, 132px) minmax(180px, 220px) minmax(0, 1fr);
     gap: 10px;
     align-items: stretch;
+}
+
+.icon-scale-field {
+    gap: 6px;
+}
+
+.icon-scale-field span {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.icon-scale-slider {
+    width: 100%;
 }
 
 .control-dock-note {

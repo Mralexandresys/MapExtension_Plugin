@@ -29,6 +29,7 @@ const props = defineProps<{
   focusKeys: string[];
   focusCargoKey: string | null;
   lang: Language;
+  iconScale: number;
 }>();
 
 const emit = defineEmits<{
@@ -47,9 +48,9 @@ const DEFAULT_MAP = {
 };
 
 const TELEPORTER_SYMBOL_ID = 'teleporter-marker-icon';
-const TELEPORTER_ICON_SIZE = 20;
+const TELEPORTER_ICON_SIZE = 28;
 const TELEPORTER_ICON_HALF = TELEPORTER_ICON_SIZE / 2;
-const TELEPORTER_HITBOX_SIZE = 28;
+const TELEPORTER_HITBOX_SIZE = 36;
 const TELEPORTER_HITBOX_HALF = TELEPORTER_HITBOX_SIZE / 2;
 const teleporterSymbolHref = `#${TELEPORTER_SYMBOL_ID}`;
 const teleporterSymbolMarkup = teleporterSvg
@@ -71,6 +72,11 @@ const imageX = computed(() => -(Number(projection.value.dst_x1) || 380));
 const imageY = computed(() => -(Number(projection.value.dst_y1) || 567));
 const orphanKeySet = computed(() => new Set(props.orphanKeys));
 const focusKeySet = computed(() => new Set(props.focusKeys));
+const markerScaleTransform = computed(() => `scale(${props.iconScale})`);
+
+function markerTranslateTransform(x: number, y: number): string {
+  return `translate(${x} ${y}) ${markerScaleTransform.value} translate(${-x} ${-y})`;
+}
 
 const {
   tooltip,
@@ -303,6 +309,7 @@ defineExpose({
             role="button"
             :aria-pressed="selectedKey === marker.unique_key"
             :aria-label="cargoAriaLabel(marker)"
+            :transform="markerTranslateTransform(marker.map.x, marker.map.y)"
             @click.stop="emit('select', marker.unique_key)"
             @dblclick.stop
             @keydown="handleMarkerKeydown($event, marker.unique_key)"
@@ -331,6 +338,7 @@ defineExpose({
             role="button"
             :aria-pressed="selectedKey === teleporter.unique_key"
             :aria-label="teleporterAriaLabel(teleporter)"
+            :transform="markerTranslateTransform(teleporter.map.x, teleporter.map.y)"
             @click.stop="emit('select', teleporter.unique_key)"
             @dblclick.stop
             @keydown="handleMarkerKeydown($event, teleporter.unique_key)"
@@ -368,6 +376,7 @@ defineExpose({
             role="button"
             :aria-pressed="selectedKey === player.unique_key"
             :aria-label="playerAriaLabel(player)"
+            :transform="markerTranslateTransform(player.map.x, player.map.y)"
             @click.stop="emit('select', player.unique_key)"
             @dblclick.stop
             @keydown="handleMarkerKeydown($event, player.unique_key)"

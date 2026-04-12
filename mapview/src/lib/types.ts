@@ -222,6 +222,7 @@ export interface MapControlDockModel {
     statusError: string;
     currentTimeLabel: string;
     liveAgeLabel: string;
+    iconScale: number;
 }
 
 export interface MapRupturePanelModel {

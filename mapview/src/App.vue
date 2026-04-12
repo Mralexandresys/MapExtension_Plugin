@@ -30,6 +30,7 @@ const {
     focusMode,
     viewMode,
     autoRefresh,
+    iconScale,
     selectedKey,
     hoveredKey,
     controlSettingsOpen,
@@ -109,6 +110,7 @@ const controlDockPanel = computed<MapControlDockModel>(() => ({
     languageOptions,
     lang: lang.value,
     autoRefresh: autoRefresh.value,
+    iconScale: iconScale.value,
     loading: status.loading,
     statusText: status.text,
     statusError: status.error,
@@ -179,6 +181,7 @@ const canvasToolbarPanel = computed<MapCanvasToolbarModel>(() => ({
                 @apply-endpoint="applyEndpoint(true)"
                 @refresh="refreshData"
                 @toggle-auto-refresh="autoRefresh = !autoRefresh"
+                @update:icon-scale="iconScale = $event"
                 @open-shortcuts="openShortcuts"
                 @update:lang="lang = $event"
             />
@@ -199,6 +202,7 @@ const canvasToolbarPanel = computed<MapCanvasToolbarModel>(() => ({
                 :focus-keys="Array.from(focusKeys)"
                 :focus-cargo-key="focusCargoKey"
                 :lang="lang"
+                :icon-scale="iconScale"
                 @select="selectEntity"
                 @clear-selection="clearSelection"
                 @hover="hoveredKey = $event"
