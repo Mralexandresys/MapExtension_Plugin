@@ -97,7 +97,9 @@ const emit = defineEmits<{
                                     tick.align,
                                     `stack-${tick.stackLevel}`,
                                 ]"
-                                :style="{ left: `${tick.leftPercent}%` }"
+                                :style="tick.align === 'right'
+                                    ? {}
+                                    : { left: `${tick.leftPercent}%` }"
                             >
                                 {{ tick.label }}
                             </span>
