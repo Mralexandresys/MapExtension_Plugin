@@ -141,3 +141,183 @@ const emit = defineEmits<{
         </section>
     </div>
 </template>
+
+<style scoped>
+.selection-panel {
+    width: min(420px, 100%);
+    height: auto;
+    max-height: min(72vh, calc(100vh - 124px));
+    grid-template-rows: auto minmax(0, 1fr);
+    border-radius: 24px;
+    overflow: hidden;
+    align-self: flex-start;
+}
+
+.selection-panel.expanded {
+    transform: translateX(0);
+    max-height: min(84vh, calc(100vh - 36px));
+}
+
+.selection-body {
+    display: grid;
+    gap: 12px;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: inherit;
+    padding-right: 6px;
+    scrollbar-gutter: stable;
+}
+
+.selection-header-copy {
+    display: grid;
+    gap: 6px;
+}
+
+.selection-header-copy h2 {
+    font-size: 1.18rem;
+    line-height: 1.15;
+}
+
+.selection-top-row {
+    align-items: start;
+    justify-content: space-between;
+}
+
+.selection-top-row .panel-top-actions {
+    flex: 0 0 auto;
+    align-self: flex-start;
+}
+
+.selection-identity-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.selection-id {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 4px 9px;
+    border-radius: 0;
+    border: 1px solid var(--border-amber);
+    background: var(--amber-soft);
+    font-family: var(--font-mono);
+    color: var(--amber);
+    text-shadow: 0 0 8px rgba(232, 184, 75, 0.4);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: 0.08em;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.selection-type-pill {
+    border-left: 3px solid currentColor;
+    border-radius: 0;
+    padding: 2px 8px 2px 6px;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    line-height: 1.3;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.selection-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    align-items: stretch;
+}
+
+.selection-empty-state {
+    display: grid;
+    gap: 6px;
+}
+
+.selection-empty-state strong {
+    color: var(--text);
+}
+
+.selection-actions .button {
+    min-width: 0;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: normal;
+    hyphens: none;
+    text-align: center;
+}
+
+.selection-secondary-panel {
+    display: grid;
+    min-height: 0;
+    overflow: auto;
+    padding-top: 10px;
+    padding-right: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    gap: 12px;
+}
+
+.selection-details-grid {
+    grid-template-columns: 1fr;
+}
+
+.selection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.selection-actions.compact-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.selection-actions .button {
+    min-width: 0;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: normal;
+    hyphens: none;
+    text-align: center;
+}
+
+/* Contextual overrides */
+.selection-panel .panel-top-row {
+    padding-left: 0;
+}
+
+.selection-panel .panel-top-row.compact {
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.selection-panel .panel-top-actions {
+    max-width: 100%;
+}
+
+@media (max-width: 980px) {
+    .selection-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        display: grid;
+    }
+}
+
+@media (max-width: 720px) {
+    .selection-panel {
+        border-radius: 20px;
+        width: 100%;
+        max-height: min(44vh, calc(100vh - 136px));
+    }
+
+    .selection-actions {
+        grid-template-columns: 1fr;
+    }
+}
+</style>

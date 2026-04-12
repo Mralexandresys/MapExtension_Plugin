@@ -120,3 +120,85 @@ onBeforeUnmount(() => {
         </section>
     </div>
 </template>
+
+<style scoped>
+.shortcut-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(2, 4, 12, 0.82);
+    backdrop-filter: blur(6px);
+}
+
+.shortcut-dialog {
+    width: min(760px, 100%);
+    box-sizing: border-box;
+    padding: 20px;
+    background: var(--panel-strong);
+    --cut: 14px;
+    clip-path: polygon(var(--cut) 0%, 100% 0%, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0% 100%, 0% var(--cut));
+}
+
+.shortcut-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.shortcut-row {
+    display: grid;
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 14px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: rgba(8, 14, 26, 0.62);
+}
+
+.shortcut-row p {
+    margin-top: 4px;
+    color: var(--muted);
+}
+
+.shortcut-row strong {
+    font-size: 0.86rem;
+}
+
+.keycap-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.keycap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    min-height: 34px;
+    padding: 2px 7px;
+    border-radius: 2px;
+    border: 1px solid var(--border-strong);
+    background: rgba(34, 211, 238, 0.08);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+@media (max-width: 980px) {
+    .shortcut-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .shortcut-dialog {
+        padding: 14px;
+    }
+}
+</style>

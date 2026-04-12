@@ -405,3 +405,182 @@ defineExpose({
     </div>
   </div>
 </template>
+
+<style scoped>
+.map-canvas {
+    position: relative;
+    overflow: hidden;
+    background: #0a1018;
+    cursor: grab;
+}
+
+.map-canvas.dragging {
+    cursor: grabbing;
+}
+
+.map-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    user-select: none;
+}
+
+:deep(.base-map) {
+    opacity: 0.92;
+    pointer-events: none;
+}
+
+:deep(.connection-line) {
+    stroke: var(--line);
+    stroke-width: 1px;
+    stroke-opacity: 0.35;
+    stroke-dasharray: 6 3;
+}
+
+:deep(.connection-line.active) {
+    stroke-opacity: 0.85;
+    stroke-width: 1.5px;
+    stroke-dasharray: none;
+    filter: drop-shadow(0 0 3px var(--line));
+}
+
+:deep(.connection-line.muted) { stroke-opacity: 0.08; }
+
+:deep(.map-marker) {
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+:deep(.map-marker:focus) {
+    outline: none;
+}
+
+:deep(.map-marker:focus-visible rect),
+:deep(.map-marker:focus-visible polygon),
+:deep(.map-marker:focus-visible circle),
+:deep(.map-marker:focus-visible path),
+:deep(.map-marker:focus-visible use) {
+    stroke-width: 2.8;
+    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.58));
+}
+
+:deep(.map-marker.sender rect),
+:deep(.map-marker.sender polygon) {
+    fill: var(--sender);
+    stroke: #d8e8ff;
+    stroke-width: 1.2;
+}
+
+:deep(.map-marker.receiver circle) {
+    fill: var(--receiver);
+    stroke: #fff2c7;
+    stroke-width: 1.2;
+}
+
+:deep(.map-marker.teleporter) {
+    color: var(--teleporter);
+}
+
+:deep(.map-marker.teleporter .teleporter-hitbox) {
+    fill: currentColor;
+    fill-opacity: 0;
+    pointer-events: all;
+}
+
+:deep(.map-marker.teleporter use) {
+    stroke: currentColor;
+    fill: none;
+}
+
+:deep(.map-marker.player path) {
+    fill: var(--player);
+    stroke: #d8fff0;
+    stroke-width: 1.2;
+}
+
+:deep(.map-marker.orphan rect),
+:deep(.map-marker.orphan polygon),
+:deep(.map-marker.orphan circle) {
+    fill: var(--bad);
+    stroke: #ffe1e1;
+}
+
+:deep(.map-marker.dimmed) {
+    opacity: 0.18;
+    filter: none;
+}
+
+:deep(.map-marker.sender.active polygon)  { filter: drop-shadow(0 0 6px var(--sender)); }
+:deep(.map-marker.receiver.active circle) { filter: drop-shadow(0 0 6px var(--receiver)); }
+:deep(.map-marker.player.active path)     { filter: drop-shadow(0 0 6px var(--player)); }
+:deep(.map-marker.orphan rect),
+:deep(.map-marker.orphan polygon),
+:deep(.map-marker.orphan circle)          { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 3 2; }
+
+:deep(.map-marker.active rect),
+:deep(.map-marker.active circle),
+:deep(.map-marker.active polygon),
+:deep(.map-marker.active path),
+:deep(.map-marker.active use) {
+    stroke-width: 2.6;
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.44));
+}
+
+.map-tooltip,
+.map-empty-state {
+    position: absolute;
+    z-index: 6;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid var(--border-strong);
+    background: rgba(7, 12, 24, 0.95);
+    box-shadow: var(--shadow);
+}
+
+.map-loading-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    overflow: hidden;
+    z-index: 10;
+}
+
+.map-loading-bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    animation: scan-pass 1.2s linear infinite;
+}
+
+@keyframes scan-pass {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+}
+
+.map-tooltip {
+    display: grid;
+    gap: 4px;
+    pointer-events: none;
+    min-width: 240px;
+    max-width: 320px;
+}
+
+.map-tooltip span {
+    color: #d7e4ff;
+    font-size: 0.92rem;
+}
+
+.map-empty-state {
+    inset: auto 20px 20px 20px;
+    display: grid;
+    gap: 6px;
+    max-width: 420px;
+}
+
+.map-empty-state strong {
+    font-size: 0.96rem;
+}
+</style>

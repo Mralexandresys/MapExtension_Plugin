@@ -177,3 +177,223 @@ function handleLanguageChange(event: Event): void {
         </div>
     </section>
 </template>
+
+<style scoped>
+.command-header-shell {
+    position: relative;
+    width: 100%;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
+.command-header {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 12px 14px 14px;
+    border-radius: 0;
+    background: rgba(12, 20, 38, 0.99);
+    border-bottom: 1px solid var(--border-strong);
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.command-header-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+    min-height: 52px;
+}
+
+.command-header-brand {
+    min-width: 0;
+    display: grid;
+    gap: 6px;
+}
+
+.command-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.command-settings-popover {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 8px;
+    z-index: 6;
+    width: min(620px, 100%);
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(14, 22, 40, 0.99);
+    box-shadow: 0 22px 46px rgba(0, 0, 0, 0.34);
+}
+
+.command-header-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.command-header h1 {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.1;
+    white-space: nowrap;
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+.control-dock-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #c8d8f0;
+    font-size: 0.74rem;
+}
+
+.command-stat {
+    min-width: 94px;
+    padding: 12px 14px;
+    display: grid;
+    gap: 4px;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(14, 22, 42, 0.98);
+}
+
+.command-stat:last-child {
+    border-right: 0;
+}
+
+.command-stat strong {
+    font-size: 1rem;
+    line-height: 1;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-weight: 700;
+}
+
+.command-stat span {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    font-family: var(--font-mono);
+}
+
+.command-stat.primary strong { color: var(--accent); }
+.command-stat.good strong    { color: var(--good); }
+.command-stat.warn strong    { color: var(--warn); }
+.command-stat.bad strong     { color: var(--bad); }
+
+.command-stats-row {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 6px 16px;
+    border-top: 1px solid var(--border-strong);
+    background: rgba(14, 22, 42, 0.96);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.command-stat-label { color: var(--muted); display: block; margin-bottom: 1px; }
+.command-stat-value { color: var(--text); font-weight: 700; display: block; font-size: 0.76rem; }
+.command-stat.good .command-stat-value { color: var(--good); }
+.command-stat.warn .command-stat-value { color: var(--warn); }
+.command-stat.bad  .command-stat-value { color: var(--bad); }
+
+.dock-endpoint-field {
+    gap: 8px;
+}
+
+.endpoint-inline-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.endpoint-apply-button {
+    min-width: 108px;
+}
+
+.control-dock-utility-row {
+    display: grid;
+    grid-template-columns: auto minmax(100px, 132px) minmax(0, 1fr);
+    gap: 10px;
+    align-items: stretch;
+}
+
+.control-dock-note {
+    min-height: 100%;
+    background: rgba(8, 14, 26, 0.82);
+}
+
+.control-dock-note strong {
+    line-height: 1.3;
+}
+
+.settings-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-trigger.active {
+    background: var(--accent-soft);
+    border-color: var(--border-strong);
+}
+
+.gear-icon {
+    position: relative;
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-radius: 999px;
+}
+
+.gear-icon::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border: 2px dashed currentColor;
+    border-radius: 999px;
+    opacity: 0.62;
+}
+
+@media (max-width: 980px) {
+    .endpoint-inline-row {
+        grid-template-columns: 1fr;
+    }
+
+    .command-header-main {
+        grid-template-columns: 1fr;
+    }
+
+    .control-dock-utility-row {
+        grid-template-columns: 1fr;
+    }
+
+    .command-settings-popover {
+        position: static;
+        width: 100%;
+        margin-top: 10px;
+    }
+}
+</style>
