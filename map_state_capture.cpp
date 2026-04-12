@@ -7,6 +7,10 @@
 #include "client/map_sync_client.h"
 #endif
 
+#if defined(MODLOADER_SERVER_BUILD)
+#include "server/map_sync_server.h"
+#endif
+
 #include "AuItems_classes.hpp"
 #include "BP_PackageReceiver_classes.hpp"
 #include "BP_PackageSender_classes.hpp"
@@ -2611,6 +2615,10 @@ namespace MapStateRuntime
 			LOG_INFO("AnyWorldBeginPlay #%d: world=%p name=%s", g_anyWorldBeginPlayCount, static_cast<void*>(world), safeName);
 		}
 
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnAnyWorldBeginPlay(world, safeName);
+#endif
+
 		if (std::strstr(safeName, "ChimeraMain") != nullptr)
 		{
 			{
@@ -2719,6 +2727,9 @@ namespace MapStateRuntime
 			MarkChimeraWorldReady("ExperienceLoadComplete");
 		}
 		Detail::TryRefreshCurrentWorld("ExperienceLoadComplete");
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnExperienceLoadComplete();
+#endif
 	}
 
 	void OnBeforeWorldEndPlay(SDK::UWorld* world, const char* worldName)
@@ -2728,6 +2739,10 @@ namespace MapStateRuntime
 		{
 			LOG_INFO("BeforeWorldEndPlay: world=%p name=%s", static_cast<void*>(world), safeName);
 		}
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnBeforeWorldEndPlay(world, safeName);
+#endif
 
 		// If the ending world is our tracked ChimeraMain, mark it as not ready
 		// while the world pointer is still valid.
@@ -2745,6 +2760,10 @@ namespace MapStateRuntime
 		{
 			LOG_INFO("AfterWorldEndPlay: world=%p name=%s", static_cast<void*>(world), safeName);
 		}
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnAfterWorldEndPlay(world, safeName);
+#endif
 
 		// If the ended world is our tracked ChimeraMain, clear everything.
 		// The world pointer may be partially torn down at this point.
@@ -2770,6 +2789,9 @@ namespace MapStateRuntime
 		{
 			LOG_INFO("PlayerJoined: controller=%p", playerController);
 		}
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnPlayerJoined(playerController);
+#endif
 		// On server, this is a good time to try bootstrapping the world
 		// if we haven't yet. On client, it's mostly informational.
 		Detail::TryRefreshCurrentWorld("PlayerJoined");
