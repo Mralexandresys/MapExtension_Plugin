@@ -21,6 +21,7 @@ import type {
 const DEFAULT_ENDPOINT = "http://127.0.0.1:9000";
 const LIVE_REFRESH_MS = 2000;
 const STORAGE_KEY = "starrupture-mapview:v3";
+const LANGUAGE_OPTIONS: Language[] = ["en", "fr"];
 
 interface MapViewStatus {
     loading: boolean;
@@ -95,8 +96,8 @@ export function useMapViewDataSource() {
             showAllLinks.value = saved.showAllLinks ?? true;
             highlightOrphans.value = saved.highlightOrphans ?? false;
             viewMode.value = saved.viewMode || "network";
-            if (saved.lang === "en" || saved.lang === "fr") {
-                lang.value = saved.lang;
+            if (saved.lang && LANGUAGE_OPTIONS.includes(saved.lang as Language)) {
+                lang.value = saved.lang as Language;
             }
             entityVisibility.sender = saved.entityVisibility?.sender ?? true;
             entityVisibility.receiver = saved.entityVisibility?.receiver ?? true;
@@ -242,7 +243,7 @@ export function useMapViewDataSource() {
         { immediate: true },
     );
 
-    watch(autoRefresh, updateAutoRefresh, { immediate: true });
+    watch(autoRefresh, updateAutoRefresh);
 
     onMounted(() => {
         loadPreferences();

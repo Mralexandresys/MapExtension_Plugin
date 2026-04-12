@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, readonly, ref } from "vue";
 
 import MapCanvas from "./components/MapCanvas.vue";
 import MapCanvasToolbar from "./components/mapview/MapCanvasToolbar.vue";
@@ -152,7 +152,7 @@ const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     activeFilterChips: activeFilterChips.value,
     viewMode: viewMode.value,
     entityToggleOptions: entityToggleOptions.value,
-    entityVisibility,
+    entityVisibility: readonly(entityVisibility),
     showAllLinks: showAllLinks.value,
     highlightOrphans: highlightOrphans.value,
     canEnableFocusMode: canEnableFocusMode.value,

@@ -7,14 +7,14 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    (event: "toggle-settings"): void;
-    (event: "update:endpoint-draft", value: string): void;
-    (event: "endpoint-keydown", value: KeyboardEvent): void;
-    (event: "apply-endpoint"): void;
-    (event: "refresh"): void;
-    (event: "toggle-auto-refresh"): void;
-    (event: "update:lang", value: Language): void;
-    (event: "open-shortcuts"): void;
+    "toggle-settings": [];
+    "update:endpoint-draft": [value: string];
+    "endpoint-keydown": [value: KeyboardEvent];
+    "apply-endpoint": [];
+    "refresh": [];
+    "toggle-auto-refresh": [];
+    "update:lang": [value: Language];
+    "open-shortcuts": [];
 }>();
 
 function handleEndpointInput(event: Event): void {
@@ -161,6 +161,17 @@ function handleLanguageChange(event: Event): void {
                             {{ panel.liveAgeLabel }}
                         </span>
                     </div>
+                </div>
+            </div>
+            <div v-if="panel.commandStats?.length" class="command-stats-row">
+                <div
+                    v-for="stat in panel.commandStats"
+                    :key="stat.key"
+                    class="command-stat"
+                    :class="stat.tone"
+                >
+                    <span class="command-stat-label">{{ stat.label }}</span>
+                    <span class="command-stat-value">{{ stat.value }}</span>
                 </div>
             </div>
         </div>

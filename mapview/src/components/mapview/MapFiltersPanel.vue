@@ -23,13 +23,13 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    (event: "toggle-collapse"): void;
-    (event: "clear"): void;
-    (event: "toggle-entity", key: EntityToggleKey): void;
-    (event: "update:view-mode", value: ViewMode): void;
-    (event: "update:show-all-links", value: boolean): void;
-    (event: "update:highlight-orphans", value: boolean): void;
-    (event: "toggle-focus"): void;
+    "toggle-collapse": [];
+    "clear": [];
+    "toggle-entity": [key: EntityToggleKey];
+    "update:view-mode": [value: ViewMode];
+    "update:show-all-links": [value: boolean];
+    "update:highlight-orphans": [value: boolean];
+    "toggle-focus": [];
 }>();
 
 function handleShowAllLinksChange(event: Event): void {
@@ -126,8 +126,8 @@ function handleHighlightOrphansChange(event: Event): void {
                             :key="option.key"
                             class="chip-button"
                             :class="{
-                                active: props.panel.entityVisibility[option.key],
-                                muted: !props.panel.entityVisibility[option.key],
+                                active: panel.entityVisibility[option.key],
+                                muted: !panel.entityVisibility[option.key],
                             }"
                             type="button"
                             @click="emit('toggle-entity', option.key)"

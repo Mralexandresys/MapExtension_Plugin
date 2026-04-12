@@ -6,11 +6,11 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
-    (event: "toggle-details"): void;
-    (event: "center"): void;
-    (event: "toggle-focus"): void;
-    (event: "clear-selection"): void;
-    (event: "open-shortcuts"): void;
+    "toggle-details": [];
+    "center": [];
+    "toggle-focus": [];
+    "clear-selection": [];
+    "open-shortcuts": [];
 }>();
 </script>
 

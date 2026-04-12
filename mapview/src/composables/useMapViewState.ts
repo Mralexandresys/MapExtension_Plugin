@@ -166,6 +166,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         liveAgeLabel,
         statusTone,
         now,
+        lastUpdatedAt,
     });
 
     const {

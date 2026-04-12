@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import baseMapUrl from '../assets/base-map.webp';
 import teleporterSvg from '../assets/teleporter.svg?raw';
-import { clamp } from '../lib/formatters';
 import { getMessages } from '../lang';
 import type { Language } from '../lang';
 import type {
@@ -14,21 +13,8 @@ import type {
   SelectedEntity,
   Teleporter,
 } from '../lib/types';
-
-interface TooltipState {
-  visible: boolean;
-  title: string;
-  lines: string[];
-  left: number;
-  top: number;
-}
-
-interface DragState {
-  x: number;
-  y: number;
-  tx: number;
-  ty: number;
-}
+import { useMapTooltip } from '../composables/useMapTooltip';
+import { useMapPanZoom } from '../composables/useMapPanZoom';
 
 const props = defineProps<{
   loading: boolean;
@@ -46,9 +32,9 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (event: 'select', key: string): void;
-  (event: 'clear-selection'): void;
-  (event: 'hover', key: string | null): void;
+  "select": [key: string];
+  "clear-selection": [];
+  "hover": [key: string | null];
 }>();
 
 const DEFAULT_MAP = {
@@ -59,9 +45,6 @@ const DEFAULT_MAP = {
   image_width: 4352,
   image_height: 5120,
 };
-
-const IDLE_ZOOM = 1;
-const FOCUS_ZOOM = 1.55;
 
 const TELEPORTER_SYMBOL_ID = 'teleporter-marker-icon';
 const TELEPORTER_ICON_SIZE = 20;
@@ -77,17 +60,6 @@ const teleporterSymbolMarkup = teleporterSvg
   .replace(/\sheight="[^"]*"/i, '');
 
 const mapShell = ref<HTMLElement | null>(null);
-const mapScale = ref(IDLE_ZOOM);
-const mapTranslateX = ref(0);
-const mapTranslateY = ref(0);
-const drag = ref<DragState | null>(null);
-const tooltip = ref<TooltipState>({
-  visible: false,
-  title: '',
-  lines: [],
-  left: 0,
-  top: 0,
-});
 
 const ui = computed(() => getMessages(props.lang));
 const projection = computed(() => props.cargo?.map ?? DEFAULT_MAP);
@@ -97,84 +69,25 @@ const imageWidth = computed(() => Number(projection.value.image_width) || 4352);
 const imageHeight = computed(() => Number(projection.value.image_height) || 5120);
 const imageX = computed(() => -(Number(projection.value.dst_x1) || 380));
 const imageY = computed(() => -(Number(projection.value.dst_y1) || 567));
-const transform = computed(() => `translate(${mapTranslateX.value},${mapTranslateY.value}) scale(${mapScale.value})`);
 const orphanKeySet = computed(() => new Set(props.orphanKeys));
 const focusKeySet = computed(() => new Set(props.focusKeys));
-const isDragging = computed(() => drag.value !== null);
 
-function hideTooltip(): void {
-  tooltip.value.visible = false;
-}
+const {
+  tooltip,
+  hideTooltip,
+  showTooltip,
+  showTooltipFromElement,
+  moveTooltip,
+} = useMapTooltip(mapShell);
 
-function showTooltipAtPosition(title: string, lines: string[], clientX: number, clientY: number): void {
-  tooltip.value.visible = true;
-  tooltip.value.title = title;
-  tooltip.value.lines = lines;
-  updateTooltipPosition(clientX, clientY);
-}
-
-function updateTooltipPosition(clientX: number, clientY: number): void {
-  if (!mapShell.value) return;
-
-  const rect = mapShell.value.getBoundingClientRect();
-  const estimatedWidth = 292;
-  const estimatedHeight = 72 + tooltip.value.lines.length * 18;
-  let left = clientX - rect.left + 16;
-  let top = clientY - rect.top + 16;
-
-  if (left + estimatedWidth > rect.width - 12) {
-    left = clientX - rect.left - estimatedWidth - 16;
-  }
-  if (top + estimatedHeight > rect.height - 12) {
-    top = clientY - rect.top - estimatedHeight - 16;
-  }
-
-  tooltip.value.left = clamp(left, 12, Math.max(12, rect.width - estimatedWidth));
-  tooltip.value.top = clamp(top, 12, Math.max(12, rect.height - estimatedHeight));
-}
-
-function showTooltip(title: string, lines: string[], event: MouseEvent): void {
-  showTooltipAtPosition(title, lines, event.clientX, event.clientY);
-}
-
-function showTooltipFromElement(title: string, lines: string[], element: Element): void {
-  const rect = element.getBoundingClientRect();
-  showTooltipAtPosition(title, lines, rect.left + rect.width / 2, rect.top + rect.height / 2);
-}
-
-function moveTooltip(event: MouseEvent): void {
-  if (!tooltip.value.visible) return;
-  updateTooltipPosition(event.clientX, event.clientY);
-}
-
-function pixelToViewBox(deltaPx: number, deltaPy: number): { dx: number; dy: number } {
-  if (!mapShell.value) return { dx: 0, dy: 0 };
-
-  const rect = mapShell.value.getBoundingClientRect();
-  if (!rect.width || !rect.height) {
-    return { dx: 0, dy: 0 };
-  }
-
-  const fitScale = Math.min(rect.width / viewBoxWidth.value, rect.height / viewBoxHeight.value);
-
-  return {
-    dx: deltaPx / fitScale,
-    dy: deltaPy / fitScale,
-  };
-}
-
-function resetView(): void {
-  mapScale.value = IDLE_ZOOM;
-  mapTranslateX.value = 0;
-  mapTranslateY.value = 0;
-}
-
-function centerOnPoint(mapX: number, mapY: number, desiredScale = FOCUS_ZOOM): void {
-  const nextScale = Math.max(mapScale.value, desiredScale);
-  mapScale.value = nextScale;
-  mapTranslateX.value = viewBoxWidth.value / 2 - mapX * nextScale;
-  mapTranslateY.value = viewBoxHeight.value / 2 - mapY * nextScale;
-}
+const {
+  transform,
+  isDragging,
+  resetView,
+  centerOnPoint,
+  handleMouseDown: panZoomHandleMouseDown,
+  handleWheel,
+} = useMapPanZoom(mapShell, viewBoxWidth, viewBoxHeight);
 
 function focusSelection(): void {
   if (!props.selectedEntity) return;
@@ -182,46 +95,7 @@ function focusSelection(): void {
 }
 
 function handleMouseDown(event: MouseEvent): void {
-  if (event.button !== 0) return;
-  const target = event.target as Element | null;
-  if (target?.closest('.map-marker, .connection-line')) return;
-
-  drag.value = {
-    x: event.clientX,
-    y: event.clientY,
-    tx: mapTranslateX.value,
-    ty: mapTranslateY.value,
-  };
-  hideTooltip();
-}
-
-function handleWindowMove(event: MouseEvent): void {
-  if (!drag.value) return;
-
-  const delta = pixelToViewBox(event.clientX - drag.value.x, event.clientY - drag.value.y);
-  mapTranslateX.value = drag.value.tx + delta.dx;
-  mapTranslateY.value = drag.value.ty + delta.dy;
-}
-
-function handleWindowUp(): void {
-  drag.value = null;
-}
-
-function handleWheel(event: WheelEvent): void {
-  event.preventDefault();
-  const factor = event.deltaY > 0 ? 0.9 : 1.1;
-  const nextScale = clamp(mapScale.value * factor, 0.35, 12);
-  if (nextScale === mapScale.value) return;
-
-  const centerX = viewBoxWidth.value / 2;
-  const centerY = viewBoxHeight.value / 2;
-  mapTranslateX.value =
-    mapTranslateX.value +
-    (1 - nextScale / mapScale.value) * (centerX - mapTranslateX.value);
-  mapTranslateY.value =
-    mapTranslateY.value +
-    (1 - nextScale / mapScale.value) * (centerY - mapTranslateY.value);
-  mapScale.value = nextScale;
+  panZoomHandleMouseDown(event, hideTooltip);
 }
 
 function isDimmed(entityKey: string): boolean {
@@ -361,16 +235,6 @@ function showConnectionTooltip(connection: CargoConnection, event: MouseEvent): 
   );
 }
 
-onMounted(() => {
-  window.addEventListener('mousemove', handleWindowMove);
-  window.addEventListener('mouseup', handleWindowUp);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('mousemove', handleWindowMove);
-  window.removeEventListener('mouseup', handleWindowUp);
-});
-
 defineExpose({
   focusSelection,
   resetView,
@@ -448,15 +312,11 @@ defineExpose({
             @blur.stop="handleCargoBlur"
             @mouseleave.stop="handleCargoBlur"
           >
-            <rect
+            <polygon
               v-if="marker.kind === 'sender'"
-              :x="marker.map.x - 5"
-              :y="marker.map.y - 5"
-              width="10"
-              height="10"
-              rx="2"
+              :points="`${marker.map.x},${marker.map.y-7} ${marker.map.x+7},${marker.map.y} ${marker.map.x},${marker.map.y+7} ${marker.map.x-7},${marker.map.y}`"
             />
-            <circle v-else :cx="marker.map.x" :cy="marker.map.y" r="5" />
+            <circle v-else :cx="marker.map.x" :cy="marker.map.y" r="6" stroke-width="1.5" />
           </g>
 
           <g
@@ -489,7 +349,6 @@ defineExpose({
             />
             <use
               :href="teleporterSymbolHref"
-              :xlink:href="teleporterSymbolHref"
               :x="teleporter.map.x - TELEPORTER_ICON_HALF"
               :y="teleporter.map.y - TELEPORTER_ICON_HALF"
               :width="TELEPORTER_ICON_SIZE"
@@ -531,10 +390,7 @@ defineExpose({
       <span>{{ ui.map.emptyBody }}</span>
     </div>
 
-    <div v-if="loading" class="map-loading-indicator">
-      <span class="map-loading-dot"></span>
-      <span>{{ ui.status.sync }}</span>
-    </div>
+    <div v-if="loading" class="map-loading-bar" role="progressbar" aria-label="Chargement…" />
 
     <div
       v-if="tooltip.visible"

@@ -11,7 +11,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    (event: "close"): void;
+    "close": [];
 }>();
 
 const dialogRef = ref<HTMLElement | null>(null);

@@ -6,7 +6,7 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
-    (event: "toggle-collapse"): void;
+    "toggle-collapse": [];
 }>();
 </script>
 

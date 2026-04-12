@@ -6,10 +6,10 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
-    (event: "reset"): void;
-    (event: "center"): void;
-    (event: "toggle-focus"): void;
-    (event: "toggle-filters"): void;
+    "reset": [];
+    "center": [];
+    "toggle-focus": [];
+    "toggle-filters": [];
 }>();
 </script>
 
@@ -18,6 +18,14 @@ const emit = defineEmits<{
         <section class="floating-panel map-toolbar" aria-label="Map actions">
             <button class="toolbar-button" type="button" @click="emit('reset')">
                 {{ panel.ui.buttons.reset }}
+            </button>
+            <button
+                class="toolbar-button"
+                type="button"
+                :disabled="!panel.selectedEntityActive"
+                @click="emit('center')"
+            >
+                {{ panel.ui.buttons.center }}
             </button>
             <button
                 class="toolbar-button"

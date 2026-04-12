@@ -175,6 +175,13 @@ export function useRuptureTimeline(
         getRuptureDurations(ruptureCycle.value),
     );
 
+    const ruptureVisualPhases = computed(() =>
+        buildRuptureVisualPhases(
+            rupturePhaseDurations.value,
+            ruptureCycleTotalSeconds.value || 1,
+        ),
+    );
+
     const ruptureElapsedSeconds = computed(() => {
         const value = ruptureState.value?.elapsed_seconds;
         return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -236,10 +243,8 @@ export function useRuptureTimeline(
     });
 
     const rupturePhases = computed<RupturePhaseView[]>(() => {
-        const durations = rupturePhaseDurations.value;
         const marker = ruptureMarkerSeconds.value ?? 0;
-        const total = ruptureCycleTotalSeconds.value || 1;
-        const phaseDefs = buildRuptureVisualPhases(durations, total);
+        const phaseDefs = ruptureVisualPhases.value;
 
         return phaseDefs.map((phase) => {
             const durationSeconds = phase.endSeconds - phase.startSeconds;
@@ -285,7 +290,7 @@ export function useRuptureTimeline(
         if (marker == null || total <= 0) return null;
         return mapRuptureSecondsToVisualPercent(
             marker,
-            buildRuptureVisualPhases(rupturePhaseDurations.value, total),
+            ruptureVisualPhases.value,
             total,
         );
     });
@@ -313,7 +318,7 @@ export function useRuptureTimeline(
     const ruptureTimelineTicks = computed<RuptureTimelineTick[]>(() => {
         const durations = rupturePhaseDurations.value;
         const total = ruptureCycleTotalSeconds.value || 1;
-        const phaseDefs = buildRuptureVisualPhases(durations, total);
+        const phaseDefs = ruptureVisualPhases.value;
         const boundaries = [
             { key: "start", seconds: 0 },
             { key: "burning-end", seconds: durations.burning },
