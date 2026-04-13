@@ -1629,6 +1629,7 @@ namespace
 		std::unordered_map<std::string, SenderReplicationInfo> senderLookup;
 		std::unordered_set<std::string> connectionKeys;
 
+#if defined(MAPEXTENSION_BUILD_MODLOADER_LOCAL)
 		const SDK::FCrSenderReceiversContainer& senderReceivers = replicator->SenderReceiversContainer;
 		for (int index = 0; index < senderReceivers.AllSenderReceiversData.Num(); ++index)
 		{
@@ -1680,6 +1681,48 @@ namespace
 					marker->PublicKey
 				});
 		}
+#else
+		const SDK::FCrReceiversContainer& receivers = replicator->ReceiversContainer;
+		for (int index = 0; index < receivers.ReceiversData.Num(); ++index)
+		{
+			const SDK::FCrReceiverData& receiverData = receivers.ReceiversData[index];
+			const std::string entityKey = BuildReplicationHelperKey(receiverData.Receiver);
+			const SDK::FVector worldLocation = MakeVector(
+				receiverData.Location.X,
+				receiverData.Location.Y,
+				receiverData.Location.Z);
+			const std::string displayName = GetBuildingCustomName(world, receiverData.Receiver, customNameLookup);
+
+			CargoMarker* marker = AddOrUpdateMarker(
+				snapshot,
+				markerIndexes,
+				CargoKind::Receiver,
+				worldLocation,
+				entityKey,
+				"package_transport_replicator.receiver",
+				displayName,
+				{});
+			if (!marker)
+			{
+				continue;
+			}
+
+			const auto markerIndex = markerIndexes.find(marker->InternalKey);
+			if (markerIndex == markerIndexes.end())
+			{
+				continue;
+			}
+
+			receiverLookup.emplace(
+				marker->InternalKey,
+				ReceiverLinkInfo{
+					markerIndex->second,
+					marker->WorldLocation,
+					marker->MapLocation,
+					marker->PublicKey
+				});
+		}
+#endif
 
 		const SDK::FCrPackageTransportConnectionsContainer& connections = replicator->ConnectionsContainer;
 		snapshot.ConnectionCount = connections.ConnectionsData.Num();
@@ -1688,13 +1731,26 @@ namespace
 			const SDK::FCrPackageTransportConnectionData& connection = connections.ConnectionsData[index];
 			const std::string senderKey = BuildReplicationHelperKey(connection.Sender);
 			const std::string receiverKey = BuildReplicationHelperKey(connection.Receiver);
-			const std::string previousReceiverKey = BuildReplicationHelperKey(connection.PrevReceiver);
 			const std::string resourceName = GetItemDisplayName(connection.Item);
 			const std::string senderPublicKey = MakePublicKey(CargoKind::Sender, senderKey);
 			const std::string receiverPublicKey = MakePublicKey(CargoKind::Receiver, receiverKey);
+#if defined(MAPEXTENSION_BUILD_MODLOADER_LOCAL)
+			const std::string previousReceiverKey = BuildReplicationHelperKey(connection.PrevReceiver);
 			const std::string previousReceiverPublicKey = previousReceiverKey.empty()
 				? std::string{}
 				: MakePublicKey(CargoKind::Receiver, previousReceiverKey);
+#else
+			const std::string previousReceiverPublicKey;
+			senderLookup.try_emplace(
+				senderKey,
+				SenderReplicationInfo{
+					MakeVector(
+						connection.SenderLocation.X,
+						connection.SenderLocation.Y,
+						connection.SenderLocation.Z),
+					GetBuildingCustomName(world, connection.Sender, customNameLookup)
+				});
+#endif
 			const auto senderIt = senderLookup.find(senderKey);
 			const CargoMarker* previousSenderMarker = nullptr;
 			if (senderIt == senderLookup.end() && previousSnapshot)
@@ -1731,10 +1787,12 @@ namespace
 			if (receiverIt == receiverLookup.end() && previousSnapshot)
 			{
 				previousReceiverMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Receiver, receiverKey);
+			#if defined(MAPEXTENSION_BUILD_MODLOADER_LOCAL)
 				if (!previousReceiverMarker && !previousReceiverKey.empty())
 				{
 					previousReceiverMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Receiver, previousReceiverKey);
 				}
+			#endif
 			}
 
 			const CargoConnection* previousConnection = nullptr;
@@ -2472,7 +2530,7 @@ namespace MapStateRuntime
 		if (!TryCopyValidatedTrackedChimeraWorldState(
 			trackedState,
 			"EngineTick",
-			true,
+			false,
 			invalidPointer))
 		{
 			if (invalidPointer)
@@ -2480,6 +2538,12 @@ namespace MapStateRuntime
 				ClearChimeraWorldState("Invalid Chimera world pointer");
 			}
 			return;
+		}
+
+		if (!trackedState.Ready)
+		{
+			MarkChimeraWorldReady("EngineTick fallback");
+			trackedState.Ready = true;
 		}
 
 		if (!g_engineTickSeen)

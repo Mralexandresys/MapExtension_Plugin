@@ -37,7 +37,17 @@ Il s'agit d'une premiere ebauche fonctionnelle.
 
 Le projet va continuer a evoluer prochainement, mais les retours, corrections et contributions sont les bienvenus.
 
-Le plugin se build maintenant contre `StarRupture-Plugin-SDK`. Pour le developpement local, il suffit d'avoir le SDK public et une release du modloader au runtime ; il n'est plus necessaire de builder tout le source tree du modloader.
+Le plugin supporte maintenant 2 methodes de build :
+
+- `modloader-local` : build contre l'arborescence locale du modloader (`Version_Mod_Loader/plugins` + `StarRupture SDK/` du depot)
+- `modloader-ng` : build contre `StarRupture-Plugin-SDK`
+
+Exemples :
+
+- `../build_client.sh release --build-method modloader-local`
+- `../build_client.sh release --build-method modloader-ng`
+
+Pour les details de build et de workflow, voir `DEVELOPERS.md`.
 
 Pour tout ce qui concerne le build et le developpement, voir `DEVELOPERS.md`.
 

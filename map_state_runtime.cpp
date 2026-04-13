@@ -80,7 +80,10 @@ namespace MapStateRuntime
 		}
 		if (hooks->World && hooks->World->RegisterOnExperienceLoadComplete)
 		{
-			hooks->World->RegisterOnExperienceLoadComplete(OnExperienceLoadComplete);
+			// Disabled on the current client build line: world begin play is observed,
+			// then EngineTick marks ChimeraMain ready and drives the first refresh.
+			// This avoids an early transition-time refresh path that can still be fragile.
+			LOG_WARN("ExperienceLoadComplete callback registration is disabled on this client build line.");
 		}
 
 		// WorldEndPlay hooks (v20)
