@@ -153,14 +153,13 @@ MapExtension_Plugin/mapview/dist/MapExtensionViewer.html
 
 The workflow:
 
-1. fetches the latest published release tag from `AlienXAXS/StarRupture-ModLoader`
-2. checks out that modloader release as the packaging root
-3. checks out `MapExtension_Plugin` into the expected `StarRupture-ModLoader/MapExtension_Plugin` path
-4. checks out `StarRupture-Plugin-SDK` into a known path and passes the SDK-related MSBuild properties explicitly
-5. builds both the client and server plugin DLLs, then builds the `mapview` bundle with the `modloader-ng` path layout
-6. creates a client zip with the client DLL and `MapExtensionViewer.html`, plus a separate server zip with the server DLL
-7. creates a plugin tag in the format `ML-YYYY.MM.DD-HHMMSS-vX.Y`
-8. publishes a GitHub release in the plugin repository
+1. fetches the latest published release tag from `AlienXAXS/StarRupture-Plugin-SDK`
+2. checks out `MapExtension_Plugin` into a local `plugin/` workspace path
+3. checks out `StarRupture-Plugin-SDK` on the same release tag into a local `sdk/` workspace path
+4. builds both the client and server plugin DLLs against that SDK checkout, then builds the `mapview` bundle with the `modloader-ng` path layout
+5. creates a client zip with the client DLL and `MapExtensionViewer.html`, plus a separate server zip with the server DLL
+6. creates a plugin tag in the format `ML-YYYY.MM.DD-HHMMSS-vX.Y`
+7. publishes a GitHub release in the plugin repository
 
 ## Runtime contract
 

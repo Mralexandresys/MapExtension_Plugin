@@ -32,13 +32,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          $release = gh api repos/AlienXAXS/StarRupture-ModLoader/releases/latest | ConvertFrom-Json
-          $modloaderTag = [string]$release.tag_name
-          if ([string]::IsNullOrWhiteSpace($modloaderTag)) {
-            throw "Could not resolve the latest published StarRupture-ModLoader release tag."
+          $release = gh api repos/AlienXAXS/StarRupture-Plugin-SDK/releases/latest | ConvertFrom-Json
+          $sdkTag = [string]$release.tag_name
+          if ([string]::IsNullOrWhiteSpace($sdkTag)) {
+            throw "Could not resolve the latest published StarRupture-Plugin-SDK release tag."
           }
-          if (-not $modloaderTag.StartsWith("release-")) {
-            throw "Unsupported modloader tag format: '$modloaderTag'. Expected it to start with 'release-'."
+          if ($sdkTag.StartsWith("release-")) {
+            $coreVersion = $sdkTag.Substring("release-".Length)
+          } elseif ($sdkTag.StartsWith("v")) {
+            $coreVersion = $sdkTag
+          } else {
+            throw "Unsupported SDK tag format: '$sdkTag'. Expected 'release-...' or 'v...'."
           }
 
           $pluginVersion = [string]'${{ inputs.plugin_version }}'
@@ -58,7 +62,6 @@ jobs:
             $trimmedAuthor = [string]'${{ github.actor }}'
           }
 
-          $coreVersion = $modloaderTag.Substring("release-".Length)
           $pluginTag = "ML-$coreVersion-$pluginVersion"
 
           $matchingRefs = gh api "repos/$env:REPO/git/matching-refs/tags/$pluginTag" | ConvertFrom-Json
@@ -66,28 +69,21 @@ jobs:
             throw "Tag '$pluginTag' already exists in $env:REPO."
           }
 
-          "MODLOADER_TAG=$modloaderTag" >> $env:GITHUB_OUTPUT
+          "SDK_TAG=$sdkTag" >> $env:GITHUB_OUTPUT
           "PLUGIN_TAG=$pluginTag" >> $env:GITHUB_OUTPUT
           "BUILD_AUTHOR=$trimmedAuthor" >> $env:GITHUB_OUTPUT
-
-      - name: Checkout StarRupture-ModLoader
-        uses: actions/checkout@v4
-        with:
-          repository: AlienXAXS/StarRupture-ModLoader
-          ref: ${{ steps.meta.outputs.MODLOADER_TAG }}
-          path: modloader
-          submodules: recursive
 
       - name: Checkout MapExtension_Plugin
         uses: actions/checkout@v4
         with:
-          path: modloader/MapExtension_Plugin
+          path: plugin
 
       - name: Checkout StarRupture-Plugin-SDK
         uses: actions/checkout@v4
         with:
           repository: AlienXAXS/StarRupture-Plugin-SDK
-          path: modloader/StarRupture-Plugin-SDK
+          ref: ${{ steps.meta.outputs.SDK_TAG }}
+          path: sdk
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -96,11 +92,11 @@ jobs:
 
       - name: Build plugin DLLs
         shell: pwsh
-        working-directory: modloader/MapExtension_Plugin
+        working-directory: plugin
         run: |
-          $repoRoot = (Resolve-Path ..).Path
+          $repoRoot = (Resolve-Path .).Path
           $repoRootWithSlash = "$repoRoot\"
-          $sdkRoot = (Resolve-Path ..\StarRupture-Plugin-SDK).Path
+          $sdkRoot = (Resolve-Path ..\sdk).Path
           $sdkRootWithSlash = "$sdkRoot\"
 
           function Find-MSBuild {
@@ -170,7 +166,7 @@ jobs:
 
       - name: Build mapview bundle
         shell: pwsh
-        working-directory: modloader/MapExtension_Plugin/mapview
+        working-directory: plugin/mapview
         run: |
           npm install
           npm run check
@@ -179,10 +175,10 @@ jobs:
       - name: Package release assets
         id: package
         shell: pwsh
-        working-directory: modloader/MapExtension_Plugin
+        working-directory: plugin
         run: |
           $tag = "${{ steps.meta.outputs.PLUGIN_TAG }}"
-          $repoRoot = (Resolve-Path ..).Path
+          $repoRoot = (Resolve-Path .).Path
           $packageRoot = Join-Path $env:GITHUB_WORKSPACE "package"
           $clientStageRoot = Join-Path $packageRoot "MapExtension_Plugin-client"
           $clientPluginsDir = Join-Path $clientStageRoot "Plugins"
@@ -221,11 +217,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ steps.meta.outputs.PLUGIN_TAG }}"
-          $modloaderTag = "${{ steps.meta.outputs.MODLOADER_TAG }}"
+          $sdkTag = "${{ steps.meta.outputs.SDK_TAG }}"
           $buildAuthor = "${{ steps.meta.outputs.BUILD_AUTHOR }}"
           $isDraft = '${{ inputs.draft }}'
           $notes = @"
-          Built from StarRupture-ModLoader release: $modloaderTag
+          Built from StarRupture-Plugin-SDK release: $sdkTag
           Plugin version input: ${{ inputs.plugin_version }}
           Build author: $buildAuthor
           "@
@@ -249,7 +245,7 @@ jobs:
         shell: pwsh
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "# Release created"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- ModLoader release: `{0}`' -f '${{ steps.meta.outputs.MODLOADER_TAG }}')
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Plugin SDK release: `{0}`' -f '${{ steps.meta.outputs.SDK_TAG }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Plugin tag: `{0}`' -f '${{ steps.meta.outputs.PLUGIN_TAG }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Build author: `{0}`' -f '${{ steps.meta.outputs.BUILD_AUTHOR }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Draft: `{0}`' -f '${{ inputs.draft }}')

@@ -24,7 +24,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 
 [line]
 
-[size=4][b]Change Log 0.4[/b][/size]
+[size=4][b]Change Log 0.3[/b][/size]
 [list]
 [*]Added a new map background[/*]
 [*]Added dedicated-server sync support for map and rupture data[/*]
