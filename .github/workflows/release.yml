@@ -84,6 +84,7 @@ jobs:
           repository: AlienXAXS/StarRupture-Plugin-SDK
           ref: ${{ steps.meta.outputs.SDK_TAG }}
           path: sdk
+          submodules: recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -168,9 +169,10 @@ jobs:
         shell: pwsh
         working-directory: plugin/mapview
         run: |
-          npm install
+          npm ci
           npm run check
-          npm run build
+          npx vite build
+          Move-Item -Path "dist/index.html" -Destination "dist/MapExtensionViewer.html" -Force
 
       - name: Package release assets
         id: package
