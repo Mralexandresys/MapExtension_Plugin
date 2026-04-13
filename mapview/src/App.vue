@@ -37,6 +37,7 @@ const {
     focusMode,
     viewMode,
     autoRefresh,
+    refreshIntervalMs,
     iconScale,
     selectedKey,
     hoveredKey,
@@ -86,6 +87,7 @@ const {
     ruptureTimelineTicks,
     ruptureMarkerLabel,
     handleEndpointKeydown,
+    updateRefreshInterval,
     refreshData,
     applyEndpoint,
     clearSelection,
@@ -214,6 +216,7 @@ const controlDockPanel = computed<MapControlDockModel>(() => ({
     languageOptions,
     lang: lang.value,
     autoRefresh: autoRefresh.value,
+    refreshIntervalMs: refreshIntervalMs.value,
     iconScale: iconScale.value,
     loading: status.loading,
     statusText: status.text,
@@ -295,6 +298,7 @@ const notesPanel = computed<MapNotesPanelModel>(() => ({
                 @apply-endpoint="applyEndpoint(true)"
                 @refresh="refreshData"
                 @toggle-auto-refresh="autoRefresh = !autoRefresh"
+                @update:refresh-interval-ms="updateRefreshInterval($event)"
                 @update:icon-scale="iconScale = $event"
                 @open-shortcuts="openShortcuts"
                 @update:lang="lang = $event"

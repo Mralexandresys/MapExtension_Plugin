@@ -15,6 +15,7 @@ const emit = defineEmits<{
     "apply-endpoint": [];
     "refresh": [];
     "toggle-auto-refresh": [];
+    "update:refresh-interval-ms": [value: number];
     "update:icon-scale": [value: number];
     "update:lang": [value: Language];
     "open-shortcuts": [];
@@ -40,6 +41,13 @@ function handleLanguageChange(event: Event): void {
 
 function handleIconScaleInput(event: Event): void {
     emit("update:icon-scale", Number((event.target as HTMLInputElement).value));
+}
+
+function handleRefreshIntervalInput(event: Event): void {
+    emit(
+        "update:refresh-interval-ms",
+        Math.round(Number((event.target as HTMLInputElement).value) * 1000),
+    );
 }
 
 function triggerImport(): void {
@@ -88,6 +96,22 @@ function handleFileChange(event: Event): void {
                                 : panel.ui.buttons.refresh
                         }}
                     </button>
+
+                    <label class="refresh-interval-inline" :title="panel.ui.hero.refreshIntervalHelp">
+                        <span class="refresh-interval-inline-label">
+                            {{ panel.ui.hero.refreshInterval }}
+                        </span>
+                        <input
+                            class="refresh-interval-inline-input"
+                            :value="panel.refreshIntervalMs / 1000"
+                            type="number"
+                            min="0.5"
+                            max="60"
+                            step="0.5"
+                            @input="handleRefreshIntervalInput"
+                        />
+                        <span class="refresh-interval-inline-unit">s</span>
+                    </label>
 
                     <!-- Export annotations -->
                     <button
@@ -313,6 +337,35 @@ function handleFileChange(event: Event): void {
     gap: 6px;
 }
 
+.refresh-interval-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    background: rgba(12, 19, 35, 0.86);
+    color: var(--muted);
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.refresh-interval-inline-label,
+.refresh-interval-inline-unit {
+    white-space: nowrap;
+}
+
+.refresh-interval-inline-input {
+    width: 3.8rem;
+    min-width: 0;
+    padding: 4px 6px;
+    border: 1px solid var(--border-strong);
+    background: rgba(5, 10, 20, 0.82);
+    color: var(--text);
+    font: inherit;
+}
+
 .command-settings-popover {
     position: absolute;
     top: calc(100% + 10px);
@@ -424,7 +477,7 @@ function handleFileChange(event: Event): void {
 
 .control-dock-utility-row {
     display: grid;
-    grid-template-columns: auto minmax(100px, 132px) minmax(180px, 220px) minmax(0, 1fr);
+    grid-template-columns: auto minmax(100px, 132px) minmax(180px, 220px) minmax(180px, 220px) minmax(0, 1fr);
     gap: 10px;
     align-items: stretch;
 }

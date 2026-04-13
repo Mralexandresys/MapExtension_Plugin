@@ -20,6 +20,8 @@ import type {
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:9000";
 const LIVE_REFRESH_MS = 2000;
+const MIN_REFRESH_INTERVAL_MS = 500;
+const MAX_REFRESH_INTERVAL_MS = 60000;
 const STORAGE_KEY = "starrupture-mapview:v3";
 const LANGUAGE_OPTIONS: Language[] = ["en", "fr"];
 const DEFAULT_ICON_SCALE = 1;
@@ -32,6 +34,15 @@ function clampIconScale(value: unknown): number {
     return Math.min(MAX_ICON_SCALE, Math.max(MIN_ICON_SCALE, numericValue));
 }
 
+function clampRefreshIntervalMs(value: unknown): number {
+    const numericValue = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(numericValue)) return LIVE_REFRESH_MS;
+    return Math.min(
+        MAX_REFRESH_INTERVAL_MS,
+        Math.max(MIN_REFRESH_INTERVAL_MS, Math.round(numericValue)),
+    );
+}
+
 interface MapViewStatus {
     loading: boolean;
     online: boolean;
@@ -42,6 +53,7 @@ interface MapViewStatus {
 interface PersistedPreferences {
     endpoint?: string;
     autoRefresh?: boolean;
+    refreshIntervalMs?: number;
     iconScale?: number;
     showAllLinks?: boolean;
     highlightOrphans?: boolean;
@@ -60,6 +72,7 @@ export function useMapViewDataSource() {
     const showAllLinks = ref(true);
     const highlightOrphans = ref(false);
     const autoRefresh = ref(true);
+    const refreshIntervalMs = ref(LIVE_REFRESH_MS);
     const iconScale = ref(DEFAULT_ICON_SCALE);
     const lastUpdatedAt = ref(0);
     const now = ref(Date.now());
@@ -104,6 +117,9 @@ export function useMapViewDataSource() {
             endpoint.value = saved.endpoint || DEFAULT_ENDPOINT;
             endpointDraft.value = endpoint.value;
             autoRefresh.value = saved.autoRefresh ?? true;
+            refreshIntervalMs.value = clampRefreshIntervalMs(
+                saved.refreshIntervalMs,
+            );
             iconScale.value = clampIconScale(saved.iconScale);
             showAllLinks.value = saved.showAllLinks ?? true;
             highlightOrphans.value = saved.highlightOrphans ?? false;
@@ -129,6 +145,7 @@ export function useMapViewDataSource() {
             JSON.stringify({
                 endpoint: endpoint.value,
                 autoRefresh: autoRefresh.value,
+                refreshIntervalMs: refreshIntervalMs.value,
                 iconScale: iconScale.value,
                 showAllLinks: showAllLinks.value,
                 highlightOrphans: highlightOrphans.value,
@@ -218,6 +235,10 @@ export function useMapViewDataSource() {
         }
     }
 
+    function updateRefreshInterval(value: number): void {
+        refreshIntervalMs.value = clampRefreshIntervalMs(value);
+    }
+
     function updateAutoRefresh(): void {
         if (liveTimer !== null) {
             window.clearInterval(liveTimer);
@@ -227,7 +248,7 @@ export function useMapViewDataSource() {
         if (autoRefresh.value) {
             liveTimer = window.setInterval(() => {
                 void refreshData();
-            }, LIVE_REFRESH_MS);
+            }, refreshIntervalMs.value);
         }
     }
 
@@ -235,6 +256,7 @@ export function useMapViewDataSource() {
         () => ({
             endpoint: endpoint.value,
             autoRefresh: autoRefresh.value,
+            refreshIntervalMs: refreshIntervalMs.value,
             showAllLinks: showAllLinks.value,
             highlightOrphans: highlightOrphans.value,
             viewMode: viewMode.value,
@@ -256,7 +278,7 @@ export function useMapViewDataSource() {
         { immediate: true },
     );
 
-    watch(autoRefresh, updateAutoRefresh);
+    watch([autoRefresh, refreshIntervalMs], updateAutoRefresh);
 
     onMounted(() => {
         loadPreferences();
@@ -282,6 +304,7 @@ export function useMapViewDataSource() {
         showAllLinks,
         highlightOrphans,
         autoRefresh,
+        refreshIntervalMs,
         iconScale,
         lastUpdatedAt,
         now,
@@ -293,6 +316,7 @@ export function useMapViewDataSource() {
         normalizedEndpoint,
         endpointHasPendingChanges,
         handleEndpointKeydown,
+        updateRefreshInterval,
         refreshData,
         applyEndpoint,
     };

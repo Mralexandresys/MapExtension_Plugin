@@ -58,6 +58,8 @@ export const fr = {
         eyebrow: "mapview",
         title: "Carte StarRupture",
         endpoint: "Endpoint",
+        refreshInterval: "Delai refresh",
+        refreshIntervalHelp: "Ajuste le delai du polling automatique.",
         iconScale: "Taille des icones",
         iconScaleHelp: "Ajuste la taille des marqueurs sur la carte.",
     },

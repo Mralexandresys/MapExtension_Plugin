@@ -60,6 +60,8 @@ export const en = {
         eyebrow: "mapview",
         title: "StarRupture Map",
         endpoint: "Endpoint",
+        refreshInterval: "Refresh delay",
+        refreshIntervalHelp: "Adjust the automatic polling delay.",
         iconScale: "Icon scale",
         iconScaleHelp: "Adjust the size of markers on the map.",
     },

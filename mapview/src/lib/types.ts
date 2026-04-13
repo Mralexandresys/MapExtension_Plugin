@@ -225,6 +225,7 @@ export interface MapControlDockModel {
     languageOptions: Language[];
     lang: Language;
     autoRefresh: boolean;
+    refreshIntervalMs: number;
     loading: boolean;
     statusText: string;
     statusError: string;
