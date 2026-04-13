@@ -3,22 +3,27 @@
 #include "plugin_config.h"
 #include "plugin_helpers.h"
 
+#if !defined(MODLOADER_SERVER_BUILD)
+#include "client/map_sync_client.h"
+#endif
+
+#if defined(MODLOADER_SERVER_BUILD)
+#include "server/map_sync_server.h"
+#endif
+
 #include "AuItems_classes.hpp"
 #include "BP_PackageReceiver_classes.hpp"
 #include "BP_PackageSender_classes.hpp"
 #include "BP_Teleporter_classes.hpp"
 #include "Chimera_classes.hpp"
-#include "ChimeraUI_classes.hpp"
 #include "Chimera_structs.hpp"
 #include "CoreUObject_classes.hpp"
 #include "Engine_classes.hpp"
-#include "UMG_classes.hpp"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <sstream>
@@ -48,8 +53,6 @@ namespace
 {
 	constexpr int kMaxLoggedMarkersPerSnapshot = 8;
 	constexpr int kMaxLoggedActorsPerKind = 4;
-	constexpr const wchar_t* kRuptureCycleInfoRequestCommand = L"get info arcadia";
-	constexpr int64_t kRuptureCycleInfoRequestRetryMs = 5000;
 	constexpr int64_t kCargoActorRefreshMinIntervalMs = 750;
 	constexpr int64_t kConnectionRetentionMs = 15000;
 	struct TrackedChimeraWorldState final
@@ -75,18 +78,13 @@ namespace
 	std::mutex g_snapshotMutex;
 	CargoSnapshot g_snapshot{};
 	std::unordered_set<uint32_t> g_requestedCustomNameEntityIds;
-	std::string g_lastRuptureCycleChatSignature;
-	bool g_lastRuptureCycleChatSignatureValid = false;
+	std::string g_lastRuptureCycleStateChangeKey;
+	bool g_lastRuptureCycleStateChangeKeyValid = false;
 	MapStateRuntime::Detail::RuptureCycleSnapshot g_lastPersistentRuptureCycleSnapshot{};
 	bool g_lastPersistentRuptureCycleSnapshotValid = false;
 	std::string g_lastRuptureCycleObservedSignature;
 	bool g_lastRuptureCycleObservedSignatureValid = false;
-	std::string g_lastRuptureCycleProbeSignature;
-	bool g_lastRuptureCycleProbeSignatureValid = false;
 	int64_t g_lastRuptureCycleObservedAtUnixMs = 0;
-	bool g_shouldRequestDedicatedServerRuptureCycle = false;
-	int64_t g_lastRuptureCycleRequestAtUnixMs = 0;
-	int g_ruptureCycleRequestAttemptCount = 0;
 	std::atomic<bool> g_httpCargoRefreshRequested = false;
 	std::atomic<int64_t> g_lastHttpCargoRefreshRequestAtUnixMs = 0;
 
@@ -100,19 +98,9 @@ namespace
 		return MapExtensionPluginConfig::Config::LogCargoSnapshots();
 	}
 
-	bool ShouldLogRuptureCycleChat()
-	{
-		return MapExtensionPluginConfig::Config::LogRuptureCycleChat();
-	}
-
 	bool ShouldLogActorScanFallback()
 	{
 		return MapExtensionPluginConfig::Config::LogActorScanFallback();
-	}
-
-	bool ShouldRequestDedicatedServerRuptureCycle()
-	{
-		return MapExtensionPluginConfig::Config::EnableRuptureCycleInfoRequest();
 	}
 
 	float GetRefreshIntervalSeconds()
@@ -239,21 +227,6 @@ namespace
 		}
 	}
 
-	const char* GetRuptureCycleChatPrefix()
-	{
-		return MapExtensionPluginConfig::Config::RuptureCyclePrefix();
-	}
-
-	struct RuptureCycleChatState final
-	{
-		bool Available = false;
-		std::string Wave;
-		std::string Stage;
-		std::string Step;
-		double ElapsedSeconds = 0.0;
-		bool HasElapsed = false;
-	};
-
 	struct RuptureCycleLocalState final
 	{
 		SDK::EEnviroWave Wave = SDK::EEnviroWave::None;
@@ -334,6 +307,47 @@ namespace
 		return "None";
 	}
 
+	bool TryProbeWorldNameRaw(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return false;
+		}
+
+		__try
+		{
+			volatile auto nameIndex = world->Name.ComparisonIndex;
+			(void)nameIndex;
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	bool TryValidateTrackedWorldPointerByName(SDK::UWorld* world, const std::string& expectedName)
+	{
+		if (!world || expectedName.empty())
+		{
+			return false;
+		}
+		if (!TryProbeWorldNameRaw(world))
+		{
+			return false;
+		}
+
+		try
+		{
+			std::string currentName = world->GetName();
+			return currentName == expectedName;
+		}
+		catch (...)
+		{
+			return false;
+		}
+	}
+
 	bool TryIsObjectOfClass(SDK::UObject* obj, SDK::UClass* expectedClass)
 	{
 		if (!obj || !expectedClass)
@@ -386,15 +400,34 @@ namespace
 			return false;
 		}
 
-		SDK::UClass* worldClass = TryGetStaticClass<SDK::UWorld>();
-		if (!TryIsObjectOfClass(static_cast<SDK::UObject*>(outState.World), worldClass))
+		// Validate the tracked world pointer using name-based probing.
+		// This is more robust than IsA(UWorld::StaticClass()) in this runtime
+		// because UWorld::StaticClass() can return nullptr or stale pointers.
+		if (!outState.WorldName.empty())
 		{
-			LOG_WARN(
-				"Detected invalid tracked ChimeraMain world pointer (%s)",
-				reason ? reason : "unknown");
-			outState = {};
-			outInvalidPointer = true;
-			return false;
+			if (!TryValidateTrackedWorldPointerByName(outState.World, outState.WorldName))
+			{
+				LOG_WARN(
+					"Detected invalid tracked ChimeraMain world pointer via name probe (%s)",
+					reason ? reason : "unknown");
+				outState = {};
+				outInvalidPointer = true;
+				return false;
+			}
+		}
+		else
+		{
+			// Fallback: if no world name is stored, use the legacy IsA check
+			SDK::UClass* worldClass = TryGetStaticClass<SDK::UWorld>();
+			if (!TryIsObjectOfClass(static_cast<SDK::UObject*>(outState.World), worldClass))
+			{
+				LOG_WARN(
+					"Detected invalid tracked ChimeraMain world pointer (%s)",
+					reason ? reason : "unknown");
+				outState = {};
+				outInvalidPointer = true;
+				return false;
+			}
 		}
 
 		return true;
@@ -429,508 +462,6 @@ namespace
 
 	SDK::ACrGameStateBase* TryGetGameState(SDK::UWorld* world);
 	SDK::ACrPlayerControllerBase* TryGetLocalCrPlayerController(SDK::UWorld* world);
-
-	std::string TrimWhitespace(std::string value)
-	{
-		const auto isSpace = [](unsigned char c)
-		{
-			return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-		};
-
-		while (!value.empty() && isSpace(static_cast<unsigned char>(value.front())))
-		{
-			value.erase(value.begin());
-		}
-
-		while (!value.empty() && isSpace(static_cast<unsigned char>(value.back())))
-		{
-			value.pop_back();
-		}
-
-		return value;
-	}
-
-	std::string StripRichTextMarkup(const std::string& value);
-
-	struct RuptureCycleLineMatch
-	{
-		std::string RawLine;
-		std::string CleanLine;
-	};
-
-	void LogRuptureCycleProbeIfNeeded(
-		const char* source,
-		const char* outcome,
-		const std::string& rawLine,
-		const std::string& cleanLine,
-		const std::string& payload,
-		const char* detail = nullptr)
-	{
-		if (!ShouldLogRuptureCycleChat())
-		{
-			return;
-		}
-
-		std::ostringstream signature;
-		signature
-			<< (source ? source : "unknown") << '|'
-			<< (outcome ? outcome : "unknown") << '|'
-			<< rawLine << '|'
-			<< cleanLine << '|'
-			<< payload << '|'
-			<< (detail ? detail : "");
-		if (g_lastRuptureCycleProbeSignatureValid
-			&& g_lastRuptureCycleProbeSignature == signature.str())
-		{
-			return;
-		}
-
-		g_lastRuptureCycleProbeSignature = signature.str();
-		g_lastRuptureCycleProbeSignatureValid = true;
-
-		LOG_INFO(
-			"Rupture chat probe [%s] %s%s%s raw='%s' clean='%s' payload='%s'",
-			source ? source : "unknown",
-			outcome ? outcome : "unknown",
-			detail ? " detail='" : "",
-			detail ? detail : "",
-			detail ? "'" : "",
-			rawLine.c_str(),
-			cleanLine.c_str(),
-			payload.c_str());
-	}
-
-	RuptureCycleLineMatch FindLastLineContainingPrefixMatch(const std::string& text, const std::string& prefix)
-	{
-		if (text.empty() || prefix.empty())
-		{
-			return {};
-		}
-
-		RuptureCycleLineMatch match{};
-		size_t lineStart = 0;
-		while (lineStart < text.size())
-		{
-			size_t lineEnd = text.find('\n', lineStart);
-			if (lineEnd == std::string::npos)
-			{
-				lineEnd = text.size();
-			}
-
-			std::string rawLine = TrimWhitespace(text.substr(lineStart, lineEnd - lineStart));
-			std::string cleanLine = TrimWhitespace(StripRichTextMarkup(rawLine));
-			if (!cleanLine.empty() && cleanLine.find(prefix) != std::string::npos)
-			{
-				match.RawLine = std::move(rawLine);
-				match.CleanLine = std::move(cleanLine);
-			}
-
-			if (lineEnd >= text.size())
-			{
-				break;
-			}
-
-			lineStart = lineEnd + 1;
-		}
-
-		return match;
-	}
-
-	std::string StripRichTextMarkup(const std::string& value)
-	{
-		if (value.empty())
-		{
-			return std::string();
-		}
-
-		std::string stripped;
-		stripped.reserve(value.size());
-
-		bool insideTag = false;
-		for (char ch : value)
-		{
-			if (ch == '<')
-			{
-				insideTag = true;
-				continue;
-			}
-			if (insideTag)
-			{
-				if (ch == '>')
-				{
-					insideTag = false;
-				}
-				continue;
-			}
-			stripped.push_back(ch);
-		}
-
-		return stripped;
-	}
-
-	bool TryGetChatHistoryWidget(SDK::UCrUW_ChatHud* chatHud, SDK::URichTextBlock*& outChatHistory)
-	{
-		outChatHistory = nullptr;
-		if (!chatHud)
-		{
-			return false;
-		}
-
-		__try
-		{
-			outChatHistory = chatHud->ChatHistory;
-			return outChatHistory != nullptr;
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
-		{
-			outChatHistory = nullptr;
-			return false;
-		}
-	}
-
-	bool TryGetRichTextBlockText(SDK::URichTextBlock* richTextBlock, SDK::FText& outText)
-	{
-		if (!richTextBlock)
-		{
-			return false;
-		}
-
-		__try
-		{
-			outText = richTextBlock->Text;
-			return outText.TextData != nullptr;
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
-		{
-			return false;
-		}
-	}
-
-	bool TryGetChatHistoryText(SDK::UCrUW_ChatHud* chatHud, std::string& outText)
-	{
-		outText.clear();
-		if (!chatHud)
-		{
-			return false;
-		}
-
-		SDK::URichTextBlock* chatHistory = nullptr;
-		SDK::FText chatHistoryText{};
-
-		if (!TryGetChatHistoryWidget(chatHud, chatHistory))
-		{
-			return false;
-		}
-
-		if (!TryGetRichTextBlockText(chatHistory, chatHistoryText))
-		{
-			return false;
-		}
-
-		outText = chatHistoryText.ToString();
-		return !outText.empty();
-	}
-
-	bool HasUsableChatHud(SDK::UWorld* world)
-	{
-		if (!world)
-		{
-			return false;
-		}
-
-		SDK::UClass* chatHudClass = TryGetStaticClass<SDK::UCrUW_ChatHud>();
-		if (!chatHudClass)
-		{
-			return false;
-		}
-
-		const int32_t objectCount = SDK::UObject::GObjects->Num();
-		for (int32_t index = 0; index < objectCount; ++index)
-		{
-			SDK::UObject* object = SDK::UObject::GObjects->GetByIndex(index);
-			if (!object || !object->IsA(chatHudClass))
-			{
-				continue;
-			}
-			if (!TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world)))
-			{
-				continue;
-			}
-
-			SDK::URichTextBlock* chatHistory = nullptr;
-			if (TryGetChatHistoryWidget(static_cast<SDK::UCrUW_ChatHud*>(object), chatHistory))
-			{
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	bool TryParseDouble(const std::string& value, double& outValue)
-	{
-		if (value.empty())
-		{
-			return false;
-		}
-
-		char* end = nullptr;
-		const double parsed = std::strtod(value.c_str(), &end);
-		if (!end || *end != '\0')
-		{
-			return false;
-		}
-
-		outValue = parsed;
-		return true;
-	}
-
-	bool TryParseRuptureCyclePayload(const std::string& payload, RuptureCycleChatState& outState)
-	{
-		std::istringstream iss(payload);
-		std::string token;
-		bool foundField = false;
-		while (iss >> token)
-		{
-			const size_t equalsPos = token.find('=');
-			if (equalsPos == std::string::npos || equalsPos == 0 || equalsPos == (token.size() - 1))
-			{
-				continue;
-			}
-
-			foundField = true;
-			const std::string key = token.substr(0, equalsPos);
-			const std::string value = token.substr(equalsPos + 1);
-
-			if (key == "wave" || key == "type")
-			{
-				outState.Wave = value;
-			}
-			else if (key == "stage")
-			{
-				outState.Stage = value;
-			}
-			else if (key == "step")
-			{
-				outState.Step = value;
-			}
-			else if ((key == "pre" || key == "fade" || key == "grow") && value != "None")
-			{
-				outState.Step = value;
-			}
-			else if (key == "elapsed" || key == "since_last_start")
-			{
-				outState.HasElapsed = TryParseDouble(value, outState.ElapsedSeconds);
-			}
-		}
-
-		outState.Available = foundField
-			&& (!outState.Wave.empty() || !outState.Stage.empty() || !outState.Step.empty() || outState.HasElapsed);
-		return outState.Available;
-	}
-
-	RuptureCycleChatState CaptureRuptureCycleChatState(SDK::UWorld* world)
-	{
-		RuptureCycleChatState state{};
-		SDK::TUObjectArray* objectArray = SDK::UObject::GObjects.GetTypedPtr();
-		if (!objectArray || objectArray->NumElements <= 0)
-		{
-			return state;
-		}
-
-		SDK::UClass* chatHudClass = TryGetStaticClass<SDK::UCrUW_ChatHud>();
-		if (!chatHudClass)
-		{
-			return state;
-		}
-
-		const std::string prefix = GetRuptureCycleChatPrefix();
-		RuptureCycleChatState fallbackState{};
-		bool sawMatchingLine = false;
-
-		for (int32_t index = 0; index < objectArray->NumElements; ++index)
-		{
-			SDK::UObject* object = objectArray->GetByIndex(index);
-			if (!object || !object->Class || !TryIsActorObject(object, chatHudClass))
-			{
-				continue;
-			}
-
-			SDK::UCrUW_ChatHud* chatHud = static_cast<SDK::UCrUW_ChatHud*>(object);
-			std::string chatText;
-			if (!TryGetChatHistoryText(chatHud, chatText))
-			{
-				continue;
-			}
-
-			const RuptureCycleLineMatch match = FindLastLineContainingPrefixMatch(chatText, prefix);
-			if (match.CleanLine.empty())
-			{
-				continue;
-			}
-			sawMatchingLine = true;
-
-			const size_t prefixPos = match.CleanLine.rfind(prefix);
-			if (prefixPos == std::string::npos)
-			{
-				LogRuptureCycleProbeIfNeeded(
-					"ChatHud",
-					"prefix_missing_after_clean",
-					match.RawLine,
-					match.CleanLine,
-					{});
-				continue;
-			}
-
-			RuptureCycleChatState candidate{};
-			const std::string payload = TrimWhitespace(match.CleanLine.substr(prefixPos + prefix.size()));
-			if (!TryParseRuptureCyclePayload(payload, candidate))
-			{
-				LogRuptureCycleProbeIfNeeded(
-					"ChatHud",
-					"parse_failed",
-					match.RawLine,
-					match.CleanLine,
-					payload);
-				continue;
-			}
-
-			const bool belongsToWorld = !world || TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world));
-			LogRuptureCycleProbeIfNeeded(
-				"ChatHud",
-				"accepted",
-				match.RawLine,
-				match.CleanLine,
-				payload,
-				belongsToWorld ? "world_match" : "fallback_world");
-			if (belongsToWorld)
-			{
-				return candidate;
-			}
-
-			if (!fallbackState.Available)
-			{
-				fallbackState = candidate;
-			}
-		}
-
-		if (!sawMatchingLine)
-		{
-			LogRuptureCycleProbeIfNeeded("ChatHud", "no_prefix", {}, {}, {});
-		}
-
-		return fallbackState;
-	}
-
-	RuptureCycleChatState CaptureRuptureCycleRichTextState(SDK::UWorld* world)
-	{
-		RuptureCycleChatState state{};
-		SDK::TUObjectArray* objectArray = SDK::UObject::GObjects.GetTypedPtr();
-		if (!objectArray || objectArray->NumElements <= 0)
-		{
-			return state;
-		}
-
-		SDK::UClass* richTextClass = TryGetStaticClass<SDK::URichTextBlock>();
-		if (!richTextClass)
-		{
-			return state;
-		}
-
-		const std::string prefix = GetRuptureCycleChatPrefix();
-		RuptureCycleChatState fallbackState{};
-		bool sawMatchingLine = false;
-
-		for (int32_t index = 0; index < objectArray->NumElements; ++index)
-		{
-			SDK::UObject* object = objectArray->GetByIndex(index);
-			if (!object || !object->Class || !TryIsActorObject(object, richTextClass))
-			{
-				continue;
-			}
-
-			SDK::FText richText{};
-			if (!TryGetRichTextBlockText(static_cast<SDK::URichTextBlock*>(object), richText))
-			{
-				continue;
-			}
-
-			const std::string textValue = richText.ToString();
-			const RuptureCycleLineMatch match = FindLastLineContainingPrefixMatch(textValue, prefix);
-			if (match.CleanLine.empty())
-			{
-				continue;
-			}
-			sawMatchingLine = true;
-
-			const size_t prefixPos = match.CleanLine.rfind(prefix);
-			if (prefixPos == std::string::npos)
-			{
-				LogRuptureCycleProbeIfNeeded(
-					"RichText",
-					"prefix_missing_after_clean",
-					match.RawLine,
-					match.CleanLine,
-					{});
-				continue;
-			}
-
-			RuptureCycleChatState candidate{};
-			const std::string payload = TrimWhitespace(match.CleanLine.substr(prefixPos + prefix.size()));
-			if (!TryParseRuptureCyclePayload(payload, candidate))
-			{
-				LogRuptureCycleProbeIfNeeded(
-					"RichText",
-					"parse_failed",
-					match.RawLine,
-					match.CleanLine,
-					payload);
-				continue;
-			}
-
-			const bool belongsToWorld = !world || TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world));
-			LogRuptureCycleProbeIfNeeded(
-				"RichText",
-				"accepted",
-				match.RawLine,
-				match.CleanLine,
-				payload,
-				belongsToWorld ? "world_match" : "fallback_world");
-			if (belongsToWorld)
-			{
-				return candidate;
-			}
-
-			if (!fallbackState.Available)
-			{
-				fallbackState = candidate;
-			}
-		}
-
-		if (!sawMatchingLine)
-		{
-			LogRuptureCycleProbeIfNeeded("RichText", "no_prefix", {}, {}, {});
-		}
-
-		return fallbackState;
-	}
-
-	MapStateRuntime::Detail::RuptureCycleSnapshot ToRuptureCycleSnapshot(const RuptureCycleChatState& state)
-	{
-		MapStateRuntime::Detail::RuptureCycleSnapshot snapshot{};
-		if (!state.Available)
-		{
-			return snapshot;
-		}
-
-		snapshot.Available = true;
-		snapshot.Wave = state.Wave.empty() ? "None" : state.Wave;
-		snapshot.Stage = state.Stage.empty() ? "None" : state.Stage;
-		snapshot.Step = state.Step.empty() ? "None" : state.Step;
-		snapshot.ElapsedSeconds = state.ElapsedSeconds;
-		snapshot.HasElapsed = state.HasElapsed;
-		return snapshot;
-	}
 
 	bool CaptureLocalRuptureCycleState(SDK::UWorld* world, RuptureCycleLocalState& outState)
 	{
@@ -973,68 +504,25 @@ namespace
 	}
 
 	MapStateRuntime::Detail::RuptureCycleSnapshot CapturePreferredRuptureCycleSnapshot(
-		SDK::UWorld* world,
-		bool* outDedicatedChatAvailable = nullptr)
+		SDK::UWorld* world)
 	{
-		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
-		const bool dedicatedSession = gameState && gameState->bIsDedicatedServer;
-
 		RuptureCycleLocalState localState{};
-		if (!dedicatedSession && CaptureLocalRuptureCycleState(world, localState))
-		{
-			if (outDedicatedChatAvailable)
-			{
-				*outDedicatedChatAvailable = false;
-			}
-			return ToRuptureCycleSnapshot(localState);
-		}
-
-		RuptureCycleChatState chatState = CaptureRuptureCycleChatState(world);
-		if (!chatState.Available)
-		{
-			chatState = CaptureRuptureCycleRichTextState(world);
-		}
-
-		const bool dedicatedChatAvailable = dedicatedSession && chatState.Available;
-		if (outDedicatedChatAvailable)
-		{
-			*outDedicatedChatAvailable = dedicatedChatAvailable;
-		}
-
-		if (dedicatedSession && chatState.Available)
-		{
-			return ToRuptureCycleSnapshot(chatState);
-		}
-
-		if (chatState.Available)
-		{
-			return ToRuptureCycleSnapshot(chatState);
-		}
-
-		if (dedicatedSession && CaptureLocalRuptureCycleState(world, localState))
+		if (CaptureLocalRuptureCycleState(world, localState))
 		{
 			return ToRuptureCycleSnapshot(localState);
 		}
+
+#if !defined(MODLOADER_SERVER_BUILD)
+		// Local subsystem unavailable (typical on a dedicated-server client).
+		// Fall back to the remote cache populated by the network sync layer.
+		MapStateRuntime::Detail::RuptureCycleSnapshot remoteSnapshot{};
+		if (MapExtensionClient::Sync::TryCopyRemoteRuptureCycleSnapshot(remoteSnapshot))
+		{
+			return remoteSnapshot;
+		}
+#endif
 
 		return {};
-	}
-
-	std::string BuildRuptureCycleChatSignature(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
-	{
-		std::ostringstream oss;
-		oss
-			<< snapshot.Available << '|'
-			<< snapshot.Wave << '|'
-			<< snapshot.Stage << '|'
-			<< snapshot.Step << '|'
-			<< snapshot.HasElapsed;
-		if (snapshot.HasElapsed)
-		{
-			oss.setf(std::ios::fixed);
-			oss.precision(3);
-			oss << '|' << snapshot.ElapsedSeconds;
-		}
-		return oss.str();
 	}
 
 	// Key covering only the discrete state fields (wave/stage/step). Used to suppress
@@ -1056,158 +544,6 @@ namespace
 		return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 	}
 
-	void ResetRuptureCycleRequestState()
-	{
-		std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
-		g_shouldRequestDedicatedServerRuptureCycle = false;
-		g_lastRuptureCycleRequestAtUnixMs = 0;
-		g_ruptureCycleRequestAttemptCount = 0;
-	}
-
-	void ScheduleDedicatedServerRuptureCycleRequest(const char* reason)
-	{
-		if (!ShouldRequestDedicatedServerRuptureCycle())
-		{
-			ResetRuptureCycleRequestState();
-			return;
-		}
-
-		bool scheduled = false;
-		{
-			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
-			if (g_shouldRequestDedicatedServerRuptureCycle)
-			{
-				return;
-			}
-
-			g_shouldRequestDedicatedServerRuptureCycle = true;
-			scheduled = true;
-		}
-
-		if (!scheduled)
-		{
-			return;
-		}
-
-		if (ShouldLogLifecycle())
-		{
-			LOG_INFO(
-				"Scheduled dedicated rupture cycle chat request via %s",
-				reason ? reason : "unknown");
-		}
-	}
-
-	void UpdateDedicatedServerRuptureCycleRequestState(
-		SDK::UWorld* world,
-		bool hasDedicatedServerChatSnapshot,
-		const char* reason)
-	{
-		if (!world)
-		{
-			ResetRuptureCycleRequestState();
-			return;
-		}
-
-		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
-		if (!gameState || !gameState->bIsDedicatedServer)
-		{
-			ResetRuptureCycleRequestState();
-			return;
-		}
-
-		if (hasDedicatedServerChatSnapshot)
-		{
-			ResetRuptureCycleRequestState();
-			return;
-		}
-
-		ScheduleDedicatedServerRuptureCycleRequest(reason);
-	}
-
-	bool TryRequestDedicatedServerRuptureCycle(SDK::UWorld* world, const char* reason)
-	{
-		if (!ShouldRequestDedicatedServerRuptureCycle())
-		{
-			ResetRuptureCycleRequestState();
-			return false;
-		}
-
-		const TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
-		if (!world)
-		{
-			return false;
-		}
-		if (!TryIsObjectOfClass(
-				static_cast<SDK::UObject*>(world),
-				TryGetStaticClass<SDK::UWorld>()))
-		{
-			LOG_WARN(
-				"Skipping dedicated rupture cycle request with invalid world pointer (%s)",
-				reason ? reason : "unknown");
-			return false;
-		}
-
-		int64_t lastRequestAtUnixMs = 0;
-		int requestAttemptCount = 0;
-		{
-			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
-			if (!g_shouldRequestDedicatedServerRuptureCycle)
-			{
-				return false;
-			}
-			if (!trackedState.Ready || trackedState.World != world)
-			{
-				return false;
-			}
-			lastRequestAtUnixMs = g_lastRuptureCycleRequestAtUnixMs;
-			requestAttemptCount = g_ruptureCycleRequestAttemptCount;
-		}
-
-		if (!trackedState.Ready)
-		{
-			return false;
-		}
-
-		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
-		if (!gameState || !gameState->bIsDedicatedServer)
-		{
-			ResetRuptureCycleRequestState();
-			return false;
-		}
-
-		SDK::ACrPlayerControllerBase* playerController = TryGetLocalCrPlayerController(world);
-		if (!playerController)
-		{
-			return false;
-		}
-
-		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
-		if (lastRequestAtUnixMs > 0
-			&& nowUnixMs - lastRequestAtUnixMs < kRuptureCycleInfoRequestRetryMs)
-		{
-			return false;
-		}
-
-		{
-			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
-			g_lastRuptureCycleRequestAtUnixMs = nowUnixMs;
-			g_ruptureCycleRequestAttemptCount = requestAttemptCount + 1;
-			requestAttemptCount = g_ruptureCycleRequestAttemptCount;
-		}
-
-		playerController->ServerChatCommit(SDK::FString(kRuptureCycleInfoRequestCommand));
-
-		if (ShouldLogLifecycle())
-		{
-			LOG_INFO(
-				"Requested dedicated rupture cycle info via chat (%s, attempt=%d)",
-				reason ? reason : "unknown",
-				requestAttemptCount);
-		}
-
-		return true;
-	}
-
 	void ApplyRuptureCycleObservationTimestamp(MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
 	{
 		snapshot.HasObservedAtUnixMs = false;
@@ -1218,7 +554,7 @@ namespace
 			return;
 		}
 
-		const std::string signature = BuildRuptureCycleChatSignature(snapshot);
+		const std::string signature = BuildRuptureCycleStateChangeKey(snapshot);
 		if (!g_lastRuptureCycleObservedSignatureValid || signature != g_lastRuptureCycleObservedSignature)
 		{
 			g_lastRuptureCycleObservedSignature = signature;
@@ -1256,37 +592,34 @@ namespace
 
 	void ResetRuptureCycleState()
 	{
-		g_lastRuptureCycleChatSignature.clear();
-		g_lastRuptureCycleChatSignatureValid = false;
+		g_lastRuptureCycleStateChangeKey.clear();
+		g_lastRuptureCycleStateChangeKeyValid = false;
 		g_lastPersistentRuptureCycleSnapshot = {};
 		g_lastPersistentRuptureCycleSnapshotValid = false;
 		g_lastRuptureCycleObservedSignature.clear();
 		g_lastRuptureCycleObservedSignatureValid = false;
-		g_lastRuptureCycleProbeSignature.clear();
-		g_lastRuptureCycleProbeSignatureValid = false;
 		g_lastRuptureCycleObservedAtUnixMs = 0;
-		ResetRuptureCycleRequestState();
 	}
 
-	void LogRuptureCycleChatIfNeeded(
+	void LogRuptureCycleIfNeeded(
 		const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot,
 		uint64_t generation,
 		const char* reason)
 	{
-		if (!ShouldLogRuptureCycleChat() || !snapshot.Available)
+		if (!MapExtensionPluginConfig::Config::LogRuptureCycleChat() || !snapshot.Available)
 		{
 			return;
 		}
 
 		// Suppress repeated log entries when only ElapsedSeconds changes (solo runtime).
 		const std::string stateKey = BuildRuptureCycleStateChangeKey(snapshot);
-		if (g_lastRuptureCycleChatSignatureValid && stateKey == g_lastRuptureCycleChatSignature)
+		if (g_lastRuptureCycleStateChangeKeyValid && stateKey == g_lastRuptureCycleStateChangeKey)
 		{
 			return;
 		}
 
-		g_lastRuptureCycleChatSignature = stateKey;
-		g_lastRuptureCycleChatSignatureValid = true;
+		g_lastRuptureCycleStateChangeKey = stateKey;
+		g_lastRuptureCycleStateChangeKeyValid = true;
 
 		const std::string elapsedText = snapshot.HasElapsed ? std::to_string(snapshot.ElapsedSeconds) : "--";
 
@@ -1351,6 +684,10 @@ namespace
 		g_engineTickAccumulatorSeconds = 0.0f;
 		g_engineTickSeen = false;
 		ResetRuptureCycleState();
+
+#if !defined(MODLOADER_SERVER_BUILD)
+		MapExtensionClient::Sync::ResetRuntimeState();
+#endif
 
 		if (ShouldLogLifecycle())
 		{
@@ -2334,14 +1671,14 @@ namespace
 				continue;
 			}
 
-			receiverLookup.emplace(
-				marker->InternalKey,
-				ReceiverLinkInfo{
-					markerIndex->second,
-					marker->WorldLocation,
-					marker->MapLocation,
-					marker->PublicKey
-				});
+				receiverLookup.emplace(
+					marker->InternalKey,
+					ReceiverLinkInfo{
+						markerIndex->second,
+						marker->WorldLocation,
+						marker->MapLocation,
+						marker->PublicKey
+					});
 		}
 
 		const SDK::FCrPackageTransportConnectionsContainer& connections = replicator->ConnectionsContainer;
@@ -2351,10 +1688,10 @@ namespace
 			const SDK::FCrPackageTransportConnectionData& connection = connections.ConnectionsData[index];
 			const std::string senderKey = BuildReplicationHelperKey(connection.Sender);
 			const std::string receiverKey = BuildReplicationHelperKey(connection.Receiver);
-			const std::string previousReceiverKey = BuildReplicationHelperKey(connection.PrevReceiver);
 			const std::string resourceName = GetItemDisplayName(connection.Item);
 			const std::string senderPublicKey = MakePublicKey(CargoKind::Sender, senderKey);
 			const std::string receiverPublicKey = MakePublicKey(CargoKind::Receiver, receiverKey);
+			const std::string previousReceiverKey = BuildReplicationHelperKey(connection.PrevReceiver);
 			const std::string previousReceiverPublicKey = previousReceiverKey.empty()
 				? std::string{}
 				: MakePublicKey(CargoKind::Receiver, previousReceiverKey);
@@ -2394,10 +1731,12 @@ namespace
 			if (receiverIt == receiverLookup.end() && previousSnapshot)
 			{
 				previousReceiverMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Receiver, receiverKey);
+			#if defined(MAPEXTENSION_BUILD_MODLOADER_LOCAL)
 				if (!previousReceiverMarker && !previousReceiverKey.empty())
 				{
 					previousReceiverMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Receiver, previousReceiverKey);
 				}
+			#endif
 			}
 
 			const CargoConnection* previousConnection = nullptr;
@@ -2871,7 +2210,6 @@ namespace
 		const TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
 		CargoSnapshot nextSnapshot{};
 		CargoSnapshot previousSnapshot{};
-		bool hasDedicatedServerChatSnapshot = false;
 		const int64_t observedAtUnixMs = GetCurrentUnixTimeMilliseconds();
 		{
 			std::lock_guard<std::mutex> lock(g_snapshotMutex);
@@ -2920,15 +2258,9 @@ namespace
 		}
 		MergeRetainedConnections(nextSnapshot, previousSnapshot, observedAtUnixMs);
 
-		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(
-			world,
-			&hasDedicatedServerChatSnapshot);
+		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(world);
 		ApplyRuptureCycleObservationTimestamp(nextSnapshot.RuptureCycle);
 		StorePersistentRuptureCycleSnapshot(nextSnapshot.RuptureCycle);
-		UpdateDedicatedServerRuptureCycleRequestState(
-			world,
-			hasDedicatedServerChatSnapshot,
-			nextSnapshot.Reason.c_str());
 
 		nextSnapshot.SenderCount = 0;
 		nextSnapshot.ReceiverCount = 0;
@@ -2960,12 +2292,48 @@ namespace
 				nextSnapshot.ActorSenderCount);
 		}
 
+#if !defined(MODLOADER_SERVER_BUILD)
+		// On a dedicated-server client, prefer the authoritative snapshot received
+		// from the server plugin over the local runtime scan. The local scan on a
+		// dedicated client often yields incomplete data because the replication
+		// state is partial.
+		MapStateRuntime::Detail::CargoSnapshot remoteCargoSnapshot{};
+		if (MapExtensionClient::Sync::TryCopyRemoteCargoSnapshot(remoteCargoSnapshot))
+		{
+			// Preserve the generation counter and reason from the local refresh
+			// so the HTTP endpoint and log output remain consistent.
+			remoteCargoSnapshot.Generation = nextSnapshot.Generation;
+			remoteCargoSnapshot.Reason = nextSnapshot.Reason;
+			// Use remote rupture cycle if available, else keep whatever the local
+			// or remote-fallback already resolved.
+			if (!remoteCargoSnapshot.RuptureCycle.Available && nextSnapshot.RuptureCycle.Available)
+			{
+				remoteCargoSnapshot.RuptureCycle = nextSnapshot.RuptureCycle;
+			}
+			ApplyRuptureCycleObservationTimestamp(remoteCargoSnapshot.RuptureCycle);
+			StorePersistentRuptureCycleSnapshot(remoteCargoSnapshot.RuptureCycle);
+
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO(
+					"Using remote server snapshot: markers=%zu, connections=%zu, teleporters=%zu, players=%zu (local had markers=%zu)",
+					remoteCargoSnapshot.Markers.size(),
+					remoteCargoSnapshot.Connections.size(),
+					remoteCargoSnapshot.Teleporters.size(),
+					remoteCargoSnapshot.Players.size(),
+					nextSnapshot.Markers.size());
+			}
+
+			nextSnapshot = remoteCargoSnapshot;
+		}
+#endif
+
 		{
 			std::lock_guard<std::mutex> lock(g_snapshotMutex);
 			g_snapshot = nextSnapshot;
 		}
 
-		LogRuptureCycleChatIfNeeded(
+		LogRuptureCycleIfNeeded(
 			nextSnapshot.RuptureCycle,
 			nextSnapshot.Generation,
 			nextSnapshot.Reason.c_str());
@@ -3106,7 +2474,7 @@ namespace MapStateRuntime
 		if (!TryCopyValidatedTrackedChimeraWorldState(
 			trackedState,
 			"EngineTick",
-			true,
+			false,
 			invalidPointer))
 		{
 			if (invalidPointer)
@@ -3114,6 +2482,12 @@ namespace MapStateRuntime
 				ClearChimeraWorldState("Invalid Chimera world pointer");
 			}
 			return;
+		}
+
+		if (!trackedState.Ready)
+		{
+			MarkChimeraWorldReady("EngineTick fallback");
+			trackedState.Ready = true;
 		}
 
 		if (!g_engineTickSeen)
@@ -3127,11 +2501,17 @@ namespace MapStateRuntime
 			}
 		}
 
+#if !defined(MODLOADER_SERVER_BUILD)
+		// On a dedicated-server client, periodically request an authoritative
+		// snapshot from the server plugin. The sync client handles rate-limiting
+		// and dedicated-session detection internally.
+		MapExtensionClient::Sync::RequestSnapshotIfNeeded(trackedState.World, "EngineTick");
+#endif
+
 		const float refreshIntervalSeconds = GetRefreshIntervalSeconds();
 		if (const char* requestedReason = ConsumeRequestedCargoRefreshReason())
 		{
 			Detail::RefreshCargoSnapshot(trackedState.World, requestedReason);
-			TryRequestDedicatedServerRuptureCycle(trackedState.World, requestedReason);
 			g_engineTickAccumulatorSeconds = 0.0f;
 			return;
 		}
@@ -3152,7 +2532,6 @@ namespace MapStateRuntime
 
 		g_engineTickAccumulatorSeconds = 0.0f;
 		Detail::RefreshCargoSnapshot(trackedState.World, "EngineTick");
-		TryRequestDedicatedServerRuptureCycle(trackedState.World, "EngineTick");
 	}
 
 	void OnActorBeginPlay(void* actor)
@@ -3191,7 +2570,6 @@ namespace MapStateRuntime
 		if (!cargoActor && !auxiliaryActor)
 		{
 			// Rupture visuals can spawn in bursts while the player moves. Avoid a full cargo scan here.
-			TryRequestDedicatedServerRuptureCycle(trackedState.World, "ActorBeginPlay(Rupture)");
 			return;
 		}
 
@@ -3234,9 +2612,6 @@ namespace MapStateRuntime
 		Detail::RefreshCargoSnapshot(
 			trackedState.World,
 			ruptureActor ? "ActorBeginPlay(Rupture)" : "ActorBeginPlay");
-		TryRequestDedicatedServerRuptureCycle(
-			trackedState.World,
-			ruptureActor ? "ActorBeginPlay(Rupture)" : "ActorBeginPlay");
 	}
 
 	void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
@@ -3247,6 +2622,10 @@ namespace MapStateRuntime
 		{
 			LOG_INFO("AnyWorldBeginPlay #%d: world=%p name=%s", g_anyWorldBeginPlayCount, static_cast<void*>(world), safeName);
 		}
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnAnyWorldBeginPlay(world, safeName);
+#endif
 
 		if (std::strstr(safeName, "ChimeraMain") != nullptr)
 		{
@@ -3325,10 +2704,8 @@ namespace MapStateRuntime
 		if (trackedState.World)
 		{
 			MarkChimeraWorldReady("SaveLoaded");
-			ScheduleDedicatedServerRuptureCycleRequest("SaveLoaded");
 		}
 		Detail::TryRefreshCurrentWorld("SaveLoaded");
-		TryRequestDedicatedServerRuptureCycle(trackedState.World, "SaveLoaded");
 	}
 
 	void OnExperienceLoadComplete()
@@ -3356,9 +2733,75 @@ namespace MapStateRuntime
 		if (trackedState.World)
 		{
 			MarkChimeraWorldReady("ExperienceLoadComplete");
-			ScheduleDedicatedServerRuptureCycleRequest("ExperienceLoadComplete");
 		}
 		Detail::TryRefreshCurrentWorld("ExperienceLoadComplete");
-		TryRequestDedicatedServerRuptureCycle(trackedState.World, "ExperienceLoadComplete");
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnExperienceLoadComplete();
+#endif
+	}
+
+	void OnBeforeWorldEndPlay(SDK::UWorld* world, const char* worldName)
+	{
+		const char* safeName = worldName ? worldName : "(null)";
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("BeforeWorldEndPlay: world=%p name=%s", static_cast<void*>(world), safeName);
+		}
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnBeforeWorldEndPlay(world, safeName);
+#endif
+
+		// If the ending world is our tracked ChimeraMain, mark it as not ready
+		// while the world pointer is still valid.
+		std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+		if (g_lastChimeraWorld && g_lastChimeraWorld == world)
+		{
+			g_chimeraWorldReady = false;
+		}
+	}
+
+	void OnAfterWorldEndPlay(SDK::UWorld* world, const char* worldName)
+	{
+		const char* safeName = worldName ? worldName : "(null)";
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("AfterWorldEndPlay: world=%p name=%s", static_cast<void*>(world), safeName);
+		}
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnAfterWorldEndPlay(world, safeName);
+#endif
+
+		// If the ended world is our tracked ChimeraMain, clear everything.
+		// The world pointer may be partially torn down at this point.
+		bool wasTracked = false;
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (g_lastChimeraWorld && g_lastChimeraWorld == world)
+			{
+				wasTracked = true;
+			}
+		}
+
+		if (wasTracked)
+		{
+			ClearChimeraWorldState("AfterWorldEndPlay");
+		}
+	}
+
+	void OnPlayerJoined(void* playerController)
+	{
+		(void)playerController;
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("PlayerJoined: controller=%p", playerController);
+		}
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnPlayerJoined(playerController);
+#endif
+		// On server, this is a good time to try bootstrapping the world
+		// if we haven't yet. On client, it's mostly informational.
+		Detail::TryRefreshCurrentWorld("PlayerJoined");
 	}
 }

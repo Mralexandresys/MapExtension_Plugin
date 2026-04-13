@@ -4,7 +4,7 @@ See `../THIRD_PARTY_NOTICES.md` for the root project notices.
 
 ## StarRuptureMap
 
-- Asset reference: `src/assets/base-map.webp`
+- Asset reference: `src/assets/base_newmap.webp`
 - Source: `https://github.com/bithoarder/StarRuptureMap`
 - Upstream license file: `../licenses/StarRuptureMap.MIT.txt`
 

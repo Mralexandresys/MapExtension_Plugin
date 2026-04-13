@@ -1,6 +1,6 @@
 import { computed, type ComputedRef, type Ref } from "vue";
 
-import { formatWorld } from "../lib/formatters";
+import { formatRelativeAge, formatWorld } from "../lib/formatters";
 import type { Messages } from "../lang";
 import type {
     CargoConnection,
@@ -38,6 +38,7 @@ interface UseMapViewEntitiesOptions {
     liveAgeLabel: ComputedRef<string>;
     statusTone: ComputedRef<StatusTone>;
     now: Ref<number>;
+    lastUpdatedAt: Ref<number>;
 }
 
 export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
@@ -58,7 +59,18 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         liveAgeLabel,
         statusTone,
         now,
+        lastUpdatedAt,
     } = options;
+
+    const liveAgeValue = computed(() =>
+        formatRelativeAge(
+            lastUpdatedAt.value,
+            now.value,
+            ui.value.locale,
+            "",
+            ui.value.status.lastUpdatedMissing,
+        ),
+    );
 
     const isCargoViewMode = computed(
         () => viewMode.value === "network" || viewMode.value === "resources",
@@ -415,10 +427,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         {
             key: "freshness",
             label: ui.value.selection.lastUpdate,
-            value: liveAgeLabel.value.replace(
-                ui.value.status.lastUpdatedPrefix,
-                "",
-            ),
+            value: liveAgeValue.value,
             tone: statusTone.value === "online" ? "good" : "warn",
         },
     ]);

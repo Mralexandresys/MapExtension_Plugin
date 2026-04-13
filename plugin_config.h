@@ -40,7 +40,7 @@ namespace MapExtensionPluginConfig
 			"LogRuptureCycleChat",
 			ConfigValueType::Boolean,
 			"0",
-			"Log rupture cycle state parsed from server chat or recovered locally in solo sessions"
+			"Log rupture cycle state changes captured from the local runtime"
 		},
 		{
 			"Diagnostics",
@@ -62,20 +62,6 @@ namespace MapExtensionPluginConfig
 			ConfigValueType::Integer,
 			"500",
 			"Realtime snapshot refresh interval in milliseconds while gameplay is running"
-		},
-		{
-			"Chat",
-			"EnableRuptureCycleInfoRequest",
-			ConfigValueType::Boolean,
-			"1",
-			"Enable or disable the client chat request used to ask the server for rupture cycle info"
-		},
-		{
-			"Chat",
-			"RuptureCyclePrefix",
-			ConfigValueType::String,
-			"[RUPTURE_CYCLE]",
-			"Prefix used by the server chat plugin when broadcasting rupture cycle state"
 		}
 	};
 
@@ -135,21 +121,6 @@ namespace MapExtensionPluginConfig
 		static int RefreshIntervalMs()
 		{
 			return (s_config && s_self) ? s_config->ReadInt(s_self, "Runtime", "RefreshIntervalMs", 500) : 500;
-		}
-
-		static bool EnableRuptureCycleInfoRequest()
-		{
-			return (s_config && s_self) ? s_config->ReadBool(s_self, "Chat", "EnableRuptureCycleInfoRequest", true) : true;
-		}
-
-		static const char* RuptureCyclePrefix()
-		{
-			static char buffer[64] = {};
-			if (s_config && s_self && s_config->ReadString(s_self, "Chat", "RuptureCyclePrefix", buffer, sizeof(buffer), "[RUPTURE_CYCLE]"))
-			{
-				return buffer;
-			}
-			return "[RUPTURE_CYCLE]";
 		}
 
 	private:

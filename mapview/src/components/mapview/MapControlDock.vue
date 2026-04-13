@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useTemplateRef } from "vue";
+
 import type { Language } from "../../lang";
 import type { MapControlDockModel } from "../../lib/types";
 
@@ -7,15 +9,26 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    (event: "toggle-settings"): void;
-    (event: "update:endpoint-draft", value: string): void;
-    (event: "endpoint-keydown", value: KeyboardEvent): void;
-    (event: "apply-endpoint"): void;
-    (event: "refresh"): void;
-    (event: "toggle-auto-refresh"): void;
-    (event: "update:lang", value: Language): void;
-    (event: "open-shortcuts"): void;
+    "toggle-settings": [];
+    "update:endpoint-draft": [value: string];
+    "endpoint-keydown": [value: KeyboardEvent];
+    "apply-endpoint": [];
+    "refresh": [];
+    "toggle-auto-refresh": [];
+    "update:refresh-interval-ms": [value: number];
+    "update:icon-scale": [value: number];
+    "update:lang": [value: Language];
+    "open-shortcuts": [];
+    "export-json": [];
+    "import-json": [file: File];
 }>();
+
+
+const ICON_SCALE_MIN = 0.75;
+const ICON_SCALE_MAX = 2;
+const ICON_SCALE_STEP = 0.25;
+const fileInput = useTemplateRef<HTMLInputElement>("fileInput");
+
 
 function handleEndpointInput(event: Event): void {
     emit("update:endpoint-draft", (event.target as HTMLInputElement).value);
@@ -23,6 +36,30 @@ function handleEndpointInput(event: Event): void {
 
 function handleLanguageChange(event: Event): void {
     emit("update:lang", (event.target as HTMLSelectElement).value as Language);
+}
+
+
+function handleIconScaleInput(event: Event): void {
+    emit("update:icon-scale", Number((event.target as HTMLInputElement).value));
+}
+
+function handleRefreshIntervalInput(event: Event): void {
+    emit(
+        "update:refresh-interval-ms",
+        Math.round(Number((event.target as HTMLInputElement).value) * 1000),
+    );
+}
+
+function triggerImport(): void {
+    fileInput.value?.click();
+}
+
+function handleFileChange(event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    emit("import-json", file);
+    // reset so the same file can be re-imported
+    (event.target as HTMLInputElement).value = "";
 }
 </script>
 
@@ -59,6 +96,64 @@ function handleLanguageChange(event: Event): void {
                                 : panel.ui.buttons.refresh
                         }}
                     </button>
+
+                    <label class="refresh-interval-inline" :title="panel.ui.hero.refreshIntervalHelp">
+                        <span class="refresh-interval-inline-label">
+                            {{ panel.ui.hero.refreshInterval }}
+                        </span>
+                        <input
+                            class="refresh-interval-inline-input"
+                            :value="panel.refreshIntervalMs / 1000"
+                            type="number"
+                            min="0.5"
+                            max="60"
+                            step="0.5"
+                            @input="handleRefreshIntervalInput"
+                        />
+                        <span class="refresh-interval-inline-unit">s</span>
+                    </label>
+
+                    <!-- Export annotations -->
+                    <button
+                        class="icon-button"
+                        type="button"
+                        :title="panel.ui.notes.exportJson"
+                        :aria-label="panel.ui.notes.exportJson"
+                        @click="emit('export-json')"
+                    >
+                        <!-- Arrow down to line (export) -->
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="10" y1="3" x2="10" y2="14" />
+                            <polyline points="6,10 10,14 14,10" />
+                            <line x1="4" y1="17" x2="16" y2="17" />
+                        </svg>
+                    </button>
+
+                    <!-- Import annotations -->
+                    <button
+                        class="icon-button"
+                        type="button"
+                        :title="panel.ui.notes.importJson"
+                        :aria-label="panel.ui.notes.importJson"
+                        @click="triggerImport"
+                    >
+                        <!-- Arrow up from line (import) -->
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="10" y1="17" x2="10" y2="6" />
+                            <polyline points="6,10 10,6 14,10" />
+                            <line x1="4" y1="3" x2="16" y2="3" />
+                        </svg>
+                    </button>
+                    <input
+                        ref="fileInput"
+                        type="file"
+                        accept=".json,application/json"
+                        class="sr-only"
+                        tabindex="-1"
+                        aria-hidden="true"
+                        @change="handleFileChange"
+                    />
+
                     <button
                         class="button subtle small"
                         type="button"
@@ -148,6 +243,25 @@ function handleLanguageChange(event: Event): void {
                         </select>
                     </label>
 
+                    <label class="field compact icon-scale-field">
+                        <span>
+                            {{ panel.ui.hero.iconScale }}
+                            <strong>{{ Math.round(panel.iconScale * 100) }}%</strong>
+                        </span>
+                        <input
+                            class="icon-scale-slider"
+                            :value="panel.iconScale"
+                            type="range"
+                            :min="ICON_SCALE_MIN"
+                            :max="ICON_SCALE_MAX"
+                            :step="ICON_SCALE_STEP"
+                            @input="handleIconScaleInput"
+                        />
+                        <small class="field-note">
+                            {{ panel.ui.hero.iconScaleHelp }}
+                        </small>
+                    </label>
+
                     <div
                         class="inline-note control-dock-note"
                         :class="{ error: !!props.panel.statusError }"
@@ -163,6 +277,317 @@ function handleLanguageChange(event: Event): void {
                     </div>
                 </div>
             </div>
+            <div v-if="panel.commandStats?.length" class="command-stats-row">
+                <div
+                    v-for="stat in panel.commandStats"
+                    :key="stat.key"
+                    class="command-stat"
+                    :class="stat.tone"
+                >
+                    <span class="command-stat-label">{{ stat.label }}</span>
+                    <span class="command-stat-value">{{ stat.value }}</span>
+                </div>
+            </div>
         </div>
     </section>
 </template>
+
+<style scoped>
+.command-header-shell {
+    position: relative;
+    width: 100%;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
+.command-header {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 12px 14px 14px;
+    border-radius: 0;
+    background: rgba(12, 20, 38, 0.99);
+    border-bottom: 1px solid var(--border-strong);
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.command-header-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+    min-height: 52px;
+}
+
+.command-header-brand {
+    min-width: 0;
+    display: grid;
+    gap: 6px;
+}
+
+.command-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.refresh-interval-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    background: rgba(12, 19, 35, 0.86);
+    color: var(--muted);
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.refresh-interval-inline-label,
+.refresh-interval-inline-unit {
+    white-space: nowrap;
+}
+
+.refresh-interval-inline-input {
+    width: 3.8rem;
+    min-width: 0;
+    padding: 4px 6px;
+    border: 1px solid var(--border-strong);
+    background: rgba(5, 10, 20, 0.82);
+    color: var(--text);
+    font: inherit;
+}
+
+.command-settings-popover {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 8px;
+    z-index: 6;
+    width: min(620px, 100%);
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(14, 22, 40, 0.99);
+    box-shadow: 0 22px 46px rgba(0, 0, 0, 0.34);
+}
+
+.command-header-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.command-header h1 {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.1;
+    white-space: nowrap;
+    font-family: var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+.control-dock-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #c8d8f0;
+    font-size: 0.74rem;
+}
+
+.command-stat {
+    min-width: 94px;
+    padding: 12px 14px;
+    display: grid;
+    gap: 4px;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(14, 22, 42, 0.98);
+}
+
+.command-stat:last-child {
+    border-right: 0;
+}
+
+.command-stat strong {
+    font-size: 1rem;
+    line-height: 1;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-weight: 700;
+}
+
+.command-stat span {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    font-family: var(--font-mono);
+}
+
+.command-stat.primary strong { color: var(--accent); }
+.command-stat.good strong    { color: var(--good); }
+.command-stat.warn strong    { color: var(--warn); }
+.command-stat.bad strong     { color: var(--bad); }
+
+.command-stats-row {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 6px 16px;
+    border-top: 1px solid var(--border-strong);
+    background: rgba(14, 22, 42, 0.96);
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.command-stat-label { color: var(--muted); display: block; margin-bottom: 1px; }
+.command-stat-value { color: var(--text); font-weight: 700; display: block; font-size: 0.76rem; }
+.command-stat.good .command-stat-value { color: var(--good); }
+.command-stat.warn .command-stat-value { color: var(--warn); }
+.command-stat.bad  .command-stat-value { color: var(--bad); }
+
+.dock-endpoint-field {
+    gap: 8px;
+}
+
+.endpoint-inline-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.endpoint-apply-button {
+    min-width: 108px;
+}
+
+.control-dock-utility-row {
+    display: grid;
+    grid-template-columns: auto minmax(100px, 132px) minmax(180px, 220px) minmax(180px, 220px) minmax(0, 1fr);
+    gap: 10px;
+    align-items: stretch;
+}
+
+.icon-scale-field {
+    gap: 6px;
+}
+
+.icon-scale-field span {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.icon-scale-slider {
+    width: 100%;
+}
+
+.control-dock-note {
+    min-height: 100%;
+    background: rgba(8, 14, 26, 0.82);
+}
+
+.control-dock-note strong {
+    line-height: 1.3;
+}
+
+.settings-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 0;
+    background: rgba(12, 19, 35, 0.86);
+    color: var(--muted);
+    cursor: pointer;
+    transition:
+        background 0.15s,
+        border-color 0.15s,
+        color 0.15s;
+}
+
+.icon-button:hover {
+    background: rgba(34, 211, 238, 0.1);
+    border-color: var(--border-strong);
+    color: var(--text);
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.settings-trigger.active {
+    background: var(--accent-soft);
+    border-color: var(--border-strong);
+}
+
+.gear-icon {
+    position: relative;
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-radius: 999px;
+}
+
+.gear-icon::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border: 2px dashed currentColor;
+    border-radius: 999px;
+    opacity: 0.62;
+}
+
+@media (max-width: 980px) {
+    .endpoint-inline-row {
+        grid-template-columns: 1fr;
+    }
+
+    .command-header-main {
+        grid-template-columns: 1fr;
+    }
+
+    .control-dock-utility-row {
+        grid-template-columns: 1fr;
+    }
+
+    .command-settings-popover {
+        position: static;
+        width: 100%;
+        margin-top: 10px;
+    }
+}
+</style>

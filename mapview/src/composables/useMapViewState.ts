@@ -41,6 +41,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         showAllLinks,
         highlightOrphans,
         autoRefresh,
+        refreshIntervalMs,
+        iconScale,
         lastUpdatedAt,
         now,
         viewMode,
@@ -51,6 +53,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         normalizedEndpoint,
         endpointHasPendingChanges,
         handleEndpointKeydown,
+        updateRefreshInterval,
         refreshData,
         applyEndpoint,
     } = useMapViewDataSource();
@@ -166,6 +169,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         liveAgeLabel,
         statusTone,
         now,
+        lastUpdatedAt,
     });
 
     const {
@@ -376,6 +380,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         focusMode,
         viewMode,
         autoRefresh,
+        refreshIntervalMs,
+        iconScale,
         selectedKey,
         hoveredKey,
         controlSettingsOpen,
@@ -429,6 +435,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         ruptureTimelineTicks,
         ruptureMarkerLabel,
         handleEndpointKeydown,
+        updateRefreshInterval,
         refreshData,
         applyEndpoint,
         clearSelection,

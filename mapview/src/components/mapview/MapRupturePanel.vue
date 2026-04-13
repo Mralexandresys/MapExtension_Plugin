@@ -6,7 +6,7 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
-    (event: "toggle-collapse"): void;
+    "toggle-collapse": [];
 }>();
 </script>
 
@@ -97,7 +97,9 @@ const emit = defineEmits<{
                                     tick.align,
                                     `stack-${tick.stackLevel}`,
                                 ]"
-                                :style="{ left: `${tick.leftPercent}%` }"
+                                :style="tick.align === 'right'
+                                    ? {}
+                                    : { left: `${tick.leftPercent}%` }"
                             >
                                 {{ tick.label }}
                             </span>
@@ -130,3 +132,261 @@ const emit = defineEmits<{
         </section>
     </div>
 </template>
+
+<style scoped>
+.timeline-body {
+    display: grid;
+    gap: 14px;
+}
+
+.rupture-panel {
+    display: grid;
+    gap: 16px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 0;
+    background: rgba(12, 20, 38, 0.9);
+}
+
+.rupture-focus-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.rupture-focus-pill {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 0;
+    background: rgba(255, 255, 255, 0.04);
+    font-family: var(--font-mono);
+}
+
+.rupture-focus-label {
+    font-size: 0.74rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.rupture-focus-value {
+    font-size: 0.95rem;
+    color: var(--text);
+    font-family: var(--font-mono);
+}
+
+.rupture-timeline {
+    display: grid;
+    gap: 14px;
+}
+
+.rupture-track {
+    position: relative;
+    display: flex;
+    height: 20px;
+    overflow: hidden;
+    clip-path: polygon(4px 0%, calc(100% - 4px) 0%, 100% 4px, 100% 100%, 0% 100%, 0% 4px);
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.rupture-segment {
+    height: 100%;
+    opacity: 0.8;
+    min-width: 2px;
+    border-right: 1px solid rgba(7, 13, 24, 0.45);
+}
+
+.rupture-segment.active {
+    opacity: 1;
+    filter: brightness(1.25);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18);
+}
+
+.rupture-segment.burning {
+    background: rgba(248, 113, 113, 0.18);
+    border-color: rgba(248, 113, 113, 0.34);
+}
+
+.rupture-segment.cooling {
+    background: rgba(245, 158, 11, 0.18);
+    border-color: rgba(245, 158, 11, 0.34);
+}
+
+.rupture-segment.stabilizing {
+    background: rgba(229, 231, 235, 0.14);
+    border-color: rgba(229, 231, 235, 0.28);
+}
+
+.rupture-segment.stable {
+    background: rgba(49, 196, 141, 0.16);
+    border-color: rgba(49, 196, 141, 0.32);
+}
+
+.rupture-segment.incoming {
+    background: rgba(168, 85, 247, 0.18);
+    border-color: rgba(168, 85, 247, 0.34);
+}
+
+.rupture-marker {
+    position: absolute;
+    top: -34px;
+    bottom: -10px;
+    transform: translateX(-50%);
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    border-left: 2px solid var(--amber);
+    box-shadow: var(--glow-amber);
+    animation: marker-pulse 2s ease-in-out infinite;
+}
+
+.rupture-marker::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: -7px;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid var(--amber);
+}
+
+.rupture-marker span {
+    position: absolute;
+    top: 0;
+    left: 4px;
+    transform: translateY(-100%);
+    padding: 3px 8px;
+    border-radius: 0;
+    background: rgba(232, 184, 75, 0.18);
+    color: var(--amber);
+    font-size: 0.78rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    border: 1px solid var(--border-amber);
+    white-space: nowrap;
+}
+
+@keyframes marker-pulse {
+    0%, 100% { filter: drop-shadow(0 0 8px var(--amber)); }
+    50%       { filter: drop-shadow(0 0 20px var(--amber)); }
+}
+
+.rupture-track-scale {
+    position: relative;
+    height: 86px;
+    padding-top: 10px;
+}
+
+.rupture-track-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.rupture-track-swatch.burning    { background: rgba(248, 113, 113, 0.88); }
+.rupture-track-swatch.cooling    { background: rgba(245, 158, 11, 0.88); }
+.rupture-track-swatch.stabilizing{ background: rgba(229, 231, 235, 0.72); }
+.rupture-track-swatch.stable     { background: rgba(49, 196, 141, 0.84); }
+.rupture-track-swatch.incoming   { background: rgba(168, 85, 247, 0.88); }
+
+.rupture-track-tick {
+    position: absolute;
+    top: 10px;
+    font-size: 0.74rem;
+    color: var(--muted);
+    white-space: nowrap;
+    line-height: 1;
+}
+
+.rupture-track-tick.left   { transform: translateX(0); }
+.rupture-track-tick.center { transform: translateX(-50%); }
+.rupture-track-tick.right  { left: auto; right: 0; transform: none; text-align: right; }
+
+.rupture-track-tick.right::before { left: auto; right: 0; transform: none; }
+
+.rupture-track-tick.stack-1 { top: 32px; }
+.rupture-track-tick.stack-2 { top: 54px; }
+
+.rupture-track-tick.right.stack-1,
+.rupture-track-tick.right.stack-2 {
+    left: auto;
+    right: 0;
+    transform: none;
+}
+
+.rupture-track-tick.center.stack-1,
+.rupture-track-tick.center.stack-2 {
+    transform: translateX(-50%);
+}
+
+.rupture-track-tick::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 6px);
+    transform: translateX(-50%);
+    width: 1px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.24);
+}
+
+.rupture-track-tick.stack-1::before { height: 40px; }
+.rupture-track-tick.stack-2::before { height: 62px; }
+
+@media (max-width: 1100px) {
+    .rupture-track-scale { height: 96px; }
+    .rupture-track-tick  { font-size: 0.72rem; }
+    .rupture-track-tick.stack-1 { top: 36px; }
+    .rupture-track-tick.stack-2 { top: 62px; }
+    .rupture-track-tick.stack-1::before { height: 44px; }
+    .rupture-track-tick.stack-2::before { height: 70px; }
+}
+
+.rupture-legend-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    align-items: center;
+}
+
+.rupture-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 30px;
+    padding: 5px 10px;
+    border-radius: 0;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.rupture-legend-item.active {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--amber-soft);
+}
+
+.rupture-legend-item strong {
+    font-size: 0.8rem;
+}
+
+.rupture-empty-state {
+    border-style: dashed;
+}
+
+</style>

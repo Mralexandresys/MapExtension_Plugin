@@ -37,6 +37,10 @@
   <PropertyGroup>
     <RepoRootDir Condition="'$(RepoRootDir)' == ''">$(MSBuildThisFileDirectory)..\</RepoRootDir>
     <PluginSdkRootDir Condition="'$(PluginSdkRootDir)' == ''">$(MSBuildThisFileDirectory)..\StarRupture-Plugin-SDK\</PluginSdkRootDir>
+    <PluginSdkSharedProps Condition="'$(PluginSdkSharedProps)' == ''">$(PluginSdkRootDir)Shared.props</PluginSdkSharedProps>
+    <PluginApiIncludeDir Condition="'$(PluginApiIncludeDir)' == ''">$(PluginSdkRootDir)include\</PluginApiIncludeDir>
+    <StarRuptureSdkBaseDir Condition="'$(StarRuptureSdkBaseDir)' == ''">$(PluginSdkRootDir)StarRupture SDK\</StarRuptureSdkBaseDir>
+    <MapExtensionBuildMethod Condition="'$(MapExtensionBuildMethod)' == ''">modloader-ng</MapExtensionBuildMethod>
     <SolutionDir Condition="'$(SolutionDir)' == ''">$(RepoRootDir)</SolutionDir>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -82,7 +86,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings" />
   <ImportGroup Label="Shared">
-    <Import Project="$(PluginSdkRootDir)Shared.props" />
+    <Import Project="$(PluginSdkSharedProps)" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -106,46 +110,56 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
-    <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
-    <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
-    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
-    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Client\;$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
+    <OutDir>$(MSBuildThisFileDirectory)build\$(Configuration)\Plugins\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
+    <StarRuptureSDKSourceDir>$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(StarRuptureSdkBaseDir)Client\;$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
-    <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
-    <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
-    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
-    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Client\;$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
+    <OutDir>$(MSBuildThisFileDirectory)build\$(Configuration)\Plugins\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
+    <StarRuptureSDKSourceDir>$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(StarRuptureSdkBaseDir)Client\;$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
-    <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
-    <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
-    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
-    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Client\;$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
+    <OutDir>$(MSBuildThisFileDirectory)build\$(Configuration)\Plugins\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
+    <StarRuptureSDKSourceDir>$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(StarRuptureSdkBaseDir)Client\;$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
-    <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
-    <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
-    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKSourceDir>
-    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Client\;$(PluginSdkRootDir)StarRupture SDK\Client\SDK\</StarRuptureSDKConfigDir>
+    <OutDir>$(MSBuildThisFileDirectory)build\$(Configuration)\Plugins\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
+    <StarRuptureSDKSourceDir>$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(StarRuptureSdkBaseDir)Client\;$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Server Debug|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
-    <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
-    <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
-    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
-    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Server\;$(PluginSdkRootDir)StarRupture SDK\Server\SDK\</StarRuptureSDKConfigDir>
+    <OutDir>$(MSBuildThisFileDirectory)build\$(Configuration)\Plugins\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
+    <StarRuptureSDKSourceDir>$(StarRuptureSdkBaseDir)Server\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(StarRuptureSdkBaseDir)Server\;$(StarRuptureSdkBaseDir)Server\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Server Release|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
-    <OutDir>$(RepoRootDir)build\$(Configuration)\Plugins\</OutDir>
-    <IntDir>$(RepoRootDir)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
-    <StarRuptureSDKSourceDir>$(PluginSdkRootDir)StarRupture SDK\Server\SDK\</StarRuptureSDKSourceDir>
-    <StarRuptureSDKConfigDir>$(PluginSdkRootDir)StarRupture SDK\Server\;$(PluginSdkRootDir)StarRupture SDK\Server\SDK\</StarRuptureSDKConfigDir>
+    <OutDir>$(MSBuildThisFileDirectory)build\$(Configuration)\Plugins\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
+    <StarRuptureSDKSourceDir>$(StarRuptureSdkBaseDir)Server\SDK\</StarRuptureSDKSourceDir>
+    <StarRuptureSDKConfigDir>$(StarRuptureSdkBaseDir)Server\;$(StarRuptureSdkBaseDir)Server\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(MapExtensionBuildMethod)'=='modloader-local'">
+    <ClCompile>
+      <PreprocessorDefinitions>MAPEXTENSION_BUILD_MODLOADER_LOCAL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(MapExtensionBuildMethod)'=='modloader-ng'">
+    <ClCompile>
+      <PreprocessorDefinitions>MAPEXTENSION_BUILD_MODLOADER_NG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -154,7 +168,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -166,11 +180,11 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;MAPEXTENSION_PLUGIN_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;MODLOADER_CLIENT_BUILD;MAPEXTENSION_PLUGIN_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -188,7 +202,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -204,11 +218,11 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;MAPEXTENSION_PLUGIN_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;MODLOADER_CLIENT_BUILD;MAPEXTENSION_PLUGIN_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -222,11 +236,12 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;MAPEXTENSION_PLUGIN_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;MODLOADER_SERVER_BUILD;MAPEXTENSION_PLUGIN_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -240,11 +255,12 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;MAPEXTENSION_PLUGIN_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;MODLOADER_SERVER_BUILD;MAPEXTENSION_PLUGIN_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginSdkRootDir)include;$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -264,6 +280,10 @@
     <ClInclude Include="plugin_config.h" />
     <ClInclude Include="plugin_helpers.h" />
     <ClInclude Include="third_party/nlohmann/json.hpp" />
+    <ClInclude Include="shared\map_sync_protocol.h" />
+    <ClInclude Include="client\map_sync_client.h" />
+    <ClInclude Include="client\map_state_remote_cache.h" />
+    <ClInclude Include="server\map_sync_server.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
@@ -288,12 +308,32 @@
       <Visible>false</Visible>
     </ClCompile>
     <ClCompile Include="map_state_capture.cpp" />
-    <ClCompile Include="map_state_http.cpp" />
-    <ClCompile Include="map_state_json.cpp" />
+    <ClCompile Include="map_state_http.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="map_state_json.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="map_state_runtime.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="plugin_config.cpp" />
+    <ClCompile Include="client\map_sync_client.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="client\map_state_remote_cache.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="server\map_sync_server.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Release'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Client Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Client Release'">true</ExcludedFromBuild>
+    </ClCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

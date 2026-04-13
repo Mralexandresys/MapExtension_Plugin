@@ -94,7 +94,7 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Build plugin DLL
+      - name: Build plugin DLLs
         shell: pwsh
         working-directory: modloader/MapExtension_Plugin
         run: |
@@ -149,6 +149,25 @@ jobs:
             exit $LASTEXITCODE
           }
 
+          Write-Host "Build de MapExtension_Plugin en Server Release|x64"
+
+          & $msbuild "MapExtension_Plugin.sln" `
+            /t:MapExtension_Plugin `
+            /m `
+            /p:Configuration="Server Release" `
+            /p:Platform=x64 `
+            /p:PlatformToolset=v143 `
+            /p:SolutionDir="$repoRootWithSlash" `
+            /p:RepoRootDir="$repoRootWithSlash" `
+            /p:PluginSdkRootDir="$sdkRootWithSlash" `
+            /p:PostBuildEventUseInBuild=false `
+            /p:ModLoaderBuildTag="${{ steps.meta.outputs.PLUGIN_TAG }}" `
+            /p:ModLoaderBuildAuthor="${{ steps.meta.outputs.BUILD_AUTHOR }}"
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
       - name: Build mapview bundle
         shell: pwsh
         working-directory: modloader/MapExtension_Plugin/mapview
@@ -165,24 +184,35 @@ jobs:
           $tag = "${{ steps.meta.outputs.PLUGIN_TAG }}"
           $repoRoot = (Resolve-Path ..).Path
           $packageRoot = Join-Path $env:GITHUB_WORKSPACE "package"
-          $stageRoot = Join-Path $packageRoot "MapExtension_Plugin"
-          $pluginsDir = Join-Path $stageRoot "Plugins"
+          $clientStageRoot = Join-Path $packageRoot "MapExtension_Plugin-client"
+          $clientPluginsDir = Join-Path $clientStageRoot "Plugins"
+          $serverStageRoot = Join-Path $packageRoot "MapExtension_Plugin-server"
+          $serverPluginsDir = Join-Path $serverStageRoot "Plugins"
 
-          if (Test-Path $stageRoot) {
-            Remove-Item $stageRoot -Recurse -Force
+          if (Test-Path $packageRoot) {
+            Remove-Item $packageRoot -Recurse -Force
           }
-          New-Item -ItemType Directory -Force -Path $pluginsDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $clientPluginsDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $serverPluginsDir | Out-Null
 
-          Copy-Item (Join-Path $repoRoot "build\Client Release\Plugins\MapExtension_Plugin.dll") (Join-Path $pluginsDir "MapExtension_Plugin.dll") -Force
-          Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $stageRoot "MapExtensionViewer.html") -Force
+          Copy-Item (Join-Path $repoRoot "build\Client Release\Plugins\MapExtension_Plugin.dll") (Join-Path $clientPluginsDir "MapExtension_Plugin.dll") -Force
+          Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $clientStageRoot "MapExtensionViewer.html") -Force
+          Copy-Item (Join-Path $repoRoot "build\Server Release\Plugins\MapExtension_Plugin.dll") (Join-Path $serverPluginsDir "MapExtension_Plugin.dll") -Force
 
-          $zipPath = Join-Path $env:GITHUB_WORKSPACE "MapExtension_Plugin-$tag.zip"
-          if (Test-Path $zipPath) {
-            Remove-Item $zipPath -Force
+          $clientZipPath = Join-Path $env:GITHUB_WORKSPACE "MapExtension_Plugin-$tag-client.zip"
+          $serverZipPath = Join-Path $env:GITHUB_WORKSPACE "MapExtension_Plugin-$tag-server.zip"
+
+          if (Test-Path $clientZipPath) {
+            Remove-Item $clientZipPath -Force
           }
-          Compress-Archive -Path "$stageRoot\*" -DestinationPath $zipPath
+          if (Test-Path $serverZipPath) {
+            Remove-Item $serverZipPath -Force
+          }
+          Compress-Archive -Path "$clientStageRoot\*" -DestinationPath $clientZipPath
+          Compress-Archive -Path "$serverStageRoot\*" -DestinationPath $serverZipPath
 
-          "ZIP_PATH=$zipPath" >> $env:GITHUB_OUTPUT
+          "CLIENT_ZIP_PATH=$clientZipPath" >> $env:GITHUB_OUTPUT
+          "SERVER_ZIP_PATH=$serverZipPath" >> $env:GITHUB_OUTPUT
 
       - name: Create GitHub release
         if: ${{ success() }}
@@ -202,7 +232,8 @@ jobs:
 
           $args = @(
             'release', 'create', $tag,
-            "${{ steps.package.outputs.ZIP_PATH }}",
+            "${{ steps.package.outputs.CLIENT_ZIP_PATH }}",
+            "${{ steps.package.outputs.SERVER_ZIP_PATH }}",
             '--repo', '${{ github.repository }}',
             '--title', "MapExtension_Plugin $tag",
             '--notes', $notes
@@ -222,3 +253,5 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Plugin tag: `{0}`' -f '${{ steps.meta.outputs.PLUGIN_TAG }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Build author: `{0}`' -f '${{ steps.meta.outputs.BUILD_AUTHOR }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Draft: `{0}`' -f '${{ inputs.draft }}')
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Client zip: `{0}`' -f '${{ steps.package.outputs.CLIENT_ZIP_PATH }}')
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Server zip: `{0}`' -f '${{ steps.package.outputs.SERVER_ZIP_PATH }}')
