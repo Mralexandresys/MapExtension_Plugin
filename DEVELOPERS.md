@@ -125,17 +125,21 @@ MapExtension_Plugin/mapview/dist/MapExtensionViewer.html
 
 ## Packaging a release
 
-1. Set `MODLOADER_BUILD_TAG` to the version you want to publish and, if needed, `MODLOADER_BUILD_AUTHOR` to the release author (see above), then build `Client Release|x64` so that `build/Client Release/Plugins/MapExtension_Plugin.dll` is produced.
+1. Set `MODLOADER_BUILD_TAG` to the version you want to publish and, if needed, `MODLOADER_BUILD_AUTHOR` to the release author (see above), then build both `Client Release|x64` and `Server Release|x64` so that these files are produced:
+   - `build/Client Release/Plugins/MapExtension_Plugin.dll`
+   - `build/Server Release/Plugins/MapExtension_Plugin.dll`
    - For public SDK packaging, prefer `../build_client.sh release --build-method modloader-ng`.
    - For local modloader-tree validation, use `../build_client.sh release --build-method modloader-local`.
+   - Build the server DLL with the matching `../build_server.sh release --build-method ...` command.
 2. Move to `mapview/`, ensure Node.js ≥18 is active, then run `npm install && npm run check && npm run build`. The bundle lands in `mapview/dist/MapExtensionViewer.html`.
-3. Copy the following into a staging directory or archive:
+3. Create a client archive containing:
    - `build/Client Release/Plugins/MapExtension_Plugin.dll`
    - `mapview/dist/MapExtensionViewer.html`
-   - `README.md`, `README.fr.md`, `LICENSE`, and both `THIRD_PARTY_NOTICES.md` files
-   - `licenses/` and `mapview/licenses/` to keep third-party notices alongside the binaries
-4. (Optional) include a sample `Plugins/config/MapExtension_Plugin.ini` if you want to ship defaults with instructions.
-5. Verify that no files from `.gitignore` leaked into the package, then sign or checksum the archive before publishing it.
+4. Create a server archive containing:
+   - `build/Server Release/Plugins/MapExtension_Plugin.dll`
+5. (Optional) add `README.md`, `README.fr.md`, `LICENSE`, notice files, and `licenses/` content alongside the binaries if you want a fuller release bundle.
+6. (Optional) include a sample `Plugins/config/MapExtension_Plugin.ini` if you want to ship defaults with instructions.
+7. Verify that no files from `.gitignore` leaked into the packages, then sign or checksum the archives before publishing them.
 
 ## GitHub Actions release
 
@@ -153,9 +157,10 @@ The workflow:
 2. checks out that modloader release as the packaging root
 3. checks out `MapExtension_Plugin` into the expected `StarRupture-ModLoader/MapExtension_Plugin` path
 4. checks out `StarRupture-Plugin-SDK` into a known path and passes the SDK-related MSBuild properties explicitly
-5. builds the plugin and the `mapview` bundle with the `modloader-ng` path layout while preserving the current packaging layout
-5. creates a plugin tag in the format `ML-YYYY.MM.DD-HHMMSS-vX.Y`
-6. publishes a GitHub release in the plugin repository
+5. builds both the client and server plugin DLLs, then builds the `mapview` bundle with the `modloader-ng` path layout
+6. creates a client zip with the client DLL and `MapExtensionViewer.html`, plus a separate server zip with the server DLL
+7. creates a plugin tag in the format `ML-YYYY.MM.DD-HHMMSS-vX.Y`
+8. publishes a GitHub release in the plugin repository
 
 ## Runtime contract
 
