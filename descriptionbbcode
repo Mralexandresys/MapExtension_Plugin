@@ -24,6 +24,17 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 
 [line]
 
+[size=4][b]Change Log 0.4[/b][/size]
+[list]
+[*]Added a new map background[/*]
+[*]Added dedicated-server sync support for map and rupture data[/*]
+[*]Updated the map viewer UI with a cleaner layout and better controls[/*]
+[*]Added map notes and custom annotations[/*]
+[*]Improved the map background and rupture timeline display[/*]
+[/list]
+
+[line]
+
 [size=4][b]How It Works[/b][/size]
 
 If you are new to this kind of mod, the idea is very simple:
