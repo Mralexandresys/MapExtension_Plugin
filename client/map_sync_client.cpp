@@ -13,8 +13,16 @@
 
 	namespace
 	{
-		constexpr int64_t kMinRequestIntervalMs = 1500;
-		constexpr int64_t kRefreshIntervalMs = 5000;
+		// Minimum interval between two outbound snapshot requests sent to the
+		// server. Raised from 1500 ms to 5000 ms to reduce the number of
+		// IPluginNetworkChannel packets processed on the main thread in
+		// dedicated-server sessions.
+		constexpr int64_t kMinRequestIntervalMs = 5000;
+		// Minimum interval between two accepted server-side snapshots. A fresh
+		// server snapshot replaces the local runtime scan, so polling more
+		// frequently than the server refresh rate wastes CPU. 15 s is ample
+		// given the 5 s request gate above.
+		constexpr int64_t kRefreshIntervalMs = 15000;
 
 	PluginNetworkMessageCallback g_ruptureReceiveHandle = nullptr;
 	PluginNetworkMessageCallback g_snapshotBeginReceiveHandle = nullptr;

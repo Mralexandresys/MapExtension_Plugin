@@ -57,6 +57,13 @@ namespace MapExtensionPluginConfig
 			"Log actor-scan fallback counts for BP_PackageSender and BP_PackageReceiver"
 		},
 		{
+			"Diagnostics",
+			"LogRefreshTimings",
+			ConfigValueType::Boolean,
+			"0",
+			"Log per-phase refresh timings to help diagnose remaining client-side frame cost"
+		},
+		{
 			"Http",
 			"Port",
 			ConfigValueType::Integer,
@@ -67,8 +74,8 @@ namespace MapExtensionPluginConfig
 			"Runtime",
 			"RefreshIntervalMs",
 			ConfigValueType::Integer,
-			"500",
-			"Realtime snapshot refresh interval in milliseconds while gameplay is running"
+			"2000",
+			"Realtime snapshot refresh interval in milliseconds while gameplay is running (lowered from 500 to reduce main-thread stalls during heavy replication)"
 		}
 	};
 
@@ -130,6 +137,11 @@ namespace MapExtensionPluginConfig
 			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogActorScanFallback", false) : false;
 		}
 
+		static bool LogRefreshTimings()
+		{
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogRefreshTimings", false) : false;
+		}
+
 		static int HttpPort()
 		{
 			return (s_config && s_self) ? s_config->ReadInt(s_self, "Http", "Port", 9000) : 9000;
@@ -137,7 +149,7 @@ namespace MapExtensionPluginConfig
 
 		static int RefreshIntervalMs()
 		{
-			return (s_config && s_self) ? s_config->ReadInt(s_self, "Runtime", "RefreshIntervalMs", 500) : 500;
+			return (s_config && s_self) ? s_config->ReadInt(s_self, "Runtime", "RefreshIntervalMs", 2000) : 2000;
 		}
 
 	private:
