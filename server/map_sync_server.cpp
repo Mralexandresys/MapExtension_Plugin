@@ -1,6 +1,7 @@
 #include "map_sync_server.h"
 
 #include "../map_state_capture.h"
+#include "../plugin_config.h"
 #include "../plugin_helpers.h"
 #include "../shared/map_sync_protocol.h"
 
@@ -11,6 +12,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <sstream>
 #include <string>
 
 namespace
@@ -27,12 +29,19 @@ namespace
 	bool g_worldReady = false;
 	uint64_t g_snapshotId = 0;
 	uint64_t g_sequence = 0;
+	std::string g_lastLoggedRuptureStateKey;
+	bool g_lastLoggedRuptureStateKeyValid = false;
 
 	int64_t GetCurrentUnixTimeMilliseconds()
 	{
 		using namespace std::chrono;
 		const auto now = system_clock::now();
 		return duration_cast<milliseconds>(now.time_since_epoch()).count();
+	}
+
+	bool ShouldLogRuptureDiagnostics()
+	{
+		return MapExtensionPluginConfig::Config::LogRuptureDiagnostics();
 	}
 
 	bool TryProbeWorldNameRaw(SDK::UWorld* world)
@@ -281,10 +290,82 @@ namespace
 		return "None";
 	}
 
+	bool CaptureRuptureCycleState(SDK::UWorld* world, RuptureCycleState& outState);
+
+	std::string BuildRuptureStateKey(const RuptureCycleState& state)
+	{
+		std::ostringstream oss;
+		oss
+			<< EnviroWaveToString(state.Wave) << '|'
+			<< EnviroWaveStageToString(state.Stage) << '|'
+			<< EnviroWaveStepToString(state) << '|'
+			<< state.HasElapsed;
+		if (state.HasElapsed)
+		{
+			oss.setf(std::ios::fixed);
+			oss.precision(3);
+			oss << '|' << state.ElapsedSeconds;
+		}
+		return oss.str();
+	}
+
+	void LogRuptureEventProbe(const char* reason, SDK::UWorld* world)
+	{
+		if (!ShouldLogRuptureDiagnostics())
+		{
+			return;
+		}
+
+		RuptureCycleState state{};
+		const bool captured = CaptureRuptureCycleState(world, state);
+		const std::string elapsedText = (captured && state.HasElapsed)
+			? std::to_string(state.ElapsedSeconds)
+			: std::string("--");
+
+		LOG_INFO(
+			"Server rupture event '%s': world=%p ready=%s captured=%s wave=%s stage=%s step=%s elapsed=%s",
+			reason ? reason : "unknown",
+			static_cast<void*>(world),
+			g_worldReady ? "yes" : "no",
+			captured ? "yes" : "no",
+			captured ? EnviroWaveToString(state.Wave) : "Unavailable",
+			captured ? EnviroWaveStageToString(state.Stage) : "Unavailable",
+			captured ? EnviroWaveStepToString(state) : "Unavailable",
+			elapsedText.c_str());
+	}
+
+	void LogRuptureStateChangeIfNeeded(const char* reason, const RuptureCycleState& state)
+	{
+		if (!ShouldLogRuptureDiagnostics())
+		{
+			return;
+		}
+
+		const std::string stateKey = BuildRuptureStateKey(state);
+		if (g_lastLoggedRuptureStateKeyValid && stateKey == g_lastLoggedRuptureStateKey)
+		{
+			return;
+		}
+
+		g_lastLoggedRuptureStateKey = stateKey;
+		g_lastLoggedRuptureStateKeyValid = true;
+
+		const std::string elapsedText = state.HasElapsed ? std::to_string(state.ElapsedSeconds) : std::string("--");
+		LOG_INFO(
+			"Server rupture state change via %s: wave=%s stage=%s step=%s elapsed=%s",
+			reason ? reason : "unknown",
+			EnviroWaveToString(state.Wave),
+			EnviroWaveStageToString(state.Stage),
+			EnviroWaveStepToString(state),
+			elapsedText.c_str());
+	}
+
 	void ResetRuntimeState()
 	{
 		g_trackedWorld = nullptr;
 		g_worldReady = false;
+		g_lastLoggedRuptureStateKey.clear();
+		g_lastLoggedRuptureStateKeyValid = false;
 	}
 
 	bool CaptureRuptureCycleState(SDK::UWorld* world, RuptureCycleState& outState)
@@ -343,6 +424,8 @@ namespace
 		if (!g_worldReady && CaptureRuptureCycleState(world, probeState))
 		{
 			g_worldReady = true;
+			LogRuptureEventProbe("BootstrapReady", world);
+			LogRuptureStateChangeIfNeeded("BootstrapReady", probeState);
 		}
 
 		return g_trackedWorld != nullptr;
@@ -567,6 +650,12 @@ namespace
 			return;
 		}
 
+		LogRuptureEventProbe("ClientSnapshotRequest", g_trackedWorld);
+		RuptureCycleState state{};
+		if (CaptureRuptureCycleState(g_trackedWorld, state))
+		{
+			LogRuptureStateChangeIfNeeded("ClientSnapshotRequest", state);
+		}
 		SendFullSnapshotToPlayer(senderPlayerController, "ClientSnapshotRequest");
 	}
 }
@@ -627,16 +716,19 @@ namespace MapExtensionServer
 
 		void OnEngineInit()
 		{
+			LogRuptureEventProbe("EngineInit", g_trackedWorld);
 			TryBootstrapCurrentWorld("EngineInit");
 		}
 
 		void OnEngineShutdown()
 		{
+			LogRuptureEventProbe("EngineShutdown", g_trackedWorld);
 			ResetRuntimeState();
 		}
 
 		void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
 		{
+			LogRuptureEventProbe("AnyWorldBeginPlay", world);
 			if (IsChimeraWorldName(worldName))
 			{
 				g_trackedWorld = world;
@@ -647,6 +739,7 @@ namespace MapExtensionServer
 
 		void OnBeforeWorldEndPlay(SDK::UWorld* world, const char* worldName)
 		{
+			LogRuptureEventProbe("BeforeWorldEndPlay", world);
 			if (!g_trackedWorld || g_trackedWorld != world)
 			{
 				return;
@@ -660,6 +753,7 @@ namespace MapExtensionServer
 
 		void OnAfterWorldEndPlay(SDK::UWorld* world, const char* worldName)
 		{
+			LogRuptureEventProbe("AfterWorldEndPlay", world);
 			if (g_trackedWorld == world && IsChimeraWorldName(worldName))
 			{
 				ResetRuntimeState();
@@ -668,13 +762,18 @@ namespace MapExtensionServer
 
 		void OnExperienceLoadComplete()
 		{
+			LogRuptureEventProbe("ExperienceLoadComplete", g_trackedWorld);
 			TryBootstrapCurrentWorld("ExperienceLoadComplete");
 		}
 
 		void OnPlayerJoined(void* playerController)
 		{
-			(void)playerController;
+			if (ShouldLogRuptureDiagnostics())
+			{
+				LOG_INFO("Server rupture event 'PlayerJoined': controller=%p", playerController);
+			}
 			TryBootstrapCurrentWorld("PlayerJoined");
+			LogRuptureEventProbe("PlayerJoined", g_trackedWorld);
 		}
 	}
 }
