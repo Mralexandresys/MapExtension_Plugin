@@ -40,7 +40,14 @@ namespace MapExtensionPluginConfig
 			"LogRuptureCycleChat",
 			ConfigValueType::Boolean,
 			"0",
-			"Log rupture cycle state changes captured from the local runtime"
+			"Legacy rupture logging toggle kept for existing configs"
+		},
+		{
+			"Diagnostics",
+			"LogRuptureCycleEvents",
+			ConfigValueType::Boolean,
+			"0",
+			"Log rupture cycle state changes and rupture-related world/server events on both client and server"
 		},
 		{
 			"Diagnostics",
@@ -106,6 +113,16 @@ namespace MapExtensionPluginConfig
 		static bool LogRuptureCycleChat()
 		{
 			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogRuptureCycleChat", false) : false;
+		}
+
+		static bool LogRuptureCycleEvents()
+		{
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogRuptureCycleEvents", false) : false;
+		}
+
+		static bool LogRuptureDiagnostics()
+		{
+			return LogRuptureCycleChat() || LogRuptureCycleEvents();
 		}
 
 		static bool LogActorScanFallback()

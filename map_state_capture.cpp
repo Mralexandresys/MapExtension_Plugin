@@ -103,6 +103,11 @@ namespace
 		return MapExtensionPluginConfig::Config::LogActorScanFallback();
 	}
 
+	bool ShouldLogRuptureDiagnostics()
+	{
+		return MapExtensionPluginConfig::Config::LogRuptureDiagnostics();
+	}
+
 	float GetRefreshIntervalSeconds()
 	{
 		int refreshMs = MapExtensionPluginConfig::Config::RefreshIntervalMs();
@@ -538,6 +543,24 @@ namespace
 		return oss.str();
 	}
 
+	std::string BuildRuptureCycleObservationSignature(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		std::ostringstream oss;
+		oss
+			<< snapshot.Available << '|'
+			<< snapshot.Wave << '|'
+			<< snapshot.Stage << '|'
+			<< snapshot.Step << '|'
+			<< snapshot.HasElapsed;
+		if (snapshot.HasElapsed)
+		{
+			oss.setf(std::ios::fixed);
+			oss.precision(3);
+			oss << '|' << snapshot.ElapsedSeconds;
+		}
+		return oss.str();
+	}
+
 	int64_t GetCurrentUnixTimeMilliseconds()
 	{
 		using namespace std::chrono;
@@ -554,7 +577,7 @@ namespace
 			return;
 		}
 
-		const std::string signature = BuildRuptureCycleStateChangeKey(snapshot);
+		const std::string signature = BuildRuptureCycleObservationSignature(snapshot);
 		if (!g_lastRuptureCycleObservedSignatureValid || signature != g_lastRuptureCycleObservedSignature)
 		{
 			g_lastRuptureCycleObservedSignature = signature;
@@ -606,7 +629,7 @@ namespace
 		uint64_t generation,
 		const char* reason)
 	{
-		if (!MapExtensionPluginConfig::Config::LogRuptureCycleChat() || !snapshot.Available)
+		if (!ShouldLogRuptureDiagnostics() || !snapshot.Available)
 		{
 			return;
 		}
@@ -2444,6 +2467,10 @@ namespace MapStateRuntime
 		{
 			LOG_INFO("Engine init received");
 		}
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnEngineInit();
+#endif
 		Detail::LogRuntimePlanIfNeeded();
 		Detail::TryRefreshCurrentWorld("EngineInit");
 	}
@@ -2465,6 +2492,10 @@ namespace MapStateRuntime
 			g_requestedCustomNameEntityIds.clear();
 		}
 		ResetRuptureCycleState();
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnEngineShutdown();
+#endif
 	}
 
 	void OnEngineTick(float deltaSeconds)
@@ -2569,6 +2600,14 @@ namespace MapStateRuntime
 
 		if (!cargoActor && !auxiliaryActor)
 		{
+			if (ruptureActor && ShouldLogRuptureDiagnostics())
+			{
+				LOG_INFO(
+					"Rupture ActorBeginPlay observed: class=%s actor=%s",
+					beginPlayActor->Class ? beginPlayActor->Class->GetName().c_str() : "(null)",
+					beginPlayActor->GetName().c_str());
+			}
+
 			// Rupture visuals can spawn in bursts while the player moves. Avoid a full cargo scan here.
 			return;
 		}
