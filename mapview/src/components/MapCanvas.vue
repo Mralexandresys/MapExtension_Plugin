@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
-import baseMapUrl from '../assets/base_newmap.webp';
 import teleporterSvg from '../assets/teleporter.svg?raw';
 import { getMessages } from '../lang';
 import type { Language } from '../lang';
@@ -68,6 +67,13 @@ const TELEPORTER_ICON_SIZE = 28;
 const TELEPORTER_ICON_HALF = TELEPORTER_ICON_SIZE / 2;
 const TELEPORTER_HITBOX_SIZE = 36;
 const TELEPORTER_HITBOX_HALF = TELEPORTER_HITBOX_SIZE / 2;
+const TILE_SOURCE_WIDTH = 9019;
+const TILE_SOURCE_HEIGHT = 11691;
+const TILE_SIZE = 2048;
+const TILE_COLS = Math.ceil(TILE_SOURCE_WIDTH / TILE_SIZE);
+const TILE_ROWS = Math.ceil(TILE_SOURCE_HEIGHT / TILE_SIZE);
+const TILE_OVERSCAN = 1;
+const TILE_BASE_PATH = 'map-tiles/base_newmap_q70_2048';
 const teleporterSymbolHref = `#${TELEPORTER_SYMBOL_ID}`;
 const teleporterSymbolMarkup = teleporterSvg
   .replace(/<\?xml[^>]*>\s*/i, '')
@@ -90,6 +96,79 @@ const orphanKeySet = computed(() => new Set(props.orphanKeys));
 const focusKeySet = computed(() => new Set(props.focusKeys));
 
 const markerScaleTransform = computed(() => `scale(${props.iconScale})`);
+const tileScaleX = computed(() => imageWidth.value / TILE_SOURCE_WIDTH);
+const tileScaleY = computed(() => imageHeight.value / TILE_SOURCE_HEIGHT);
+
+const visibleMapBounds = computed(() => {
+  const left = (0 - mapTranslateX.value) / mapScale.value;
+  const top = (0 - mapTranslateY.value) / mapScale.value;
+  const right = (viewBoxWidth.value - mapTranslateX.value) / mapScale.value;
+  const bottom = (viewBoxHeight.value - mapTranslateY.value) / mapScale.value;
+
+  return {
+    left: Math.min(left, right),
+    right: Math.max(left, right),
+    top: Math.min(top, bottom),
+    bottom: Math.max(top, bottom),
+  };
+});
+
+const visibleBaseMapTiles = computed(() => {
+  const tileWidth = TILE_SIZE * tileScaleX.value;
+  const tileHeight = TILE_SIZE * tileScaleY.value;
+
+  if (tileWidth <= 0 || tileHeight <= 0) {
+    return [];
+  }
+
+  const startCol = Math.max(
+    0,
+    Math.floor((visibleMapBounds.value.left - imageX.value) / tileWidth) - TILE_OVERSCAN,
+  );
+  const endCol = Math.min(
+    TILE_COLS - 1,
+    Math.floor((visibleMapBounds.value.right - imageX.value) / tileWidth) + TILE_OVERSCAN,
+  );
+  const startRow = Math.max(
+    0,
+    Math.floor((visibleMapBounds.value.top - imageY.value) / tileHeight) - TILE_OVERSCAN,
+  );
+  const endRow = Math.min(
+    TILE_ROWS - 1,
+    Math.floor((visibleMapBounds.value.bottom - imageY.value) / tileHeight) + TILE_OVERSCAN,
+  );
+
+  if (startCol > endCol || startRow > endRow) {
+    return [];
+  }
+
+  const tiles = [] as Array<{
+    key: string;
+    href: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
+
+  for (let row = startRow; row <= endRow; row += 1) {
+    for (let col = startCol; col <= endCol; col += 1) {
+      const sourceWidth = Math.min(TILE_SIZE, TILE_SOURCE_WIDTH - col * TILE_SIZE);
+      const sourceHeight = Math.min(TILE_SIZE, TILE_SOURCE_HEIGHT - row * TILE_SIZE);
+
+      tiles.push({
+        key: `tile-${row}-${col}`,
+        href: `${TILE_BASE_PATH}/tile_r${row}_c${col}.webp`,
+        x: imageX.value + col * tileWidth,
+        y: imageY.value + row * tileHeight,
+        width: sourceWidth * tileScaleX.value,
+        height: sourceHeight * tileScaleY.value,
+      });
+    }
+  }
+
+  return tiles;
+});
 
 function markerTranslateTransform(x: number, y: number): string {
   return `translate(${x} ${y}) ${markerScaleTransform.value} translate(${-x} ${-y})`;
@@ -533,12 +612,14 @@ defineExpose({
       <defs v-html="teleporterSymbolMarkup"></defs>
       <g :transform="transform">
         <image
+          v-for="tile in visibleBaseMapTiles"
+          :key="tile.key"
           class="base-map"
-          :href="baseMapUrl"
-          :x="imageX"
-          :y="imageY"
-          :width="imageWidth"
-          :height="imageHeight"
+          :href="tile.href"
+          :x="tile.x"
+          :y="tile.y"
+          :width="tile.width"
+          :height="tile.height"
         />
 
         <!-- Locked user zones under everything else -->
