@@ -5,6 +5,7 @@
 
 #if !defined(MODLOADER_SERVER_BUILD)
 #include "client/map_sync_client.h"
+#include "client/map_state_remote_cache.h"
 #endif
 
 #if defined(MODLOADER_SERVER_BUILD)
@@ -63,6 +64,9 @@ namespace
 	};
 
 	void ClearChimeraWorldState(const char* reason);
+	int64_t GetCurrentUnixTimeMilliseconds();
+	void ApplyRuptureCycleObservationTimestamp(MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot);
+	void StorePersistentRuptureCycleSnapshot(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot);
 
 	bool g_runtimePlanLogged = false;
 	bool g_engineTickSeen = false;
@@ -74,6 +78,12 @@ namespace
 	bool g_chimeraWorldReady = false;
 	float g_engineTickAccumulatorSeconds = 0.0f;
 	int64_t g_lastCargoActorRefreshAtUnixMs = 0;
+	// Timestamp at which the ChimeraMain world was first detected. Realtime
+	// refreshes are suppressed for kPostWorldBeginPlayGraceMs after this point
+	// to avoid main-thread stalls during the heavy replication / Mass /
+	// Logistics initialization phase that immediately follows world begin play.
+	int64_t g_chimeraWorldDetectedAtUnixMs = 0;
+	constexpr int64_t kPostWorldBeginPlayGraceMs = 8000;
 	std::mutex g_runtimeStateMutex;
 	std::mutex g_snapshotMutex;
 	CargoSnapshot g_snapshot{};
@@ -103,6 +113,11 @@ namespace
 		return MapExtensionPluginConfig::Config::LogActorScanFallback();
 	}
 
+	bool ShouldLogRefreshTimings()
+	{
+		return MapExtensionPluginConfig::Config::LogRefreshTimings();
+	}
+
 	bool ShouldLogRuptureDiagnostics()
 	{
 		return MapExtensionPluginConfig::Config::LogRuptureDiagnostics();
@@ -111,12 +126,132 @@ namespace
 	float GetRefreshIntervalSeconds()
 	{
 		int refreshMs = MapExtensionPluginConfig::Config::RefreshIntervalMs();
-		if (refreshMs < 100)
+		if (refreshMs < 500)
 		{
-			refreshMs = 100;
+			refreshMs = 500;
 		}
 		return static_cast<float>(refreshMs) / 1000.0f;
 	}
+
+	struct RefreshTimingLog final
+	{
+		bool Enabled = false;
+		const char* Reason = nullptr;
+		int64_t StartedAtMs = 0;
+		int64_t LastPhaseAtMs = 0;
+
+		explicit RefreshTimingLog(const char* reason)
+			: Enabled(ShouldLogRefreshTimings())
+			, Reason(reason ? reason : "unknown")
+		{
+			if (!Enabled)
+			{
+				return;
+			}
+
+			StartedAtMs = GetCurrentUnixTimeMilliseconds();
+			LastPhaseAtMs = StartedAtMs;
+		}
+
+		void Phase(const char* name)
+		{
+			if (!Enabled)
+			{
+				return;
+			}
+
+			const int64_t nowMs = GetCurrentUnixTimeMilliseconds();
+			LOG_INFO(
+				"Refresh timing '%s': %s=%lld ms",
+				Reason,
+				name ? name : "phase",
+				static_cast<long long>(nowMs - LastPhaseAtMs));
+			LastPhaseAtMs = nowMs;
+		}
+
+		void Finish(const CargoSnapshot& snapshot)
+		{
+			if (!Enabled)
+			{
+				return;
+			}
+
+			const int64_t nowMs = GetCurrentUnixTimeMilliseconds();
+			LOG_INFO(
+				"Refresh timing '%s': total=%lld ms markers=%zu connections=%zu teleporters=%zu players=%zu",
+				Reason,
+				static_cast<long long>(nowMs - StartedAtMs),
+				snapshot.Markers.size(),
+				snapshot.Connections.size(),
+				snapshot.Teleporters.size(),
+				snapshot.Players.size());
+		}
+	};
+
+#if !defined(MODLOADER_SERVER_BUILD)
+	bool TryUseDedicatedRemoteSnapshot(
+		SDK::ACrGameStateBase* gameState,
+		const CargoSnapshot& previousSnapshot,
+		const char* reason,
+		const std::string& worldName,
+		uint64_t generation,
+		CargoSnapshot& outSnapshot)
+	{
+		if (!gameState || !gameState->bIsDedicatedServer)
+		{
+			return false;
+		}
+
+		CargoSnapshot snapshot = previousSnapshot;
+		CargoSnapshot remoteCargoSnapshot{};
+		const bool hasRemoteCargo = MapExtensionClient::Sync::TryCopyRemoteCargoSnapshot(remoteCargoSnapshot);
+		if (hasRemoteCargo)
+		{
+			snapshot = remoteCargoSnapshot;
+		}
+		else
+		{
+			snapshot.Markers.clear();
+			snapshot.Connections.clear();
+			snapshot.Teleporters.clear();
+			snapshot.Players.clear();
+			snapshot.SenderCount = 0;
+			snapshot.ReceiverCount = 0;
+			snapshot.ConnectionCount = 0;
+			snapshot.TeleporterCount = 0;
+			snapshot.PlayerCount = 0;
+			snapshot.ActorReceiverCount = 0;
+			snapshot.ActorSenderCount = 0;
+			snapshot.UsedReplicator = false;
+			snapshot.HasPackageTransportReplicator = false;
+			snapshot.UsedActorFallback = false;
+			snapshot.HasTeleportReplicator = false;
+			snapshot.UsedTeleporterReplicator = false;
+		}
+
+		snapshot.Generation = generation;
+		snapshot.Reason = reason ? reason : "unknown";
+		if (!worldName.empty())
+		{
+			snapshot.WorldName = worldName;
+		}
+
+		RuptureCycleSnapshot remoteRuptureSnapshot{};
+		if (MapExtensionClient::Sync::TryCopyRemoteRuptureCycleSnapshot(remoteRuptureSnapshot))
+		{
+			snapshot.RuptureCycle = remoteRuptureSnapshot;
+		}
+		else if (!hasRemoteCargo)
+		{
+			snapshot.RuptureCycle = {};
+		}
+
+		ApplyRuptureCycleObservationTimestamp(snapshot.RuptureCycle);
+		StorePersistentRuptureCycleSnapshot(snapshot.RuptureCycle);
+		outSnapshot = std::move(snapshot);
+		return true;
+	}
+#endif
 
 	const char* ConsumeRequestedCargoRefreshReason()
 	{
@@ -695,6 +830,7 @@ namespace
 				g_lastWorldName.clear();
 				g_chimeraWorldReady = false;
 				g_lastCargoActorRefreshAtUnixMs = 0;
+				g_chimeraWorldDetectedAtUnixMs = 0;
 				g_requestedCustomNameEntityIds.clear();
 			}
 		}
@@ -2025,6 +2161,21 @@ namespace
 			return;
 		}
 
+		// When the replicator already produced data, skip the three actor-class
+		// scans. GetAllActorsOfClass iterates the full world actor list and is
+		// called on the main thread; running it three times every tick during
+		// heavy replication phases (Mass/Logistics/Building) is a measurable
+		// source of main-thread stalls that leads to missed ACKs and
+		// ConnectionTimeout. The replicator data is authoritative, so the scans
+		// only add noise when it is present.
+		const bool replicatorHasData =
+			snapshot.HasTeleportReplicator && !snapshot.Teleporters.empty();
+		if (replicatorHasData)
+		{
+			snapshot.TeleporterCount = static_cast<int>(snapshot.Teleporters.size());
+			return;
+		}
+
 		SDK::TArray<SDK::AActor*> actors;
 		SDK::UGameplayStatics::GetAllActorsOfClass(world, SDK::ACrTeleporter::StaticClass(), &actors);
 		for (int index = 0; index < actors.Num(); ++index)
@@ -2233,6 +2384,7 @@ namespace
 		const TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
 		CargoSnapshot nextSnapshot{};
 		CargoSnapshot previousSnapshot{};
+		RefreshTimingLog timing(reason);
 		const int64_t observedAtUnixMs = GetCurrentUnixTimeMilliseconds();
 		{
 			std::lock_guard<std::mutex> lock(g_snapshotMutex);
@@ -2244,6 +2396,63 @@ namespace
 
 		std::unordered_map<std::string, size_t> markerIndexes;
 		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+
+#if !defined(MODLOADER_SERVER_BUILD)
+		if (TryUseDedicatedRemoteSnapshot(
+			gameState,
+			previousSnapshot,
+			reason,
+			trackedState.WorldName,
+			nextSnapshot.Generation,
+			nextSnapshot))
+		{
+			timing.Phase("dedicated_remote");
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO(
+					"Using dedicated server snapshot only: markers=%zu, connections=%zu, teleporters=%zu, players=%zu",
+					nextSnapshot.Markers.size(),
+					nextSnapshot.Connections.size(),
+					nextSnapshot.Teleporters.size(),
+					nextSnapshot.Players.size());
+			}
+
+			{
+				std::lock_guard<std::mutex> lock(g_snapshotMutex);
+				g_snapshot = nextSnapshot;
+			}
+
+			LogRuptureCycleIfNeeded(
+				nextSnapshot.RuptureCycle,
+				nextSnapshot.Generation,
+				nextSnapshot.Reason.c_str());
+
+			if (!isRealtimeRefresh)
+			{
+				LogSnapshotSummary(nextSnapshot);
+			}
+			else if (
+				nextSnapshot.Markers.size() != previousSnapshot.Markers.size()
+				|| nextSnapshot.Connections.size() != previousSnapshot.Connections.size()
+				|| nextSnapshot.Teleporters.size() != previousSnapshot.Teleporters.size()
+				|| nextSnapshot.Players.size() != previousSnapshot.Players.size())
+			{
+				LOG_INFO(
+					"Realtime cargo snapshot #%llu changed: markers=%zu, connections=%zu, teleporters=%zu, players=%zu",
+					static_cast<unsigned long long>(nextSnapshot.Generation),
+					nextSnapshot.Markers.size(),
+					nextSnapshot.Connections.size(),
+					nextSnapshot.Teleporters.size(),
+					nextSnapshot.Players.size());
+			}
+
+			timing.Finish(nextSnapshot);
+			return !nextSnapshot.Markers.empty()
+				|| !nextSnapshot.Teleporters.empty()
+				|| !nextSnapshot.Players.empty();
+		}
+#endif
+
 		const bool needsCustomNameLookup =
 			gameState
 			&& (gameState->PackageTransportReplicator != nullptr || gameState->TeleportReplicator != nullptr);
@@ -2257,6 +2466,7 @@ namespace
 			observedAtUnixMs,
 			customNameLookup,
 			markerIndexes);
+		timing.Phase("replicator");
 		if (ShouldLogLifecycle())
 		{
 			LOG_INFO("Cargo refresh '%s': replicator stage completed", nextSnapshot.Reason.c_str());
@@ -2264,26 +2474,31 @@ namespace
 		if (!isRealtimeRefresh || !nextSnapshot.HasPackageTransportReplicator)
 		{
 			CaptureActorFallback(world, nextSnapshot, markerIndexes);
+			timing.Phase("actor_fallback");
 			if (ShouldLogLifecycle())
 			{
 				LOG_INFO("Cargo refresh '%s': actor fallback stage completed", nextSnapshot.Reason.c_str());
 			}
 		}
 		CaptureTeleporters(world, nextSnapshot, gameState, customNameLookup);
+		timing.Phase("teleporters");
 		if (ShouldLogLifecycle())
 		{
 			LOG_INFO("Cargo refresh '%s': teleporter stage completed", nextSnapshot.Reason.c_str());
 		}
 		CapturePlayers(world, nextSnapshot);
+		timing.Phase("players");
 		if (ShouldLogLifecycle())
 		{
 			LOG_INFO("Cargo refresh '%s': player stage completed", nextSnapshot.Reason.c_str());
 		}
 		MergeRetainedConnections(nextSnapshot, previousSnapshot, observedAtUnixMs);
+		timing.Phase("merge_retained_connections");
 
 		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(world);
 		ApplyRuptureCycleObservationTimestamp(nextSnapshot.RuptureCycle);
 		StorePersistentRuptureCycleSnapshot(nextSnapshot.RuptureCycle);
+		timing.Phase("rupture");
 
 		nextSnapshot.SenderCount = 0;
 		nextSnapshot.ReceiverCount = 0;
@@ -2315,42 +2530,6 @@ namespace
 				nextSnapshot.ActorSenderCount);
 		}
 
-#if !defined(MODLOADER_SERVER_BUILD)
-		// On a dedicated-server client, prefer the authoritative snapshot received
-		// from the server plugin over the local runtime scan. The local scan on a
-		// dedicated client often yields incomplete data because the replication
-		// state is partial.
-		MapStateRuntime::Detail::CargoSnapshot remoteCargoSnapshot{};
-		if (MapExtensionClient::Sync::TryCopyRemoteCargoSnapshot(remoteCargoSnapshot))
-		{
-			// Preserve the generation counter and reason from the local refresh
-			// so the HTTP endpoint and log output remain consistent.
-			remoteCargoSnapshot.Generation = nextSnapshot.Generation;
-			remoteCargoSnapshot.Reason = nextSnapshot.Reason;
-			// Use remote rupture cycle if available, else keep whatever the local
-			// or remote-fallback already resolved.
-			if (!remoteCargoSnapshot.RuptureCycle.Available && nextSnapshot.RuptureCycle.Available)
-			{
-				remoteCargoSnapshot.RuptureCycle = nextSnapshot.RuptureCycle;
-			}
-			ApplyRuptureCycleObservationTimestamp(remoteCargoSnapshot.RuptureCycle);
-			StorePersistentRuptureCycleSnapshot(remoteCargoSnapshot.RuptureCycle);
-
-			if (ShouldLogLifecycle())
-			{
-				LOG_INFO(
-					"Using remote server snapshot: markers=%zu, connections=%zu, teleporters=%zu, players=%zu (local had markers=%zu)",
-					remoteCargoSnapshot.Markers.size(),
-					remoteCargoSnapshot.Connections.size(),
-					remoteCargoSnapshot.Teleporters.size(),
-					remoteCargoSnapshot.Players.size(),
-					nextSnapshot.Markers.size());
-			}
-
-			nextSnapshot = remoteCargoSnapshot;
-		}
-#endif
-
 		{
 			std::lock_guard<std::mutex> lock(g_snapshotMutex);
 			g_snapshot = nextSnapshot;
@@ -2379,6 +2558,7 @@ namespace
 				nextSnapshot.Teleporters.size(),
 				nextSnapshot.Players.size());
 		}
+		timing.Finish(nextSnapshot);
 		return !nextSnapshot.Markers.empty()
 			|| !nextSnapshot.Teleporters.empty()
 			|| !nextSnapshot.Players.empty();
@@ -2489,6 +2669,7 @@ namespace MapStateRuntime
 			g_lastWorldName.clear();
 			g_chimeraWorldReady = false;
 			g_lastCargoActorRefreshAtUnixMs = 0;
+			g_chimeraWorldDetectedAtUnixMs = 0;
 			g_requestedCustomNameEntityIds.clear();
 		}
 		ResetRuptureCycleState();
@@ -2540,6 +2721,26 @@ namespace MapStateRuntime
 #endif
 
 		const float refreshIntervalSeconds = GetRefreshIntervalSeconds();
+
+		// Suppress realtime refreshes during the post-WorldBeginPlay grace period.
+		// The Mass/Logistics/Building replication phase that immediately follows
+		// ChimeraMain begin-play is extremely heavy on the main thread. Running
+		// full actor scans and replicator reads during that window contributes to
+		// the stalls observed in StarRupture.log (DeltaTime 11.96 s) that lead to
+		// missed ACKs and ConnectionTimeout. Honor HTTP-triggered refreshes after
+		// the grace period only.
+		{
+			const int64_t nowMs = GetCurrentUnixTimeMilliseconds();
+			const int64_t detectedAt = g_chimeraWorldDetectedAtUnixMs;
+			if (detectedAt > 0 && nowMs - detectedAt < kPostWorldBeginPlayGraceMs)
+			{
+				// Reset accumulator so that the first real refresh fires promptly
+				// once the grace period expires, rather than immediately.
+				g_engineTickAccumulatorSeconds = 0.0f;
+				return;
+			}
+		}
+
 		if (const char* requestedReason = ConsumeRequestedCargoRefreshReason())
 		{
 			Detail::RefreshCargoSnapshot(trackedState.World, requestedReason);
@@ -2622,11 +2823,25 @@ namespace MapStateRuntime
 		}
 
 		// When EngineTick is running, auxiliary actor callbacks (teleporters, players)
-		// are already captured by the 500 ms tick scan. Skip the redundant refresh.
+		// are already captured by the periodic tick scan. Skip the redundant refresh.
 		if (!cargoActor && auxiliaryActor && g_engineTickSeen)
 		{
 			return;
 		}
+
+#if !defined(MODLOADER_SERVER_BUILD)
+		// In a dedicated-server session the server plugin sends authoritative
+		// snapshots via IPluginNetworkChannel. Once at least one server snapshot
+		// has been received, all local ActorBeginPlay refreshes are redundant:
+		// they trigger expensive actor scans on the main thread while the game is
+		// replicating actors and can cause the main-thread stalls (DeltaTime ~12 s)
+		// that lead to ConnectionTimeout. Skip them and let the next EngineTick
+		// request an updated snapshot from the server instead.
+		if (MapExtensionClient::RemoteCache::HasCargoSnapshot())
+		{
+			return;
+		}
+#endif
 
 		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
 		{
@@ -2674,6 +2889,7 @@ namespace MapStateRuntime
 				g_lastWorldName = safeName;
 				g_chimeraWorldReady = false;
 				g_lastCargoActorRefreshAtUnixMs = 0;
+				g_chimeraWorldDetectedAtUnixMs = GetCurrentUnixTimeMilliseconds();
 				g_requestedCustomNameEntityIds.clear();
 			}
 			g_engineTickAccumulatorSeconds = 0.0f;
