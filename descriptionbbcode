@@ -8,7 +8,7 @@ While the game is running, the plugin reads local game data and makes it availab
 
 The goal is simple: [b]make your world easier to read[/b] once your base and transport setup become harder to follow.
 
-[img]https://staticdelivery.nexusmods.com/mods/8632/images/91/91-1775688560-2055386903.png[/img]
+[img]https://staticdelivery.nexusmods.com/mods/8632/images/91/91-1776075854-1505186280.png[/img]
 [line]
 
 [size=4][b]Features[/b][/size]
@@ -43,6 +43,7 @@ If you are new to this kind of mod, the idea is very simple:
 [*]The [b]Mod Loader[/b] lets StarRupture load plugin mods[/*]
 [*]This plugin runs while your game is open[/*]
 [*]It exposes local data on your own PC[/*]
+[*]In dedicated-server play, the client and server builds of [b]MapExtension_Plugin[/b] exchange map and rupture data with each other[/*]
 [*][b]MapExtensionViewer.html[/b] reads that local data and displays it in your browser[/*]
 [/list]
 
@@ -70,10 +71,10 @@ The plugin works in both solo and multiplayer, but rupture data is not sourced t
 
 [list]
 [*][b]Solo / local-host:[/b] the plugin can read rupture data locally from the running game[/*]
-[*][b]Dedicated server:[/b] rupture updates in the browser timeline require the companion plugin [b]RuptureCycleToChat_Plugin[/b] on the dedicated server[/*]
+[*][b]Dedicated server:[/b] install the server build of [b]MapExtension_Plugin[/b] on the server so the client and server plugins can exchange map and rupture data[/*]
 [/list]
 
-The map and cargo features are client-side. Only dedicated-server rupture support depends on the extra server plugin.
+The map viewer runs on the client. In dedicated-server play, the client plugin communicates with the server plugin, and the server plugin sends map and rupture updates back to the client plugin.
 
 [line]
 
@@ -81,7 +82,7 @@ The map and cargo features are client-side. Only dedicated-server rupture suppor
 [list]
 [*][b][url=https://www.nexusmods.com/starrupture/mods/89]AlienX and Wilhelm's Mod Loader[/url][/b][/*]
 [*][b]MapExtension_Plugin[/b] installed on the client[/*]
-[*][b]Optional:[/b] [b]RuptureCycleToChat_Plugin[/b] on the dedicated server for rupture timeline updates in dedicated-server play[/*]
+[*][b]Optional for dedicated-server play:[/b] the server build of [b]MapExtension_Plugin[/b] installed in the server plugins folder[/*]
 [/list]
 
 [line]
@@ -101,7 +102,7 @@ The map and cargo features are client-side. Only dedicated-server rupture suppor
 [*]Keep the game running while you use the map viewer[/*]
 [/list]
 
-If you play on a dedicated server and want rupture-cycle updates in the timeline, install [b]RuptureCycleToChat_Plugin[/b] on that dedicated server as well.
+If you play on a dedicated server, install the server build of [b]MapExtension_Plugin[/b] in the server [b]Plugins[/b] folder as well so the client and server plugins can communicate with each other.
 
 [line]
 
@@ -144,7 +145,7 @@ RuptureCyclePrefix=[RUPTURE_CYCLE][/code]
 [*][b]Enabled[/b]: turns the plugin on or off[/*]
 [*][b]Port[/b]: local port used by the viewer to read plugin data[/*]
 [*][b]RefreshIntervalMs[/b]: how often the runtime data is refreshed[/*]
-[*][b]RuptureCyclePrefix[/b]: chat prefix expected from the dedicated-server rupture plugin[/*]
+[*][b]RuptureCyclePrefix[/b]: legacy chat prefix kept for compatibility with older rupture-cycle sources[/*]
 [/list]
 
 Most players will not need to change anything. The default settings are enough to use the mod.
@@ -188,7 +189,7 @@ Yes. [b]MapExtension_Plugin[/b] is installed on the client.
 
 [b]Do I need anything on a dedicated server?[/b]
 
-Only if you want rupture-cycle updates in dedicated-server play. In that case, the dedicated server needs [b]RuptureCycleToChat_Plugin[/b].
+Yes. For dedicated-server play, install the server build of [b]MapExtension_Plugin[/b] in the server [b]Plugins[/b] folder so the client and server plugins can exchange data.
 
 [b]Do I need to configure anything before using it?[/b]
 
