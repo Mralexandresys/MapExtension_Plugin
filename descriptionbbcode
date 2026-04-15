@@ -24,6 +24,15 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 
 [line]
 
+[size=4][b]Change Log v0.4[/b][/size]
+[list]
+[*]Optimized map rendering for a cleaner and smoother view[/*]
+[*]Dedicated server performance optimizations for smoother map updates[/*]
+[*]Made the rupture timeline more reliable and easier to follow[/*]
+[*]Improved rupture tracking stability in multiplayer sessions[/*]
+[*]Updated imminent rupture display to 2 minutes and added a drone disable icon[/*]
+[/list]
+
 [size=4][b]Change Log 0.3[/b][/size]
 [list]
 [*]Added a new map background[/*]
@@ -32,6 +41,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]Added map notes and custom annotations[/*]
 [*]Improved the map background and rupture timeline display[/*]
 [/list]
+
 
 [line]
 
