@@ -9,7 +9,8 @@ import type {
     RuptureTimelineTick,
 } from "../lib/types";
 
-const RUPTURE_INCOMING_MIN_WIDTH_PERCENT = 4.5;
+const RUPTURE_INCOMING_MIN_WIDTH_PERCENT = 2;
+const RUPTURE_INCOMING_SECONDS = 120;
 
 interface RuptureVisualPhase {
     key: RupturePhaseKey;
@@ -39,7 +40,7 @@ function getRuptureDurations(response: RuptureCycleResponse | null) {
     const cooling = timeline?.phase_seconds?.cooling ?? 60;
     const stabilizing = timeline?.phase_seconds?.stabilizing ?? 600;
     const rawStable = timeline?.phase_seconds?.stable ?? 2550;
-    const incoming = Math.min(15, Math.max(0, rawStable));
+    const incoming = Math.min(RUPTURE_INCOMING_SECONDS, Math.max(0, rawStable));
     const stable = Math.max(0, rawStable - incoming);
 
     return {

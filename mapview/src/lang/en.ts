@@ -68,6 +68,7 @@ export const en = {
     rupture: {
         title: "Rupture timeline",
         subtitle: "Timeline derived from server chat cycle messages.",
+        incomingDroneDisabledTooltip: "Construction drone disabled",
         noData: "No rupture cycle message detected yet.",
         noDataShort: "No data",
         currentPhase: "Current phase",

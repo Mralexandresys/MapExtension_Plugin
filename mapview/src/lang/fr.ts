@@ -67,6 +67,7 @@ export const fr = {
         title: "Timeline d'Arcadia",
         subtitle:
             "Timeline du cycle de rupture d'Arcadia, derivee des messages envoyes dans le chat serveur.",
+        incomingDroneDisabledTooltip: "Drone de construction desactive",
         noData: "Aucun message de cycle de rupture detecte pour le moment.",
         noDataShort: "Pas de donnees",
         currentPhase: "Phase actuelle",

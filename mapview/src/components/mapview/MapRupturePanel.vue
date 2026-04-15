@@ -1,5 +1,10 @@
 <script setup lang="ts">
+import droneProhibitedSvg from "../../assets/drone-prohibited-1-svgrepo-com.svg?raw";
 import type { MapRupturePanelModel } from "../../lib/types";
+
+const incomingDroneIconMarkup = droneProhibitedSvg
+    .replace("fill:#000000;", "fill:currentColor;")
+    .replace("<svg", '<svg class="rupture-legend-icon-svg"');
 
 defineProps<{
     panel: MapRupturePanelModel;
@@ -116,6 +121,13 @@ const emit = defineEmits<{
                             <span
                                 class="rupture-track-swatch"
                                 :class="phase.toneClass"
+                            ></span>
+                            <span
+                                v-if="phase.key === 'incoming'"
+                                class="rupture-legend-icon incoming"
+                                :title="panel.ui.rupture.incomingDroneDisabledTooltip"
+                                :aria-label="panel.ui.rupture.incomingDroneDisabledTooltip"
+                                v-html="incomingDroneIconMarkup"
                             ></span>
                             <strong>{{ phase.label }}</strong>
                         </span>
@@ -298,6 +310,26 @@ const emit = defineEmits<{
 .rupture-track-swatch.stabilizing{ background: rgba(229, 231, 235, 0.72); }
 .rupture-track-swatch.stable     { background: rgba(49, 196, 141, 0.84); }
 .rupture-track-swatch.incoming   { background: rgba(168, 85, 247, 0.88); }
+
+.rupture-legend-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: var(--muted);
+}
+
+.rupture-legend-item.active .rupture-legend-icon,
+.rupture-legend-icon.incoming {
+    color: rgba(196, 141, 255, 0.95);
+}
+
+.rupture-legend-icon :deep(.rupture-legend-icon-svg) {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
 
 .rupture-track-tick {
     position: absolute;
