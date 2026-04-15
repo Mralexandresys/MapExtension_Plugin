@@ -3,6 +3,11 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      modloader_tag:
+        description: "Optional StarRupture-Plugin-SDK tag to build against (example: release-2026.04.09-200640 or v1.2.0)"
+        required: false
+        default: ""
+        type: string
       plugin_version:
         description: "Plugin version suffix (example: v0.2)"
         required: true
@@ -32,10 +37,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          $release = gh api repos/AlienXAXS/StarRupture-Plugin-SDK/releases/latest | ConvertFrom-Json
-          $sdkTag = [string]$release.tag_name
+          $sdkTag = [string]'${{ inputs.modloader_tag }}'
+          $sdkTag = $sdkTag.Trim()
           if ([string]::IsNullOrWhiteSpace($sdkTag)) {
-            throw "Could not resolve the latest published StarRupture-Plugin-SDK release tag."
+            $release = gh api repos/AlienXAXS/StarRupture-Plugin-SDK/releases/latest | ConvertFrom-Json
+            $sdkTag = [string]$release.tag_name
+          }
+          if ([string]::IsNullOrWhiteSpace($sdkTag)) {
+            throw "Could not resolve a StarRupture-Plugin-SDK tag from modloader_tag or the latest published release."
           }
           if ($sdkTag.StartsWith("release-")) {
             $coreVersion = $sdkTag.Substring("release-".Length)
@@ -224,6 +233,7 @@ jobs:
           $isDraft = '${{ inputs.draft }}'
           $notes = @"
           Built from StarRupture-Plugin-SDK release: $sdkTag
+          Mod loader tag input: ${{ inputs.modloader_tag }}
           Plugin version input: ${{ inputs.plugin_version }}
           Build author: $buildAuthor
           "@
@@ -248,6 +258,7 @@ jobs:
         run: |
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "# Release created"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Plugin SDK release: `{0}`' -f '${{ steps.meta.outputs.SDK_TAG }}')
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Mod loader tag input: `{0}`' -f '${{ inputs.modloader_tag }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Plugin tag: `{0}`' -f '${{ steps.meta.outputs.PLUGIN_TAG }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Build author: `{0}`' -f '${{ steps.meta.outputs.BUILD_AUTHOR }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Draft: `{0}`' -f '${{ inputs.draft }}')
