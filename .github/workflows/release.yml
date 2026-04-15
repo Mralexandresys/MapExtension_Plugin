@@ -204,6 +204,9 @@ jobs:
 
           Copy-Item (Join-Path $repoRoot "build\Client Release\Plugins\MapExtension_Plugin.dll") (Join-Path $clientPluginsDir "MapExtension_Plugin.dll") -Force
           Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $clientStageRoot "MapExtensionViewer.html") -Force
+          if (Test-Path "mapview\dist\map-tiles") {
+            Copy-Item "mapview\dist\map-tiles" (Join-Path $clientStageRoot "map-tiles") -Recurse -Force
+          }
           Copy-Item (Join-Path $repoRoot "build\Server Release\Plugins\MapExtension_Plugin.dll") (Join-Path $serverPluginsDir "MapExtension_Plugin.dll") -Force
 
           $clientZipPath = Join-Path $env:GITHUB_WORKSPACE "MapExtension_Plugin-$tag-client.zip"

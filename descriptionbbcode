@@ -31,6 +31,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]Made the rupture timeline more reliable and easier to follow[/*]
 [*]Improved rupture tracking stability in multiplayer sessions[/*]
 [*]Updated imminent rupture display to 2 minutes and added a drone disable icon[/*]
+[*]The map viewer now comes with a map image folder that must stay next to the HTML file[/*]
 [/list]
 
 [size=4][b]Change Log 0.3[/b][/size]
@@ -107,7 +108,7 @@ The map viewer runs on the client. In dedicated-server play, the client plugin c
 [code]StarRupture/Binaries/Win64/Plugins/[/code]
 [/*]
 [*]Start the game once so the plugin can initialize and generate its config file[/*]
-[*]Place [b]MapExtensionViewer.html[/b] wherever you want on your PC[/*]
+[*]Place [b]MapExtensionViewer.html[/b] and the [b]map-tiles[/b] folder together wherever you want on your PC[/*]
 [*]Double-click [b]MapExtensionViewer.html[/b] to open it in your default browser[/*]
 [*]Keep the game running while you use the map viewer[/*]
 [/list]
@@ -121,10 +122,11 @@ If you play on a dedicated server, install the server build of [b]MapExtension_P
 [b]MapExtensionViewer.html[/b] is the browser page used by the mod.
 
 [list]
-[*]It can be stored [b]anywhere on your PC[/b][/*]
+[*]It can be stored [b]anywhere on your PC[/b] as long as the [b]map-tiles[/b] folder stays next to it[/*]
 [*]You can move it to your [b]Desktop[/b] for easier access[/*]
 [*]A simple [b]double-click[/b] opens it in your default browser[/*]
 [*]It does [b]not[/b] need to stay inside the game folder[/*]
+[*]The [b]map-tiles[/b] folder must stay beside [b]MapExtensionViewer.html[/b] so the map background can load correctly[/*]
 [*]The game must still be running so the page can read live data from the plugin[/*]
 [/list]
 
@@ -191,7 +193,7 @@ Yes. The viewer reads live data from the running game.
 
 [b]Do I need to open the HTML file from the game folder every time?[/b]
 
-No. You can place [b]MapExtensionViewer.html[/b] anywhere on your PC, including your Desktop.
+No. You can place [b]MapExtensionViewer.html[/b] anywhere on your PC, including your Desktop, as long as the [b]map-tiles[/b] folder stays next to it.
 
 [b]Is this a client-side mod?[/b]
 
@@ -237,10 +239,14 @@ After installation, your files should look similar to this:
 
 Anywhere on your PC
 |-- MapExtensionViewer.html
+`-- map-tiles/
+    `-- base_newmap_q70_2048/
 
 Example if you place it on your Desktop
 Desktop/
-`-- MapExtensionViewer.html[/code]
+|-- MapExtensionViewer.html
+`-- map-tiles/
+    `-- base_newmap_q70_2048/[/code]
 
 [list]
 [*]The Mod Loader files must be inside
@@ -249,5 +255,6 @@ Desktop/
 [*][b]MapExtension_Plugin.dll[/b] must be inside
 [code]StarRupture/Binaries/Win64/Plugins/[/code]
 [/*]
-[*][b]MapExtensionViewer.html[/b] can be stored anywhere, including your Desktop[/*]
+[*][b]MapExtensionViewer.html[/b] and the [b]map-tiles[/b] folder can be stored anywhere, including your Desktop[/*]
+[*]Keep the [b]map-tiles[/b] folder and its contents next to [b]MapExtensionViewer.html[/b][/*]
 [/list]
