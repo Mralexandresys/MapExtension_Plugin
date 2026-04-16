@@ -91,7 +91,7 @@ The map viewer runs on the client. In dedicated-server play, the client plugin c
 
 [size=4][b]Requirements[/b][/size]
 [list]
-[*][b][url=https://www.nexusmods.com/starrupture/mods/89]AlienX and Wilhelm's Mod Loader[/url][/b][/*]
+[*][b][url=https://www.nexusmods.com/starrupture/mods/89]AlienX's Mod Loader[/url][/b][/*]
 [*][b]MapExtension_Plugin[/b] installed on the client[/*]
 [*][b]Optional for dedicated-server play:[/b] the server build of [b]MapExtension_Plugin[/b] installed in the server plugins folder[/*]
 [/list]
@@ -100,7 +100,7 @@ The map viewer runs on the client. In dedicated-server play, the client plugin c
 
 [size=4][b]Installation[/b][/size]
 [list=1]
-[*]Install [b]AlienX and Wilhelm's Mod Loader[/b] first[/*]
+[*]Install [b]AlienX's Mod Loader[/b] first[/*]
 [*]Extract the Mod Loader into
 [code]StarRupture/Binaries/Win64/[/code]
 [/*]
@@ -217,7 +217,7 @@ This mod is already functional, but it is still evolving. Feedback, fixes, and c
 
 [size=4][b]Credits[/b][/size]
 [list]
-[*][b]AlienX and Wilhelm's Mod Loader[/b] for making plugin-based modding possible[/*]
+[*][b]AlienX's Mod Loader[/b] for making plugin-based modding possible[/*]
 [*][b]bithoarder[/b] for [b]StarRuptureMap[/b], used for the map background[/*]
 [*][b]Mralexandresys[/b] for [b]MapExtension_Plugin[/b][/*]
 [/list]
