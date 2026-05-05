@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOLUTION_PATH="$SCRIPT_DIR/MapExtension_Plugin.sln"
 VSWWHERE_PATH="/mnt/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
 DEFAULT_LOG_PATH="$SCRIPT_DIR/build_client.log"
-DEFAULT_SDK_ROOT="$SCRIPT_DIR/../StarRupture-Plugin-SDK"
+DEFAULT_SDK_ROOT="$SCRIPT_DIR/StarRupture-Plugin-SDK"
 
 usage() {
   cat <<'EOF'
@@ -151,13 +151,32 @@ if [[ ! -d "$SDK_ROOT" ]]; then
   exit 1
 fi
 
-if [[ ! -d "$SDK_ROOT/include" ]]; then
-  echo "SDK incomplet: $SDK_ROOT/include introuvable" >&2
+PLUGIN_SDK_SHARED_PROPS="$SDK_ROOT/Shared.props"
+PLUGIN_API_INCLUDE_DIR="$SDK_ROOT/include"
+STARRUPTURE_SDK_BASE_DIR="$SDK_ROOT/StarRupture SDK"
+
+if [[ ! -f "$PLUGIN_SDK_SHARED_PROPS" ]]; then
+  echo "Shared.props introuvable: $PLUGIN_SDK_SHARED_PROPS" >&2
   exit 1
 fi
 
-if [[ ! -d "$SDK_ROOT/StarRupture SDK" ]]; then
-  echo "SDK incomplet: $SDK_ROOT/StarRupture SDK introuvable" >&2
+if [[ ! -d "$PLUGIN_API_INCLUDE_DIR" ]]; then
+  echo "Dossier include API introuvable: $PLUGIN_API_INCLUDE_DIR" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PLUGIN_API_INCLUDE_DIR/plugin_interface.h" ]]; then
+  echo "plugin_interface.h introuvable dans: $PLUGIN_API_INCLUDE_DIR" >&2
+  exit 1
+fi
+
+if [[ ! -f "$PLUGIN_API_INCLUDE_DIR/plugin_network_helpers.h" ]]; then
+  echo "plugin_network_helpers.h introuvable dans: $PLUGIN_API_INCLUDE_DIR" >&2
+  exit 1
+fi
+
+if [[ ! -d "$STARRUPTURE_SDK_BASE_DIR/Client/SDK" ]]; then
+  echo "SDK client introuvable: $STARRUPTURE_SDK_BASE_DIR/Client/SDK" >&2
   exit 1
 fi
 
@@ -174,10 +193,15 @@ MSBUILD_PATH="$(find_msbuild)" || {
 SOLUTION_WIN_PATH="$(wslpath -w "$SOLUTION_PATH")"
 PLUGIN_ROOT_WIN_PATH="$(wslpath -w "$SCRIPT_DIR")"
 SDK_ROOT_WIN_PATH="$(wslpath -w "$SDK_ROOT")"
+PLUGIN_SDK_SHARED_PROPS_WIN_PATH="$(wslpath -w "$PLUGIN_SDK_SHARED_PROPS")"
+PLUGIN_API_INCLUDE_DIR_WIN_PATH="$(wslpath -w "$PLUGIN_API_INCLUDE_DIR")"
+STARRUPTURE_SDK_BASE_DIR_WIN_PATH="$(wslpath -w "$STARRUPTURE_SDK_BASE_DIR")"
 
 echo "Build de MapExtension_Plugin en ${CONFIGURATION}|x64"
 echo "MSBuild : $MSBUILD_PATH"
 echo "SDK : $SDK_ROOT"
+echo "API include : $PLUGIN_API_INCLUDE_DIR"
+echo "SDK base : $STARRUPTURE_SDK_BASE_DIR"
 
 BUILD_CMD=(
   "$MSBUILD_PATH"
@@ -189,6 +213,10 @@ BUILD_CMD=(
   /p:SolutionDir="$PLUGIN_ROOT_WIN_PATH\\"
   /p:RepoRootDir="$PLUGIN_ROOT_WIN_PATH\\"
   /p:PluginSdkRootDir="$SDK_ROOT_WIN_PATH\\"
+  /p:PluginSdkSharedProps="$PLUGIN_SDK_SHARED_PROPS_WIN_PATH"
+  /p:PluginApiIncludeDir="$PLUGIN_API_INCLUDE_DIR_WIN_PATH\\"
+  /p:StarRuptureSdkBaseDir="$STARRUPTURE_SDK_BASE_DIR_WIN_PATH\\"
+  /p:MapExtensionBuildMethod=modloader-ng
 )
 
 if [[ -n "$BUILD_TAG" ]]; then

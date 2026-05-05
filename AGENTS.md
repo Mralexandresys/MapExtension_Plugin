@@ -13,10 +13,11 @@
 - Keep the plugin focused on client-side map data, local HTTP endpoints, and rupture-cycle reconstruction.
 - Prefer the local `UCrEnviroWaveSubsystem` in solo/local sessions.
 - Keep chat parsing resilient to rich-text markup.
-- Do not edit generated SDK trees under `../StarRupture SDK/**` unless regeneration is intended.
+- Do not edit generated SDK trees under `StarRupture-Plugin-SDK/StarRupture SDK/**` unless regeneration is intended.
 
 ## Build and validation
-- If C++ files in this repo change, run `../build_client.sh debug --summary` or `../build_client.sh release --summary` from the root repo.
+- If C++ files in this repo change, run `./build_client.sh debug --summary` or `./build_client.sh release --summary` from this project repo.
+- If server-side C++ files change, run `./build_server.sh release --summary` from this project repo.
 - If only `mapview/` changes, do not rebuild the C++ plugin; run `npm run check` and `npm run build` inside `mapview/`.
-- After a client build, review `../summarize_build.sh client`.
+- After a client build, review `./summarize_build.sh client`.
 - Validate solo/local sessions without any server chat bridge.

@@ -12,8 +12,12 @@
 - `map_state_runtime.cpp`: public runtime facade used by the plugin entrypoints
 - `map_state_capture.cpp` / `map_state_capture.h`: world scanning, snapshot refresh, and gameplay callbacks
 - `map_state_http.cpp` / `map_state_http.h`: local HTTP server and endpoint routing
-- `map_state_json.cpp` / `map_state_json.h`: JSON serialization for `/health` and `/cargo`
+- `map_state_json.cpp` / `map_state_json.h`: JSON serialization for `/health`, `/cargo`, and `/rupture-cycle`
 - `map_state_types.h`: shared snapshot types and map projection constants
+- `client/map_sync_client.cpp` / `client/map_sync_client.h`: client-side snapshot requests and plugin-network handling
+- `client/map_state_remote_cache.cpp` / `client/map_state_remote_cache.h`: client cache for remote rupture/cargo snapshots
+- `server/map_sync_server.cpp` / `server/map_sync_server.h`: server-side snapshot capture and response streaming
+- `shared/map_sync_protocol.h`: shared packet definitions for client/server snapshot sync
 
 Keep the runtime split along these boundaries. Do not move HTTP or JSON formatting back into `map_state_runtime.cpp` unless the split is being intentionally reverted.
 
@@ -117,11 +121,13 @@ npm run check
 npm run build
 ```
 
-The production build is a single self-contained HTML file:
+The production build entry point is:
 
 ```text
 MapExtension_Plugin/mapview/dist/MapExtensionViewer.html
 ```
+
+Depending on the active map rendering mode, the build output can also include `mapview/dist/map-tiles/` assets alongside the HTML entry point.
 
 ## Packaging a release
 
@@ -135,6 +141,7 @@ MapExtension_Plugin/mapview/dist/MapExtensionViewer.html
 3. Create a client archive containing:
    - `build/Client Release/Plugins/MapExtension_Plugin.dll`
    - `mapview/dist/MapExtensionViewer.html`
+   - `mapview/dist/map-tiles/` if present in the build output
 4. Create a server archive containing:
    - `build/Server Release/Plugins/MapExtension_Plugin.dll`
 5. (Optional) add `README.md`, `README.fr.md`, `LICENSE`, notice files, and `licenses/` content alongside the binaries if you want a fuller release bundle.
@@ -158,14 +165,17 @@ The workflow:
 3. checks out `StarRupture-Plugin-SDK` on the same release tag into a local `sdk/` workspace path
 4. builds both the client and server plugin DLLs against that SDK checkout, then builds the `mapview` bundle with the `modloader-ng` path layout
 5. creates a client zip with the client DLL and `MapExtensionViewer.html`, plus a separate server zip with the server DLL
-6. creates a plugin tag in the format `ML-YYYY.MM.DD-HHMMSS-vX.Y`
+6. creates a plugin tag in the format `ML-<sdk-version>-vX.Y` (for example `ML-2026.04.09-200640-v0.2` or `ML-v1.2.0-v0.2`, depending on the selected SDK tag)
 7. publishes a GitHub release in the plugin repository
 
 ## Runtime contract
 
 - `GET /health`: status, world, generation, and entity counts
 - `GET /cargo`: current snapshot payload used by the frontend
+- `GET /rupture-cycle`: current rupture-cycle payload used by the frontend timeline
 
 `/cargo` remains the compatibility endpoint consumed by the current frontend even though the payload now includes cargo links, teleporters, and players.
+
+`/rupture-cycle` remains a separate endpoint consumed by the frontend for the timeline view.
 
 The frontend endpoint is editable in the UI, but defaults to `http://127.0.0.1:9000`.
