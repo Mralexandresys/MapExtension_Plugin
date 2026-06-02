@@ -104,6 +104,13 @@ From the repository root:
 ./build_server.sh release --build-method modloader-ng
 ```
 
+To inspect the latest build logs manually:
+
+```bash
+./summarize_build.sh client
+./summarize_build.sh server
+```
+
 Optional with `modloader-local` only:
 
 ```bash

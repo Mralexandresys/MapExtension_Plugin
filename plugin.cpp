@@ -24,12 +24,23 @@ const IPluginSelf* GetPluginSelf() { return g_pluginSelf; }
 #define MODLOADER_BUILD_AUTHOR "Mralexandresys"
 #endif
 
+#if defined(MODLOADER_CLIENT_BUILD) && defined(MODLOADER_SERVER_BUILD)
+#error "Only one of MODLOADER_CLIENT_BUILD or MODLOADER_SERVER_BUILD can be defined"
+#elif defined(MODLOADER_CLIENT_BUILD)
+#define MAPEXTENSION_PLUGIN_TARGET PLUGIN_TARGET_CLIENT
+#elif defined(MODLOADER_SERVER_BUILD)
+#define MAPEXTENSION_PLUGIN_TARGET PLUGIN_TARGET_SERVER
+#else
+#error "MapExtension_Plugin must be built as a client or server plugin"
+#endif
+
 static PluginInfo s_pluginInfo = {
 	"MapExtension_Plugin",
 	MODLOADER_BUILD_TAG,
 	MODLOADER_BUILD_AUTHOR,
 	"Exposes StarRupture map data, cargo links, teleporters, and players over local HTTP",
-	PLUGIN_INTERFACE_VERSION
+	PLUGIN_INTERFACE_VERSION,
+	MAPEXTENSION_PLUGIN_TARGET
 };
 
 extern "C" {

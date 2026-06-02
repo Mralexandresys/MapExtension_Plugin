@@ -257,10 +257,10 @@ if $WRITE_LOG; then
 
   if $SHOW_SUMMARY; then
     echo
-    if [[ -x "$SCRIPT_DIR/../summarize_build.sh" ]]; then
-      "$SCRIPT_DIR/../summarize_build.sh" "$LOG_PATH"
+    if [[ -x "$SCRIPT_DIR/summarize_build.sh" ]]; then
+      "$SCRIPT_DIR/summarize_build.sh" "$LOG_PATH"
     else
-      echo "summarize_build.sh introuvable dans le repo parent; resume ignore." >&2
+      echo "summarize_build.sh introuvable dans le repo; resume ignore." >&2
     fi
   fi
 
