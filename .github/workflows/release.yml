@@ -80,6 +80,7 @@ jobs:
 
           "SDK_TAG=$sdkTag" >> $env:GITHUB_OUTPUT
           "PLUGIN_TAG=$pluginTag" >> $env:GITHUB_OUTPUT
+          "PLUGIN_VERSION=$pluginVersion" >> $env:GITHUB_OUTPUT
           "BUILD_AUTHOR=$trimmedAuthor" >> $env:GITHUB_OUTPUT
 
       - name: Checkout MapExtension_Plugin
@@ -188,9 +189,13 @@ jobs:
         shell: pwsh
         working-directory: plugin
         run: |
-          $tag = "${{ steps.meta.outputs.PLUGIN_TAG }}"
-          $repoRoot = (Resolve-Path .).Path
-          $packageRoot = Join-Path $env:GITHUB_WORKSPACE "package"
+          $tag           = "${{ steps.meta.outputs.PLUGIN_TAG }}"
+          $pluginVersion = "${{ steps.meta.outputs.PLUGIN_VERSION }}"
+          $repo          = "${{ github.repository }}"
+          $repoRoot      = (Resolve-Path .).Path
+          $packageRoot   = Join-Path $env:GITHUB_WORKSPACE "package"
+          $ws            = $env:GITHUB_WORKSPACE
+
           $clientStageRoot = Join-Path $packageRoot "MapExtension_Plugin-client"
           $clientPluginsDir = Join-Path $clientStageRoot "Plugins"
           $serverStageRoot = Join-Path $packageRoot "MapExtension_Plugin-server"
@@ -202,6 +207,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $clientPluginsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $serverPluginsDir | Out-Null
 
+          # ---- existing assets (unchanged) ----
           Copy-Item (Join-Path $repoRoot "build\Client Release\Plugins\MapExtension_Plugin.dll") (Join-Path $clientPluginsDir "MapExtension_Plugin.dll") -Force
           Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $clientStageRoot "MapExtensionViewer.html") -Force
           if (Test-Path "mapview\dist\map-tiles") {
@@ -209,20 +215,46 @@ jobs:
           }
           Copy-Item (Join-Path $repoRoot "build\Server Release\Plugins\MapExtension_Plugin.dll") (Join-Path $serverPluginsDir "MapExtension_Plugin.dll") -Force
 
-          $clientZipPath = Join-Path $env:GITHUB_WORKSPACE "MapExtension_Plugin-$tag-client.zip"
-          $serverZipPath = Join-Path $env:GITHUB_WORKSPACE "MapExtension_Plugin-$tag-server.zip"
+          $clientZipPath = Join-Path $ws "MapExtension_Plugin-$tag-client.zip"
+          $serverZipPath = Join-Path $ws "MapExtension_Plugin-$tag-server.zip"
 
-          if (Test-Path $clientZipPath) {
-            Remove-Item $clientZipPath -Force
-          }
-          if (Test-Path $serverZipPath) {
-            Remove-Item $serverZipPath -Force
-          }
+          if (Test-Path $clientZipPath) { Remove-Item $clientZipPath -Force }
+          if (Test-Path $serverZipPath) { Remove-Item $serverZipPath -Force }
           Compress-Archive -Path "$clientStageRoot\*" -DestinationPath $clientZipPath
           Compress-Archive -Path "$serverStageRoot\*" -DestinationPath $serverZipPath
 
+          # ---- NEW: bare client DLL for auto-update ----
+          $bareDllPath = Join-Path $ws "MapExtension_Plugin-Client.dll"
+          Copy-Item (Join-Path $repoRoot "build\Client Release\Plugins\MapExtension_Plugin.dll") $bareDllPath -Force
+          Write-Host "Bare client DLL: $bareDllPath"
+
+          # ---- NEW: client-manifest.json for auto-update ----
+          # Read interface version range from the checked-out Plugin SDK header.
+          $header   = Get-Content (Join-Path $env:GITHUB_WORKSPACE "sdk\include\plugin_interface.h") -Raw
+          $matchMin = [regex]::Match($header, '#define\s+PLUGIN_INTERFACE_VERSION_MIN\s+(\d+)')
+          $matchMax = [regex]::Match($header, '#define\s+PLUGIN_INTERFACE_VERSION_MAX\s+(\d+)')
+          if (-not $matchMin.Success) { throw "Could not find PLUGIN_INTERFACE_VERSION_MIN in plugin_interface.h" }
+          if (-not $matchMax.Success) { throw "Could not find PLUGIN_INTERFACE_VERSION_MAX in plugin_interface.h" }
+          $ifaceMin = [int]$matchMin.Groups[1].Value
+          $ifaceMax = [int]$matchMax.Groups[1].Value
+          Write-Host "Interface version range: [$ifaceMin, $ifaceMax]"
+
+          $manifest = [ordered]@{
+            plugin_name           = "MapExtension_Plugin"
+            version               = $pluginVersion
+            interface_version_min = $ifaceMin
+            interface_version_max = $ifaceMax
+            download_url          = "https://github.com/$repo/releases/download/$tag/MapExtension_Plugin-Client.dll"
+          }
+          $manifestPath = Join-Path $ws "MapExtension_Plugin-client-manifest.json"
+          $manifest | ConvertTo-Json -Depth 1 | Out-File $manifestPath -Encoding utf8NoBOM
+          Write-Host "Generated manifest:"
+          Get-Content $manifestPath
+
           "CLIENT_ZIP_PATH=$clientZipPath" >> $env:GITHUB_OUTPUT
           "SERVER_ZIP_PATH=$serverZipPath" >> $env:GITHUB_OUTPUT
+          "BARE_DLL_PATH=$bareDllPath" >> $env:GITHUB_OUTPUT
+          "MANIFEST_PATH=$manifestPath" >> $env:GITHUB_OUTPUT
 
       - name: Create GitHub release
         if: ${{ success() }}
@@ -230,10 +262,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = "${{ steps.meta.outputs.PLUGIN_TAG }}"
-          $sdkTag = "${{ steps.meta.outputs.SDK_TAG }}"
+          $tag         = "${{ steps.meta.outputs.PLUGIN_TAG }}"
+          $sdkTag      = "${{ steps.meta.outputs.SDK_TAG }}"
           $buildAuthor = "${{ steps.meta.outputs.BUILD_AUTHOR }}"
-          $isDraft = '${{ inputs.draft }}'
+          $isDraft     = '${{ inputs.draft }}'
           $notes = @"
           Built from StarRupture-Plugin-SDK release: $sdkTag
           Mod loader tag input: ${{ inputs.modloader_tag }}
@@ -245,6 +277,8 @@ jobs:
             'release', 'create', $tag,
             "${{ steps.package.outputs.CLIENT_ZIP_PATH }}",
             "${{ steps.package.outputs.SERVER_ZIP_PATH }}",
+            "${{ steps.package.outputs.BARE_DLL_PATH }}",
+            "${{ steps.package.outputs.MANIFEST_PATH }}",
             '--repo', '${{ github.repository }}',
             '--title', "MapExtension_Plugin $tag",
             '--notes', $notes
@@ -263,7 +297,10 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Plugin SDK release: `{0}`' -f '${{ steps.meta.outputs.SDK_TAG }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Mod loader tag input: `{0}`' -f '${{ inputs.modloader_tag }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Plugin tag: `{0}`' -f '${{ steps.meta.outputs.PLUGIN_TAG }}')
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Plugin version: `{0}`' -f '${{ steps.meta.outputs.PLUGIN_VERSION }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Build author: `{0}`' -f '${{ steps.meta.outputs.BUILD_AUTHOR }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Draft: `{0}`' -f '${{ inputs.draft }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Client zip: `{0}`' -f '${{ steps.package.outputs.CLIENT_ZIP_PATH }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Server zip: `{0}`' -f '${{ steps.package.outputs.SERVER_ZIP_PATH }}')
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Bare client DLL: `{0}`' -f '${{ steps.package.outputs.BARE_DLL_PATH }}')
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Auto-update manifest: `{0}`' -f '${{ steps.package.outputs.MANIFEST_PATH }}')
