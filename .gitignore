@@ -36,3 +36,6 @@ StarRupture-Plugin-SDK/
 # Misc editor/system files
 .DS_Store
 Thumbs.db
+
+# Local working notes
+*.local

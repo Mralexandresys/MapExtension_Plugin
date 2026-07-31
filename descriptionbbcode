@@ -24,6 +24,15 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 
 [line]
 
+[size=4][b]Change Log v0.5[/b][/size]
+[list]
+[*]The plugin now updates itself through the Mod Loader when installed from the client archive[/*]
+[*]The map viewer warns you when it is out of date and gives you a direct download link[/*]
+[*]More reliable rupture timeline: it reacts to phase changes right away and recovers on its own after loading a world[/*]
+[*]Lower overhead while the rupture timeline is displayed[/*]
+[*]Removed the obsolete rupture-cycle chat settings from the config file[/*]
+[/list]
+
 [size=4][b]Change Log v0.4[/b][/size]
 [list]
 [*]Optimized map rendering for a cleaner and smoother view[/*]
