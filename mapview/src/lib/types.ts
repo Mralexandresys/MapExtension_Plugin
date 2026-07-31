@@ -99,6 +99,14 @@ export interface CargoResponse {
     players: Player[];
 }
 
+export interface ViewerUpdateInfo {
+    /** Absent on local development builds of the plugin. */
+    download_url?: string;
+    /** Absent on local development builds of the plugin. */
+    release_url?: string;
+    mod_page_url?: string;
+}
+
 export interface HealthResponse {
     ok?: boolean;
     plugin?: string;
@@ -108,6 +116,10 @@ export interface HealthResponse {
     marker_count: number;
     teleporter_count?: number;
     player_count?: number;
+    /** Optional: older plugins do not send these viewer-update fields. */
+    plugin_version?: string;
+    viewer_contract_version?: number;
+    viewer_update?: ViewerUpdateInfo;
 }
 
 export type SelectedEntity =
@@ -287,6 +299,15 @@ export interface MapCanvasToolbarModel {
     canEnableFocusMode: boolean;
     focusMode: boolean;
     filtersOpen: boolean;
+}
+
+export interface MapViewerUpdateDialogModel {
+    open: boolean;
+    ui: Messages;
+    pluginVersion: string;
+    downloadUrl: string;
+    releaseUrl: string;
+    modPageUrl: string;
 }
 
 // ── User Annotations ──────────────────────────────────────────────────────────

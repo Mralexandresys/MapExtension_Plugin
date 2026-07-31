@@ -126,6 +126,10 @@ namespace MapStateRuntime
 
 	void UnregisterCallbacks()
 	{
+		// Remove the rupture-cycle delegate splices first: they live in the
+		// engine's InvocationList and must be gone before the DLL is unloaded.
+		Detail::ShutdownRuptureCycleDelegateHooks();
+
 		IPluginHooks* hooks = GetHooks();
 		if (hooks && g_registered)
 		{

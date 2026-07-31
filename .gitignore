@@ -30,6 +30,9 @@ mapview/dist/
 mapview/.vite/
 mapview/.eslintcache
 
+# Local SDK checkout
+StarRupture-Plugin-SDK/
+
 # Misc editor/system files
 .DS_Store
 Thumbs.db

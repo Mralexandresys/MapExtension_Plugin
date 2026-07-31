@@ -31,27 +31,22 @@ Keep the runtime split along these boundaries. Do not move HTTP or JSON formatti
 ## Prerequisites
 
 - Visual Studio 2022 (17.8 or newer) with the Desktop development with C++ workload and the Windows 10 SDK.
-- One of the following SDK layouts:
-  - `modloader-local`: local `StarRupture-ModLoader` tree with `Version_Mod_Loader/plugins/`, `Shared.props`, and `StarRupture SDK/`
-  - `modloader-ng`: `StarRupture-Plugin-SDK` with `include/`, `Shared.props`, and `StarRupture SDK/`
-- Node.js 18 LTS (or newer) and npm for the `mapview` build; run `node --version` before working to ensure you are not on an unsupported runtime.
+- SDK layout: `StarRupture-Plugin-SDK` with `include/`, `Shared.props`, and `StarRupture SDK/`
+- Node.js 20.19.0 or newer, or Node.js 22.12.0 or newer, and npm for the `mapview` build; run `node --version` before working to ensure you are not on an unsupported runtime.
 
 ## Plugin build
 
 1. Open `MapExtension_Plugin.sln` in Visual Studio 2022.
-2. Select `Client Debug|x64`, `Client Release|x64`, `Server Debug|x64`, or `Server Release|x64`.
+2. Select `Client Debug|x64`, `Client Release|x64`, or `Server Release|x64`.
 3. Build `MapExtension_Plugin`.
 
-The project supports two path models:
+Use only `Server Release|x64` for server builds so the output matches the packaging flow.
 
-- `modloader-ng`
-  - `PluginSdkSharedProps=..\StarRupture-Plugin-SDK\Shared.props`
-  - `PluginApiIncludeDir=..\StarRupture-Plugin-SDK\include\`
-  - `StarRuptureSdkBaseDir=..\StarRupture-Plugin-SDK\StarRupture SDK\`
-- `modloader-local`
-  - `PluginSdkSharedProps=..\Shared.props`
-  - `PluginApiIncludeDir=..\Version_Mod_Loader\plugins\`
-  - `StarRuptureSdkBaseDir=..\StarRupture SDK\`
+The project resolves these SDK paths:
+
+- `PluginSdkSharedProps=..\StarRupture-Plugin-SDK\Shared.props`
+- `PluginApiIncludeDir=..\StarRupture-Plugin-SDK\include\`
+- `StarRuptureSdkBaseDir=..\StarRupture-Plugin-SDK\StarRupture SDK\`
 
 The helper scripts at the repository root set these properties for you.
 
@@ -63,16 +58,16 @@ The DLL is written to `build\\<Configuration>\\Plugins\\MapExtension_Plugin.dll`
 
 - override the preprocessor definition in Visual Studio: **Project Properties → C/C++ → Preprocessor → Preprocessor Definitions**.
 - or pass MSBuild properties from the helper script:
-  - `../build_client.sh release --build-tag "ML-2026.04.04-214044-v0.2" --build-author "Mralexandresys"`
+  - `./build_client.sh release --build-tag "ML-2026.04.04-214044-v0.2" --build-author "Mralexandresys"`
 - or call MSBuild directly with properties such as `/p:ModLoaderBuildTag=ML-2026.04.04-214044-v0.2 /p:ModLoaderBuildAuthor=Mralexandresys`.
 
 If the tag macro is not set, builds fall back to `"dev"`. If the author macro is not set, builds fall back to `"Mralexandresys"`.
 
 ## Standalone developer workflow
 
-`MapExtension_Plugin` supports both a standalone public-SDK workflow and a local modloader-tree workflow.
+`MapExtension_Plugin` uses a standalone public-SDK workflow.
 
-Expected checkout layout for `modloader-ng`:
+Expected checkout layout:
 
 ```text
 workspace/
@@ -85,9 +80,7 @@ Equivalent layouts are supported as long as the MSBuild include/props/SDK proper
 Workflow:
 
 1. Clone `MapExtension_Plugin`.
-2. Choose a build method:
-   - `modloader-ng`: clone `StarRupture-Plugin-SDK` next to it
-   - `modloader-local`: place `MapExtension_Plugin` inside the `StarRupture-ModLoader` workspace
+2. Clone `StarRupture-Plugin-SDK` next to it.
 3. Open `MapExtension_Plugin/MapExtension_Plugin.sln`.
 4. Build the desired client or server configuration.
 
@@ -98,10 +91,8 @@ No manual edit of a parent solution is required if you use the helper scripts.
 From the repository root:
 
 ```bash
-./build_client.sh release --build-method modloader-local
-./build_client.sh release --build-method modloader-ng
-./build_server.sh release --build-method modloader-local
-./build_server.sh release --build-method modloader-ng
+./build_client.sh release
+./build_server.sh release
 ```
 
 To inspect the latest build logs manually:
@@ -109,13 +100,6 @@ To inspect the latest build logs manually:
 ```bash
 ./summarize_build.sh client
 ./summarize_build.sh server
-```
-
-Optional with `modloader-local` only:
-
-```bash
-./build_client.sh release --build-method modloader-local --sdk-source local
-./build_server.sh release --build-method modloader-local --sdk-source local
 ```
 
 ## Frontend build
@@ -141,19 +125,19 @@ Depending on the active map rendering mode, the build output can also include `m
 1. Set `MODLOADER_BUILD_TAG` to the version you want to publish and, if needed, `MODLOADER_BUILD_AUTHOR` to the release author (see above), then build both `Client Release|x64` and `Server Release|x64` so that these files are produced:
    - `build/Client Release/Plugins/MapExtension_Plugin.dll`
    - `build/Server Release/Plugins/MapExtension_Plugin.dll`
-   - For public SDK packaging, prefer `../build_client.sh release --build-method modloader-ng`.
-   - For local modloader-tree validation, use `../build_client.sh release --build-method modloader-local`.
-   - Build the server DLL with the matching `../build_server.sh release --build-method ...` command.
-2. Move to `mapview/`, ensure Node.js ≥18 is active, then run `npm install && npm run check && npm run build`. The bundle lands in `mapview/dist/MapExtensionViewer.html`.
+   - Build the client DLL with `./build_client.sh release` and the server DLL with `./build_server.sh release`.
+2. Move to `mapview/`, ensure Node.js 20.19.0+ or 22.12.0+ is active, then run `npm install && npm run check && npm run build`. The bundle lands in `mapview/dist/MapExtensionViewer.html`.
 3. Create a client archive containing:
    - `build/Client Release/Plugins/MapExtension_Plugin.dll`
+   - `Plugins/MapExtension_Plugin.json`, the update sidecar whose only field is `manifest_url` (see the GitHub Actions release section below); omit it only if the archive is not meant to receive automatic updates
    - `mapview/dist/MapExtensionViewer.html`
    - `mapview/dist/map-tiles/` if present in the build output
-4. Create a server archive containing:
+4. Create a viewer-only archive containing `mapview/dist/MapExtensionViewer.html` and `mapview/dist/map-tiles/`. This is what the in-app update dialog links to, so it must be named `MapExtension_Plugin-<tag>-viewer.zip`.
+5. Create a server archive containing:
    - `build/Server Release/Plugins/MapExtension_Plugin.dll`
-5. (Optional) add `README.md`, `README.fr.md`, `LICENSE`, notice files, and `licenses/` content alongside the binaries if you want a fuller release bundle.
-6. (Optional) include a sample `Plugins/config/MapExtension_Plugin.ini` if you want to ship defaults with instructions.
-7. Verify that no files from `.gitignore` leaked into the packages, then sign or checksum the archives before publishing them.
+6. (Optional) add `README.md`, `README.fr.md`, `LICENSE`, notice files, and `licenses/` content alongside the binaries if you want a fuller release bundle.
+7. (Optional) include a sample `Plugins/config/MapExtension_Plugin.ini` if you want to ship defaults with instructions.
+8. Verify that no files from `.gitignore` leaked into the packages, then sign or checksum the archives before publishing them.
 
 ## GitHub Actions release
 
@@ -161,19 +145,29 @@ Depending on the active map rendering mode, the build output can also include `m
 
 1. Open **Actions** in the `MapExtension_Plugin` repository.
 2. Run the `Release` workflow.
-3. Provide `plugin_version` such as `v0.2`.
-4. Optionally provide `build_author`. If left empty, the workflow uses the GitHub user who started it.
-5. Choose whether the GitHub release should be created as a draft.
+3. Optionally provide `modloader_tag` to build against a specific `StarRupture-Plugin-SDK` tag. If empty, the workflow uses the latest published SDK release.
+4. Provide `plugin_version` such as `v0.2`.
+5. Optionally provide `build_author`. If left empty, the workflow uses the GitHub user who started it.
+6. Choose whether the GitHub release should be created as a draft.
 
 The workflow:
 
 1. fetches the latest published release tag from `AlienXAXS/StarRupture-Plugin-SDK`
 2. checks out `MapExtension_Plugin` into a local `plugin/` workspace path
 3. checks out `StarRupture-Plugin-SDK` on the same release tag into a local `sdk/` workspace path
-4. builds both the client and server plugin DLLs against that SDK checkout, then builds the `mapview` bundle with the `modloader-ng` path layout
-5. creates a client zip with the client DLL and `MapExtensionViewer.html`, plus a separate server zip with the server DLL
-6. creates a plugin tag in the format `ML-<sdk-version>-vX.Y` (for example `ML-2026.04.09-200640-v0.2` or `ML-v1.2.0-v0.2`, depending on the selected SDK tag)
-7. publishes a GitHub release in the plugin repository
+4. builds both the client and server plugin DLLs against that SDK checkout, then builds the `mapview` bundle
+5. creates a client zip with the client DLL, `MapExtensionViewer.html`, and `Plugins/MapExtension_Plugin.json` sidecar whose only field is `manifest_url`; `.pdb` files are included when available
+6. publishes `MapExtension_Plugin-client-manifest.json` and a direct client DLL asset for the modloader auto-updater
+7. creates a separate server zip with the server DLL
+8. creates a viewer-only zip `MapExtension_Plugin-<tag>-viewer.zip` with `MapExtensionViewer.html` and `map-tiles/`, which is the asset the viewer update dialog points users to
+9. creates a plugin tag in the format `ML-<sdk-version>-vX.Y` (for example `ML-2026.04.09-200640-v0.2` or `ML-v1.2.0-v0.2`, depending on the selected SDK tag)
+10. publishes a GitHub release in the plugin repository
+
+The modloader auto-updater replaces `MapExtension_Plugin.dll` only. `MapExtensionViewer.html` and `map-tiles/` live outside the game folder and are never updated, so any change to the `/cargo`, `/health`, or `/rupture-cycle` payload shape must stay backward compatible with an older viewer, or bump the viewer contract version described below so the viewer prompts the user to download the viewer zip.
+
+The server build ships no sidecar and is not auto-updated. Changes to `shared/map_sync_protocol.h` therefore have to tolerate a client and a server on different versions, or be released with an explicit upgrade note for server admins.
+
+`interface_version_min`/`interface_version_max` in the manifest are read from `PLUGIN_INTERFACE_VERSION_MIN`/`PLUGIN_INTERFACE_VERSION_MAX` in the SDK header, matching the SDK's reference workflow. The loader only checks that this range overlaps its own, so the published range is wider than the single `PLUGIN_INTERFACE_VERSION` the DLL actually declares.
 
 ## Runtime contract
 
@@ -186,3 +180,20 @@ The workflow:
 `/rupture-cycle` remains a separate endpoint consumed by the frontend for the timeline view.
 
 The frontend endpoint is editable in the UI, but defaults to `http://127.0.0.1:9000`.
+
+## Viewer contract version
+
+Because the auto-updater replaces `MapExtension_Plugin.dll` only, a recent plugin can end up serving payloads to an older `MapExtensionViewer.html`. `/health` therefore also returns:
+
+- `plugin_version`: the build tag baked in through `/p:ModLoaderBuildTag`
+- `viewer_contract_version`: `kViewerContractVersion` in `map_state_json.cpp`
+- `viewer_update`: `mod_page_url`, plus `release_url` and `download_url` on published builds
+
+The viewer compares `viewer_contract_version` against `VIEWER_CONTRACT_VERSION` in `mapview/src/lib/viewerContract.ts` and shows an update dialog when the plugin reports a higher value.
+
+Rules:
+
+- Bump `kViewerContractVersion` and `VIEWER_CONTRACT_VERSION` together, in the same change, whenever a payload change breaks older viewers (removed or renamed fields, changed semantics, changed coordinate projection).
+- Do not bump for purely additive, backward-compatible fields, or every user gets an update prompt for nothing.
+- The plugin builds the download URL, not the viewer. The viewer that shows the prompt is by definition the outdated one, so it must not carry a hardcoded URL pattern. `MapExtension_Plugin-<tag>-viewer.zip` in `.github/workflows/release.yml` and `BuildViewerUpdateJson` in `map_state_json.cpp` must stay in sync.
+- Local builds define `MAPEXTENSION_LOCAL_BUILD` through `PropertySheet.props` and advertise no download URL, since their fallback tag has no published assets.

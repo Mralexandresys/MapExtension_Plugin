@@ -32,6 +32,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #ifdef min
 #undef min
@@ -95,8 +96,49 @@ namespace
 	std::string g_lastRuptureCycleObservedSignature;
 	bool g_lastRuptureCycleObservedSignatureValid = false;
 	int64_t g_lastRuptureCycleObservedAtUnixMs = 0;
+	bool g_objectWalkerWaveFallbackLogged = false;
 	std::atomic<bool> g_httpCargoRefreshRequested = false;
 	std::atomic<int64_t> g_lastHttpCargoRefreshRequestAtUnixMs = 0;
+
+	// Resolved CrEnviroWaveSubsystem for the tracked world. Shared by the
+	// rupture-cycle read path and the delegate hook path so neither pays for a
+	// ProcessEvent (GetWorldSubsystem) or a GObjects walk more than necessary.
+	// Invalidated on world end play, world change and engine shutdown.
+	struct WaveSubsystemCacheState final
+	{
+		SDK::UWorld* World = nullptr;
+		SDK::UCrEnviroWaveSubsystem* Subsystem = nullptr;
+		int64_t NextResolveAttemptAtUnixMs = 0;
+		int64_t NextObjectWalkerAttemptAtUnixMs = 0;
+	};
+	std::mutex g_waveSubsystemCacheMutex;
+	WaveSubsystemCacheState g_waveSubsystemCache{};
+	// Backoff after a failed resolution: GetWorldSubsystem goes through
+	// ProcessEvent, so it must not run once per frame in a world where the
+	// subsystem legitimately does not exist.
+	constexpr int64_t kWaveSubsystemResolveRetryIntervalMs = 1000;
+	// The SDK documents FindObjectsByClassNameInto as expensive (walks GObjects,
+	// tens of thousands of entries) and requires callers to cache results.
+	constexpr int64_t kWaveSubsystemObjectWalkerRetryIntervalMs = 10000;
+
+#if defined(PLUGIN_INTERFACE_VERSION_MAX) && PLUGIN_INTERFACE_VERSION_MAX >= 47
+	struct RuptureCycleDelegateHooks final
+	{
+		SDK::UWorld* World = nullptr;
+		SDK::UCrEnviroWaveSubsystem* WaveSubsystem = nullptr;
+		DelegateHookHandle WaveStarted = 0;
+		DelegateHookHandle FadeoutSubstageChanged = 0;
+		DelegateHookHandle GrowbackSubstageChanged = 0;
+		DelegateHookHandle PreWaveSubstageChanged = 0;
+		bool Installed = false;
+		int64_t NextAttemptAtUnixMs = 0;
+	};
+	std::mutex g_ruptureCycleDelegateHooksMutex;
+	RuptureCycleDelegateHooks g_ruptureCycleDelegateHooks{};
+	bool g_ruptureCycleDelegateUnavailableLogged = false;
+	bool g_ruptureCycleDelegateHookFailureLogged = false;
+	constexpr int64_t kRuptureCycleDelegateHookRetryIntervalMs = 5000;
+#endif
 
 	bool ShouldLogLifecycle()
 	{
@@ -600,19 +642,161 @@ namespace
 		return false;
 	}
 
+	SDK::UCrEnviroWaveSubsystem* TryFindWaveSubsystemWithObjectWalker(
+		SDK::UWorld* world,
+		SDK::UClass* subsystemClass)
+	{
+#if defined(PLUGIN_INTERFACE_VERSION_MAX) && PLUGIN_INTERFACE_VERSION_MAX >= 47
+		if (!world || !subsystemClass)
+		{
+			return nullptr;
+		}
+
+		IPluginHooks* hooks = GetHooks();
+		if (!hooks || !hooks->ObjectWalker ||
+			!hooks->ObjectWalker->IsReady ||
+			!hooks->ObjectWalker->FindObjectsByClassNameInto ||
+			!hooks->ObjectWalker->IsReady())
+		{
+			return nullptr;
+		}
+
+		constexpr int kInitialCapacity = 8;
+		std::vector<PluginObjectInfo> objects(kInitialCapacity);
+		int total = hooks->ObjectWalker->FindObjectsByClassNameInto(
+			"CrEnviroWaveSubsystem",
+			PluginObjectLookup_InstanceOnly,
+			objects.data(),
+			static_cast<int>(objects.size()));
+		if (total <= 0)
+		{
+			return nullptr;
+		}
+
+		if (total > static_cast<int>(objects.size()))
+		{
+			objects.resize(static_cast<size_t>(total));
+			total = hooks->ObjectWalker->FindObjectsByClassNameInto(
+				"CrEnviroWaveSubsystem",
+				PluginObjectLookup_InstanceOnly,
+				objects.data(),
+				static_cast<int>(objects.size()));
+			if (total <= 0)
+			{
+				return nullptr;
+			}
+		}
+
+		const int count = std::min(total, static_cast<int>(objects.size()));
+		for (int index = 0; index < count; ++index)
+		{
+			auto* object = reinterpret_cast<SDK::UObject*>(objects[static_cast<size_t>(index)].object);
+			if (!TryIsObjectOfClass(object, subsystemClass))
+			{
+				continue;
+			}
+			if (!TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world)))
+			{
+				continue;
+			}
+			return static_cast<SDK::UCrEnviroWaveSubsystem*>(object);
+		}
+
+		return nullptr;
+#else
+		(void)world;
+		(void)subsystemClass;
+		return nullptr;
+#endif
+	}
+
+	void ResetWaveSubsystemCache()
+	{
+		std::lock_guard<std::mutex> lock(g_waveSubsystemCacheMutex);
+		g_waveSubsystemCache = WaveSubsystemCacheState{};
+	}
+
+	// Single resolution point for the wave subsystem. Caches the resolved pointer
+	// for the lifetime of the world and throttles both the ProcessEvent lookup and
+	// the (expensive) ObjectWalker fallback when resolution keeps failing.
+	SDK::UCrEnviroWaveSubsystem* ResolveWaveSubsystem(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return nullptr;
+		}
+
+		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
+		bool mayAttemptObjectWalker = false;
+		{
+			std::lock_guard<std::mutex> lock(g_waveSubsystemCacheMutex);
+			if (g_waveSubsystemCache.World != world)
+			{
+				g_waveSubsystemCache = WaveSubsystemCacheState{};
+				g_waveSubsystemCache.World = world;
+			}
+			else if (g_waveSubsystemCache.Subsystem)
+			{
+				return g_waveSubsystemCache.Subsystem;
+			}
+			else if (nowUnixMs < g_waveSubsystemCache.NextResolveAttemptAtUnixMs)
+			{
+				return nullptr;
+			}
+
+			g_waveSubsystemCache.NextResolveAttemptAtUnixMs =
+				nowUnixMs + kWaveSubsystemResolveRetryIntervalMs;
+			if (nowUnixMs >= g_waveSubsystemCache.NextObjectWalkerAttemptAtUnixMs)
+			{
+				g_waveSubsystemCache.NextObjectWalkerAttemptAtUnixMs =
+					nowUnixMs + kWaveSubsystemObjectWalkerRetryIntervalMs;
+				mayAttemptObjectWalker = true;
+			}
+		}
+
+		SDK::UClass* subsystemClass = TryGetStaticClass<SDK::UCrEnviroWaveSubsystem>();
+		if (!subsystemClass)
+		{
+			return nullptr;
+		}
+
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem =
+			TryGetWorldSubsystem<SDK::UCrEnviroWaveSubsystem>(world, subsystemClass);
+		bool usedObjectWalkerFallback = false;
+		if (!waveSubsystem && mayAttemptObjectWalker)
+		{
+			waveSubsystem = TryFindWaveSubsystemWithObjectWalker(world, subsystemClass);
+			usedObjectWalkerFallback = waveSubsystem != nullptr;
+		}
+
+		if (!waveSubsystem)
+		{
+			return nullptr;
+		}
+
+		{
+			std::lock_guard<std::mutex> lock(g_waveSubsystemCacheMutex);
+			if (g_waveSubsystemCache.World == world)
+			{
+				g_waveSubsystemCache.Subsystem = waveSubsystem;
+			}
+		}
+
+		if (usedObjectWalkerFallback && ShouldLogRuptureDiagnostics() && !g_objectWalkerWaveFallbackLogged)
+		{
+			LOG_INFO("Resolved CrEnviroWaveSubsystem via ObjectWalker fallback after GetWorldSubsystem failed");
+			g_objectWalkerWaveFallbackLogged = true;
+		}
+
+		return waveSubsystem;
+	}
+
 	SDK::ACrGameStateBase* TryGetGameState(SDK::UWorld* world);
 	SDK::ACrPlayerControllerBase* TryGetLocalCrPlayerController(SDK::UWorld* world);
 
 	bool CaptureLocalRuptureCycleState(SDK::UWorld* world, RuptureCycleLocalState& outState)
 	{
-		SDK::UClass* subsystemClass = TryGetStaticClass<SDK::UCrEnviroWaveSubsystem>();
-		if (!subsystemClass)
-		{
-			return false;
-		}
-
-		SDK::UCrEnviroWaveSubsystem* waveSubsystem =
-			TryGetWorldSubsystem<SDK::UCrEnviroWaveSubsystem>(world, subsystemClass);
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem = ResolveWaveSubsystem(world);
 		if (!waveSubsystem)
 		{
 			return false;
@@ -620,6 +804,8 @@ namespace
 
 		if (!TryReadLocalRuptureCycleState(waveSubsystem, outState))
 		{
+			// The cached pointer no longer reads back; force a fresh resolution.
+			ResetWaveSubsystemCache();
 			return false;
 		}
 
@@ -664,6 +850,179 @@ namespace
 
 		return {};
 	}
+
+#if defined(PLUGIN_INTERFACE_VERSION_MAX) && PLUGIN_INTERFACE_VERSION_MAX >= 47
+	void OnRuptureCycleDelegateBroadcast(void* userContext)
+	{
+		(void)userContext;
+		MapStateRuntime::Detail::TryRefreshCurrentWorld("RuptureCycleDelegate");
+	}
+
+	void UnhookRuptureCycleDelegateLocked(
+		IPluginDelegateHook* delegateHook,
+		DelegateHookHandle& handle)
+	{
+		if (!handle)
+		{
+			return;
+		}
+
+		if (delegateHook && delegateHook->Unhook)
+		{
+			delegateHook->Unhook(handle);
+		}
+		handle = 0;
+	}
+
+	void UnhookRuptureCycleDelegateHooks()
+	{
+		IPluginHooks* hooks = GetHooks();
+		IPluginDelegateHook* delegateHook = hooks ? hooks->Delegate : nullptr;
+		std::lock_guard<std::mutex> lock(g_ruptureCycleDelegateHooksMutex);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.WaveStarted);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.FadeoutSubstageChanged);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.GrowbackSubstageChanged);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.PreWaveSubstageChanged);
+		g_ruptureCycleDelegateHooks.World = nullptr;
+		g_ruptureCycleDelegateHooks.WaveSubsystem = nullptr;
+		g_ruptureCycleDelegateHooks.Installed = false;
+		g_ruptureCycleDelegateHooks.NextAttemptAtUnixMs = 0;
+		g_ruptureCycleDelegateHookFailureLogged = false;
+	}
+
+	DelegateHookHandle HookRuptureCycleDelegate(
+		IPluginDelegateHook* delegateHook,
+		void* delegatePtr,
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem)
+	{
+		if (!delegateHook || !delegateHook->Hook || !delegatePtr || !waveSubsystem)
+		{
+			return 0;
+		}
+
+		return delegateHook->Hook(
+			delegatePtr,
+			static_cast<void*>(waveSubsystem),
+			nullptr,
+			nullptr,
+			OnRuptureCycleDelegateBroadcast,
+			nullptr);
+	}
+
+	void HookRuptureCycleDelegateHooks(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return;
+		}
+
+		IPluginHooks* hooks = GetHooks();
+		IPluginDelegateHook* delegateHook = hooks ? hooks->Delegate : nullptr;
+		if (!delegateHook || !delegateHook->Hook)
+		{
+			if (!g_ruptureCycleDelegateUnavailableLogged && ShouldLogLifecycle())
+			{
+				g_ruptureCycleDelegateUnavailableLogged = true;
+				LOG_INFO("Rupture cycle delegate hooks unavailable; continuing with Engine/World/Actor/Player hooks.");
+			}
+			return;
+		}
+
+		// Cheap early-out before resolving the subsystem: this runs on every engine
+		// tick, and resolving the subsystem goes through ProcessEvent.
+		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
+		{
+			std::lock_guard<std::mutex> lock(g_ruptureCycleDelegateHooksMutex);
+			if (g_ruptureCycleDelegateHooks.Installed && g_ruptureCycleDelegateHooks.World == world)
+			{
+				return;
+			}
+			if (nowUnixMs < g_ruptureCycleDelegateHooks.NextAttemptAtUnixMs)
+			{
+				return;
+			}
+		}
+
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem = ResolveWaveSubsystem(world);
+		if (!waveSubsystem)
+		{
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(g_ruptureCycleDelegateHooksMutex);
+		if (g_ruptureCycleDelegateHooks.Installed
+			&& g_ruptureCycleDelegateHooks.World == world
+			&& g_ruptureCycleDelegateHooks.WaveSubsystem == waveSubsystem)
+		{
+			return;
+		}
+
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.WaveStarted);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.FadeoutSubstageChanged);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.GrowbackSubstageChanged);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.PreWaveSubstageChanged);
+
+		g_ruptureCycleDelegateHooks.World = world;
+		g_ruptureCycleDelegateHooks.WaveSubsystem = waveSubsystem;
+		g_ruptureCycleDelegateHooks.WaveStarted = HookRuptureCycleDelegate(
+			delegateHook,
+			static_cast<void*>(&waveSubsystem->OnWaveStartedDynamic),
+			waveSubsystem);
+		g_ruptureCycleDelegateHooks.FadeoutSubstageChanged = HookRuptureCycleDelegate(
+			delegateHook,
+			static_cast<void*>(&waveSubsystem->OnWaveFadeoutSubstageChanged),
+			waveSubsystem);
+		g_ruptureCycleDelegateHooks.GrowbackSubstageChanged = HookRuptureCycleDelegate(
+			delegateHook,
+			static_cast<void*>(&waveSubsystem->OnWaveGrowbackSubstageChanged),
+			waveSubsystem);
+		g_ruptureCycleDelegateHooks.PreWaveSubstageChanged = HookRuptureCycleDelegate(
+			delegateHook,
+			static_cast<void*>(&waveSubsystem->OnWavePreWaveSubstageChanged),
+			waveSubsystem);
+
+		g_ruptureCycleDelegateHooks.Installed =
+			g_ruptureCycleDelegateHooks.WaveStarted
+			|| g_ruptureCycleDelegateHooks.FadeoutSubstageChanged
+			|| g_ruptureCycleDelegateHooks.GrowbackSubstageChanged
+			|| g_ruptureCycleDelegateHooks.PreWaveSubstageChanged;
+
+		if (g_ruptureCycleDelegateHooks.Installed)
+		{
+			g_ruptureCycleDelegateHooks.NextAttemptAtUnixMs = 0;
+			g_ruptureCycleDelegateHookFailureLogged = false;
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO("Hooked CrEnviroWaveSubsystem multicast delegates for rupture-cycle refresh.");
+			}
+			return;
+		}
+
+		// Every Hook() failed: retry later instead of silently degrading to polling
+		// for the rest of the session.
+		g_ruptureCycleDelegateHooks.World = nullptr;
+		g_ruptureCycleDelegateHooks.WaveSubsystem = nullptr;
+		g_ruptureCycleDelegateHooks.NextAttemptAtUnixMs =
+			nowUnixMs + kRuptureCycleDelegateHookRetryIntervalMs;
+		if (!g_ruptureCycleDelegateHookFailureLogged)
+		{
+			g_ruptureCycleDelegateHookFailureLogged = true;
+			LOG_WARN(
+				"Failed to hook any CrEnviroWaveSubsystem multicast delegate; "
+				"rupture-cycle stays on polling and will retry in %lld ms",
+				static_cast<long long>(kRuptureCycleDelegateHookRetryIntervalMs));
+		}
+	}
+#else
+	void UnhookRuptureCycleDelegateHooks()
+	{
+	}
+
+	void HookRuptureCycleDelegateHooks(SDK::UWorld* world)
+	{
+		(void)world;
+	}
+#endif
 
 	// Key covering only the discrete state fields (wave/stage/step). Used to suppress
 	// repeated log entries when only ElapsedSeconds advances (e.g. local solo runtime).
@@ -816,6 +1175,9 @@ namespace
 				"ChimeraMain world marked ready by %s",
 				reason ? reason : "unknown");
 		}
+
+		TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
+		HookRuptureCycleDelegateHooks(trackedState.World);
 	}
 
 	void ClearChimeraWorldState(const char* reason)
@@ -842,6 +1204,8 @@ namespace
 
 		g_engineTickAccumulatorSeconds = 0.0f;
 		g_engineTickSeen = false;
+		UnhookRuptureCycleDelegateHooks();
+		ResetWaveSubsystemCache();
 		ResetRuptureCycleState();
 
 #if !defined(MODLOADER_SERVER_BUILD)
@@ -1890,12 +2254,6 @@ namespace
 			if (receiverIt == receiverLookup.end() && previousSnapshot)
 			{
 				previousReceiverMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Receiver, receiverKey);
-			#if defined(MAPEXTENSION_BUILD_MODLOADER_LOCAL)
-				if (!previousReceiverMarker && !previousReceiverKey.empty())
-				{
-					previousReceiverMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Receiver, previousReceiverKey);
-				}
-			#endif
 			}
 
 			const CargoConnection* previousConnection = nullptr;
@@ -2636,6 +2994,15 @@ namespace MapStateRuntime
 	{
 		TryRefreshCurrentWorldImpl(reason);
 	}
+
+	// The delegate splices live in the engine's InvocationList, so they must be
+	// removed before the DLL is unloaded, otherwise a broadcast lands in freed
+	// plugin memory. Must run while hooks->Delegate is still reachable.
+	void ShutdownRuptureCycleDelegateHooks()
+	{
+		UnhookRuptureCycleDelegateHooks();
+		ResetWaveSubsystemCache();
+	}
 }
 }
 
@@ -2663,6 +3030,8 @@ namespace MapStateRuntime
 		}
 		g_engineTickAccumulatorSeconds = 0.0f;
 		g_engineTickSeen = false;
+		UnhookRuptureCycleDelegateHooks();
+		ResetWaveSubsystemCache();
 		{
 			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
 			g_lastChimeraWorld = nullptr;
@@ -2701,6 +3070,7 @@ namespace MapStateRuntime
 			MarkChimeraWorldReady("EngineTick fallback");
 			trackedState.Ready = true;
 		}
+		HookRuptureCycleDelegateHooks(trackedState.World);
 
 		if (!g_engineTickSeen)
 		{
@@ -2894,6 +3264,7 @@ namespace MapStateRuntime
 			}
 			g_engineTickAccumulatorSeconds = 0.0f;
 			ResetRuptureCycleState();
+			HookRuptureCycleDelegateHooks(world);
 			if (ShouldLogLifecycle())
 			{
 				LOG_INFO("ChimeraMain detected: deferring cargo snapshot until the world is ready");
@@ -3009,10 +3380,23 @@ namespace MapStateRuntime
 
 		// If the ending world is our tracked ChimeraMain, mark it as not ready
 		// while the world pointer is still valid.
-		std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
-		if (g_lastChimeraWorld && g_lastChimeraWorld == world)
+		bool wasTracked = false;
 		{
-			g_chimeraWorldReady = false;
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (g_lastChimeraWorld && g_lastChimeraWorld == world)
+			{
+				wasTracked = true;
+				g_chimeraWorldReady = false;
+			}
+		}
+
+		// Remove the delegate splices here rather than in OnAfterWorldEndPlay:
+		// Unhook has to touch the subsystem's live InvocationList, which is only
+		// guaranteed to be intact while the world is still valid.
+		if (wasTracked)
+		{
+			UnhookRuptureCycleDelegateHooks();
+			ResetWaveSubsystemCache();
 		}
 	}
 

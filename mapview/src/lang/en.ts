@@ -67,9 +67,9 @@ export const en = {
     },
     rupture: {
         title: "Rupture timeline",
-        subtitle: "Timeline derived from server chat cycle messages.",
+        subtitle: "Timeline derived from the local plugin endpoint, using server snapshots in dedicated-server sessions and local game state in solo/local sessions.",
         incomingDroneDisabledTooltip: "Construction drone disabled",
-        noData: "No rupture cycle message detected yet.",
+        noData: "No rupture cycle data detected yet.",
         noDataShort: "No data",
         currentPhase: "Current phase",
         timeRemaining: "Time remaining",
@@ -177,7 +177,7 @@ export const en = {
             },
             refresh: {
                 label: "Refresh",
-                description: "Force a call to /health and /cargo.",
+                description: "Force a call to /health, /cargo, and /rupture-cycle.",
             },
             live: {
                 label: "Live",
@@ -212,6 +212,24 @@ export const en = {
                 description: "Close help or clear the selection.",
             },
         },
+    },
+    viewerUpdate: {
+        kicker: "Update available",
+        title: "Outdated viewer",
+        subtitle: "The plugin is newer than this local viewer.",
+        body: "The plugin updates itself through the mod loader, but only the DLL is replaced. The viewer files (MapExtensionViewer.html and the map-tiles/ folder) stay on the version you installed and must be replaced by hand.",
+        pluginVersionLabel: "Detected plugin version:",
+        steps: {
+            download: "Download the new viewer archive.",
+            replace: "Replace MapExtensionViewer.html and the map-tiles/ folder with the ones from the archive.",
+            reload: "Reload MapExtensionViewer.html in your browser.",
+        },
+        tilesReminder: "Important: always keep the map-tiles/ folder next to MapExtensionViewer.html, otherwise the map background will not load.",
+        noDownloadUrl: "This plugin is a local development build: no direct download link is provided.",
+        downloadAction: "Download the viewer",
+        releaseAction: "Open the GitHub release",
+        modPageAction: "Mod page",
+        laterAction: "Later",
     },
     map: {
         emptyTitle: "Local map not loaded",

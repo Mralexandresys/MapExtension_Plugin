@@ -216,7 +216,6 @@ BUILD_CMD=(
   /p:PluginSdkSharedProps="$PLUGIN_SDK_SHARED_PROPS_WIN_PATH"
   /p:PluginApiIncludeDir="$PLUGIN_API_INCLUDE_DIR_WIN_PATH\\"
   /p:StarRuptureSdkBaseDir="$STARRUPTURE_SDK_BASE_DIR_WIN_PATH\\"
-  /p:MapExtensionBuildMethod=modloader-ng
 )
 
 if [[ -n "$BUILD_TAG" ]]; then

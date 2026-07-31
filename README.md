@@ -4,7 +4,7 @@ French README: `README.fr.md`
 
 `MapExtension_Plugin` exposes StarRupture map data through a local HTTP endpoint and includes `mapview`, a local web interface used to display the map, entities, their connections, and the rupture cycle timeline.
 
-The plugin works in both single-player and multiplayer, but it only needs to be installed on the client side. For dedicated-server rupture cycle data, pair it with `RuptureCycleToChat_Plugin` on the server.
+The plugin works in both single-player and multiplayer. For solo/local sessions, install the client build only. For dedicated-server sessions, install the client build on the player machine and the server build on the dedicated server so the server can send map and rupture-cycle data to connected clients.
 
 ## Features
 
@@ -14,14 +14,36 @@ The plugin works in both single-player and multiplayer, but it only needs to be 
 - Display the positions of `teleporters`
 - Display the positions of `players`
 - Expose `GET /health`, `GET /cargo`, and `GET /rupture-cycle` on the local HTTP server
-- Reconstruct rupture cycle state from dedicated-server chat payloads when `RuptureCycleToChat_Plugin` is present
-- Fall back to the local `UCrEnviroWaveSubsystem` in solo/local sessions when no server chat payload is available
+- Receive authoritative map and rupture-cycle snapshots from the server build in dedicated-server sessions
+- Fall back to the local `UCrEnviroWaveSubsystem` in solo/local sessions when no server snapshot is available
 
 ## Mapview
 
-The included `mapview` is a standalone local web UI designed to read the plugin data and display it in a browser by opening the generated `dist/MapExtensionViewer.html` file.
+The included `mapview` is a local web UI designed to read the plugin data and display it in a browser by opening the generated `dist/MapExtensionViewer.html` file.
+
+When packaged, keep the generated `map-tiles/` folder next to `MapExtensionViewer.html`; the viewer loads the map background from those tiles.
 
 It consumes both cargo/map data and the rupture cycle endpoint to render the timeline shown in the HUD replacement UI.
+
+## Installation and updates
+
+The client release archive contains:
+
+- `Plugins/MapExtension_Plugin.dll`
+- `Plugins/MapExtension_Plugin.json`
+- `MapExtensionViewer.html`
+- `map-tiles/`
+
+Copy the `Plugins/` content into `StarRupture/Binaries/Win64/Plugins/`, then keep `MapExtensionViewer.html` next to its `map-tiles/` folder anywhere on the machine.
+
+`MapExtension_Plugin.json` is the modloader update sidecar. Its only field is `manifest_url`, pointing at the `latest/download` release manifest. When the sidecar is present, the modloader checks for a newer plugin version at startup and replaces `MapExtension_Plugin.dll` before loading any plugin. Installing only the standalone DLL asset disables automatic updates.
+
+Two limits are worth knowing:
+
+- The auto-updater replaces the DLL only. `MapExtensionViewer.html` and `map-tiles/` are never touched, since they live outside the game folder. The viewer detects this on its own: when the plugin reports a payload contract newer than the one the local viewer was built with, a dialog offers a direct download of the matching `MapExtension_Plugin-<tag>-viewer.zip` asset, along with links to the GitHub release and the mod page. Replace `MapExtensionViewer.html` and `map-tiles/` together, then reload the page.
+- The server build is not covered by the sidecar. Update it by hand and keep it on the same version as the client, since both sides share `shared/map_sync_protocol.h`.
+
+Automatic updates can be disabled modloader-wide with `[AutoUpdate] Enabled=0` in `modloader.ini`.
 
 ## Interface choice
 
@@ -37,15 +59,11 @@ This is a first functional draft.
 
 The project will continue to evolve soon, and feedback, fixes, and contributions are welcome.
 
-The plugin now supports two build methods:
+The plugin builds against `StarRupture-Plugin-SDK`.
 
-- `modloader-local`: build against the local modloader tree (`Version_Mod_Loader/plugins` + local `StarRupture SDK/`)
-- `modloader-ng`: build against `StarRupture-Plugin-SDK`
+Example:
 
-Examples:
-
-- `../build_client.sh release --build-method modloader-local`
-- `../build_client.sh release --build-method modloader-ng`
+- `./build_client.sh release`
 
 For build and workflow details, see `DEVELOPERS.md`.
 
@@ -69,30 +87,26 @@ Enabled=1
 VerboseLifecycleLogs=0
 LogRuntimePlanOnce=0
 LogCargoSnapshots=0
-LogRuptureCycleChat=0
+LogRuptureCycleEvents=0
 LogActorScanFallback=0
+LogRefreshTimings=0
 
 [Http]
 Port=9000
 
 [Runtime]
-RefreshIntervalMs=500
-
-[Chat]
-EnableRuptureCycleInfoRequest=1
-RuptureCyclePrefix=[RUPTURE_CYCLE]
+RefreshIntervalMs=2000
 ```
 
 - `Enabled`: enables or disables the plugin (`1` or `0`)
 - `VerboseLifecycleLogs`: enables lifecycle logs (`1` or `0`)
 - `LogRuntimePlanOnce`: logs the runtime strategy once (`1` or `0`)
 - `LogCargoSnapshots`: logs cargo snapshots (`1` or `0`)
-- `LogRuptureCycleChat`: logs rupture cycle state parsed from server chat or recovered locally in solo sessions (`1` or `0`)
+- `LogRuptureCycleEvents`: logs rupture cycle state changes and rupture-related world/server events (`1` or `0`)
 - `LogActorScanFallback`: logs actor scan fallback (`1` or `0`)
+- `LogRefreshTimings`: logs per-phase refresh timings (`1` or `0`)
 - `Port`: sets the local HTTP port used by the plugin
 - `RefreshIntervalMs`: sets the runtime refresh interval in milliseconds
-- `EnableRuptureCycleInfoRequest`: enables or disables the client chat request `get info arcadia` used in dedicated-server sessions (`1` or `0`)
-- `RuptureCyclePrefix`: chat prefix expected from the server-side rupture plugin
 
 ## Credits
 

@@ -5,7 +5,7 @@
   <PropertyGroup />
   <ItemDefinitionGroup Condition="'$(ModLoaderBuildTag)' == ''">
     <ClCompile>
-      <PreprocessorDefinitions>MODLOADER_BUILD_TAG="ML-2026.03.08-130250-v0.1";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MODLOADER_BUILD_TAG="ML-2026.03.08-130250-v0.1";MAPEXTENSION_LOCAL_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup />

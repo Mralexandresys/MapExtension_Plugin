@@ -8,6 +8,7 @@ import {
 } from "vue";
 
 import { fetchJson, normalizeEndpoint } from "../lib/api";
+import { VIEWER_CONTRACT_VERSION } from "../lib/viewerContract";
 import { applyLanguage, getMessages, resolveInitialLanguage } from "../lang";
 import type { Language } from "../lang";
 import type {
@@ -103,6 +104,29 @@ export function useMapViewDataSource() {
     );
     const endpointHasPendingChanges = computed(
         () => normalizedDraftEndpoint.value !== normalizedEndpoint.value,
+    );
+
+    // ── Viewer contract ───────────────────────────────────────────────────────
+    // The plugin auto-updates through the modloader sidecar, but only the DLL is
+    // replaced: MapExtensionViewer.html and map-tiles/ stay on whatever version
+    // the user installed by hand. A plugin that reports a contract version newer
+    // than the one compiled in this build cannot be rendered reliably anymore.
+
+    const pluginVersion = computed(() => health.value?.plugin_version ?? "");
+
+    const viewerOutdated = computed(() => {
+        const reported = health.value?.viewer_contract_version;
+        return typeof reported === "number" && reported > VIEWER_CONTRACT_VERSION;
+    });
+
+    const viewerUpdateDownloadUrl = computed(
+        () => health.value?.viewer_update?.download_url ?? "",
+    );
+    const viewerUpdateReleaseUrl = computed(
+        () => health.value?.viewer_update?.release_url ?? "",
+    );
+    const viewerUpdateModPageUrl = computed(
+        () => health.value?.viewer_update?.mod_page_url ?? "",
     );
 
     function loadPreferences(): void {
@@ -315,6 +339,11 @@ export function useMapViewDataSource() {
         languageOptions,
         normalizedEndpoint,
         endpointHasPendingChanges,
+        pluginVersion,
+        viewerOutdated,
+        viewerUpdateDownloadUrl,
+        viewerUpdateReleaseUrl,
+        viewerUpdateModPageUrl,
         handleEndpointKeydown,
         updateRefreshInterval,
         refreshData,

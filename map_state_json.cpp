@@ -6,6 +6,10 @@
 #include <string>
 #include <utility>
 
+#ifndef MODLOADER_BUILD_TAG
+#define MODLOADER_BUILD_TAG "dev"
+#endif
+
 namespace MapStateRuntime
 {
 namespace Detail
@@ -13,6 +17,52 @@ namespace Detail
 	namespace
 	{
 		using nlohmann::json;
+
+		// Compatibility version of the HTTP payloads consumed by the viewer.
+		//
+		// The modloader auto-updater replaces MapExtension_Plugin.dll only, never
+		// MapExtensionViewer.html / map-tiles/, so a recent plugin can end up talking
+		// to an older viewer. Bump this ONLY when a payload change makes older
+		// viewers incorrect, and bump VIEWER_CONTRACT_VERSION in
+		// mapview/src/lib/viewerContract.ts to the same value in the same change.
+		// The viewer shows an update prompt when this value is greater than its own.
+		// Purely additive payload fields do not need a bump.
+		constexpr int kViewerContractVersion = 1;
+
+		constexpr const char* kProjectReleasesBaseUrl =
+			"https://github.com/Mralexandresys/MapExtension_Plugin/releases";
+		constexpr const char* kModPageUrl = "https://www.nexusmods.com/starrupture/mods/91";
+
+		// Release builds are tagged by CI through /p:ModLoaderBuildTag. Local builds
+		// fall back to PropertySheet.props, which also defines MAPEXTENSION_LOCAL_BUILD:
+		// their tag looks like a release tag but has no matching published assets, so
+		// they must not advertise a download URL.
+#if defined(MAPEXTENSION_LOCAL_BUILD)
+		constexpr bool kIsPublishedBuild = false;
+#else
+		constexpr bool kIsPublishedBuild = true;
+#endif
+
+		bool IsReleaseBuildTag(const std::string& buildTag)
+		{
+			return buildTag.rfind("ML-", 0) == 0 && buildTag.find("-v") != std::string::npos;
+		}
+
+		json BuildViewerUpdateJson(const std::string& buildTag)
+		{
+			json viewerUpdate = json::object();
+			viewerUpdate["mod_page_url"] = kModPageUrl;
+
+			if (kIsPublishedBuild && IsReleaseBuildTag(buildTag))
+			{
+				const std::string releasesBaseUrl = kProjectReleasesBaseUrl;
+				viewerUpdate["release_url"] = releasesBaseUrl + "/tag/" + buildTag;
+				viewerUpdate["download_url"] = releasesBaseUrl + "/download/" + buildTag
+					+ "/MapExtension_Plugin-" + buildTag + "-viewer.zip";
+			}
+
+			return viewerUpdate;
+		}
 
 		double RoundJsonNumber(double value, int precision = 1)
 		{
@@ -127,9 +177,13 @@ namespace Detail
 
 	std::string BuildHealthJson(const CargoSnapshot& snapshot, int httpPort)
 	{
+		const std::string buildTag = MODLOADER_BUILD_TAG;
 		const json payload = {
 			{"ok", true},
 			{"plugin", "MapExtension_Plugin"},
+			{"plugin_version", buildTag},
+			{"viewer_contract_version", kViewerContractVersion},
+			{"viewer_update", BuildViewerUpdateJson(buildTag)},
 			{"port", httpPort},
 			{"world", snapshot.WorldName},
 			{"snapshot_generation", snapshot.Generation},

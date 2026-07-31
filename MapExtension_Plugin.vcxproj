@@ -40,7 +40,6 @@
     <PluginSdkSharedProps Condition="'$(PluginSdkSharedProps)' == ''">$(PluginSdkRootDir)Shared.props</PluginSdkSharedProps>
     <PluginApiIncludeDir Condition="'$(PluginApiIncludeDir)' == ''">$(PluginSdkRootDir)include\</PluginApiIncludeDir>
     <StarRuptureSdkBaseDir Condition="'$(StarRuptureSdkBaseDir)' == ''">$(PluginSdkRootDir)StarRupture SDK\</StarRuptureSdkBaseDir>
-    <MapExtensionBuildMethod Condition="'$(MapExtensionBuildMethod)' == ''">modloader-ng</MapExtensionBuildMethod>
     <SolutionDir Condition="'$(SolutionDir)' == ''">$(RepoRootDir)</SolutionDir>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -150,16 +149,6 @@
     <StarRuptureSDKSourceDir>$(StarRuptureSdkBaseDir)Server\SDK\</StarRuptureSDKSourceDir>
     <StarRuptureSDKConfigDir>$(StarRuptureSdkBaseDir)Server\;$(StarRuptureSdkBaseDir)Server\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(MapExtensionBuildMethod)'=='modloader-local'">
-    <ClCompile>
-      <PreprocessorDefinitions>MAPEXTENSION_BUILD_MODLOADER_LOCAL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(MapExtensionBuildMethod)'=='modloader-ng'">
-    <ClCompile>
-      <PreprocessorDefinitions>MAPEXTENSION_BUILD_MODLOADER_NG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>

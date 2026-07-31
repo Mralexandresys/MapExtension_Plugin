@@ -34,6 +34,15 @@ ENDPOINT_FILES = {
     "rupture-cycle": ["rupture-cycle.json", "rupture_cycle.json"],
 }
 
+# Must match VIEWER_CONTRACT_VERSION in mapview/src/lib/viewerContract.ts so the
+# default mock payload does NOT trigger the viewer update dialog. To test the
+# dialog locally, drop a local-test/data/health.json with a higher value.
+MOCK_VIEWER_CONTRACT_VERSION = 1
+MOCK_PLUGIN_VERSION = "ML-v1.15.0-v0.4"
+MOCK_RELEASE_BASE = (
+    "https://github.com/Mralexandresys/MapExtension_Plugin/releases"
+)
+
 
 def default_payloads(port: int) -> dict[str, Any]:
     return {
@@ -47,6 +56,16 @@ def default_payloads(port: int) -> dict[str, Any]:
             "marker_count": 0,
             "teleporter_count": 0,
             "player_count": 0,
+            "plugin_version": MOCK_PLUGIN_VERSION,
+            "viewer_contract_version": MOCK_VIEWER_CONTRACT_VERSION,
+            "viewer_update": {
+                "download_url": (
+                    f"{MOCK_RELEASE_BASE}/download/{MOCK_PLUGIN_VERSION}"
+                    f"/MapExtension_Plugin-{MOCK_PLUGIN_VERSION}-viewer.zip"
+                ),
+                "release_url": f"{MOCK_RELEASE_BASE}/tag/{MOCK_PLUGIN_VERSION}",
+                "mod_page_url": "https://www.nexusmods.com/starrupture/mods/91",
+            },
         },
         "cargo": {
             "generation": 1,

@@ -4,7 +4,7 @@ README anglais : `README.md`
 
 `MapExtension_Plugin` expose les donnees de carte de StarRupture via un endpoint HTTP local et inclut `mapview`, une interface web locale utilisee pour afficher la carte, les entites, leurs connexions et la timeline du cycle de rupture.
 
-Le plugin fonctionne aussi bien en partie solo qu'en multijoueur, mais il n'a besoin d'etre installe que cote client. Pour recuperer le cycle de rupture sur serveur dedie, il faut l'associer a `RuptureCycleToChat_Plugin` cote serveur.
+Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local, seul le build client est necessaire. Sur serveur dedie, il faut installer le build client sur la machine du joueur et le build serveur sur le serveur dedie afin que le serveur puisse envoyer les donnees de carte et de cycle de rupture aux clients connectes.
 
 ## Fonctionnalites
 
@@ -14,14 +14,36 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur, mais il n'a be
 - Afficher la position des `teleporteurs`
 - Afficher la position des `joueurs`
 - Exposer `GET /health`, `GET /cargo` et `GET /rupture-cycle` sur le serveur HTTP local
-- Reconstruire l'etat du cycle de rupture a partir des messages de chat serveur quand `RuptureCycleToChat_Plugin` est present
-- Utiliser un fallback local via `UCrEnviroWaveSubsystem` en solo/local quand aucun message de chat serveur n'est disponible
+- Recevoir les snapshots de carte et de cycle de rupture envoyes par la build serveur en session serveur dediee
+- Utiliser un fallback local via `UCrEnviroWaveSubsystem` en solo/local quand aucun snapshot serveur n'est disponible
 
 ## Mapview
 
-Le `mapview` inclus est une interface web locale autonome concue pour lire les donnees du plugin et les afficher dans un navigateur en ouvrant le fichier genere `dist/MapExtensionViewer.html`.
+Le `mapview` inclus est une interface web locale concue pour lire les donnees du plugin et les afficher dans un navigateur en ouvrant le fichier genere `dist/MapExtensionViewer.html`.
+
+Une fois packagee, il faut garder le dossier genere `map-tiles/` a cote de `MapExtensionViewer.html` ; l'interface charge le fond de carte depuis ces tuiles.
 
 Il consomme a la fois les donnees de carte/cargo et l'endpoint de cycle de rupture pour afficher la timeline de l'interface.
+
+## Installation et mises a jour
+
+L'archive de release client contient :
+
+- `Plugins/MapExtension_Plugin.dll`
+- `Plugins/MapExtension_Plugin.json`
+- `MapExtensionViewer.html`
+- `map-tiles/`
+
+Copier le contenu de `Plugins/` dans `StarRupture/Binaries/Win64/Plugins/`, puis garder `MapExtensionViewer.html` a cote de son dossier `map-tiles/`, n'importe ou sur la machine.
+
+`MapExtension_Plugin.json` est le sidecar de mise a jour du modloader. Son seul champ est `manifest_url`, qui pointe vers le manifest de release `latest/download`. Quand le sidecar est present, le modloader verifie au demarrage s'il existe une version plus recente du plugin et remplace `MapExtension_Plugin.dll` avant de charger le moindre plugin. Installer uniquement la DLL seule desactive les mises a jour automatiques.
+
+Deux limites a connaitre :
+
+- La mise a jour automatique ne remplace que la DLL. `MapExtensionViewer.html` et `map-tiles/` ne sont jamais touches, puisqu'ils vivent hors du dossier du jeu. L'interface le detecte d'elle-meme : quand le plugin annonce un contrat de payload plus recent que celui avec lequel l'interface locale a ete construite, une fenetre propose le telechargement direct de l'asset `MapExtension_Plugin-<tag>-viewer.zip` correspondant, avec les liens vers la release GitHub et la page du mod. Remplacer `MapExtensionViewer.html` et `map-tiles/` ensemble, puis recharger la page.
+- Le build serveur n'est pas couvert par le sidecar. Il faut le mettre a jour a la main et le garder sur la meme version que le client, les deux cotes partageant `shared/map_sync_protocol.h`.
+
+Les mises a jour automatiques peuvent etre desactivees globalement dans le modloader avec `[AutoUpdate] Enabled=0` dans `modloader.ini`.
 
 ## Choix d'interface
 
@@ -37,15 +59,11 @@ Il s'agit d'une premiere ebauche fonctionnelle.
 
 Le projet va continuer a evoluer prochainement, mais les retours, corrections et contributions sont les bienvenus.
 
-Le plugin supporte maintenant 2 methodes de build :
+Le plugin se build contre `StarRupture-Plugin-SDK`.
 
-- `modloader-local` : build contre l'arborescence locale du modloader (`Version_Mod_Loader/plugins` + `StarRupture SDK/` du depot)
-- `modloader-ng` : build contre `StarRupture-Plugin-SDK`
+Exemple :
 
-Exemples :
-
-- `../build_client.sh release --build-method modloader-local`
-- `../build_client.sh release --build-method modloader-ng`
+- `./build_client.sh release`
 
 Pour les details de build et de workflow, voir `DEVELOPERS.md`.
 
@@ -71,30 +89,26 @@ Enabled=1
 VerboseLifecycleLogs=0
 LogRuntimePlanOnce=0
 LogCargoSnapshots=0
-LogRuptureCycleChat=0
+LogRuptureCycleEvents=0
 LogActorScanFallback=0
+LogRefreshTimings=0
 
 [Http]
 Port=9000
 
 [Runtime]
-RefreshIntervalMs=500
-
-[Chat]
-EnableRuptureCycleInfoRequest=1
-RuptureCyclePrefix=[RUPTURE_CYCLE]
+RefreshIntervalMs=2000
 ```
 
 - `Enabled` : active ou desactive le plugin (`1` ou `0`)
 - `VerboseLifecycleLogs` : active les logs de cycle de vie (`1` ou `0`)
 - `LogRuntimePlanOnce` : loggue la strategie runtime une fois (`1` ou `0`)
 - `LogCargoSnapshots` : loggue les snapshots cargo (`1` ou `0`)
-- `LogRuptureCycleChat` : loggue l'etat du cycle de rupture parse depuis le chat serveur ou recupere localement en solo (`1` ou `0`)
+- `LogRuptureCycleEvents` : loggue les changements d'etat du cycle de rupture et les evenements monde/serveur lies (`1` ou `0`)
 - `LogActorScanFallback` : loggue le fallback actor scan (`1` ou `0`)
+- `LogRefreshTimings` : loggue les timings par phase de refresh (`1` ou `0`)
 - `Port` : definit le port HTTP local utilise par le plugin
 - `RefreshIntervalMs` : definit l'intervalle de refresh runtime en millisecondes
-- `EnableRuptureCycleInfoRequest` : active ou desactive la requete chat client `get info arcadia` utilisee en session serveur dediee (`1` ou `0`)
-- `RuptureCyclePrefix` : prefixe de chat attendu depuis le plugin serveur du cycle de rupture
 
 ## Remerciements
 

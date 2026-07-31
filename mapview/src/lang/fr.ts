@@ -66,9 +66,9 @@ export const fr = {
     rupture: {
         title: "Timeline d'Arcadia",
         subtitle:
-            "Timeline du cycle de rupture d'Arcadia, derivee des messages envoyes dans le chat serveur.",
+            "Timeline du cycle de rupture d'Arcadia, derivee de l'endpoint local du plugin, avec snapshots serveur en session serveur dediee et etat local en solo/local.",
         incomingDroneDisabledTooltip: "Drone de construction desactive",
-        noData: "Aucun message de cycle de rupture detecte pour le moment.",
+        noData: "Aucune donnee de cycle de rupture detectee pour le moment.",
         noDataShort: "Pas de donnees",
         currentPhase: "Phase actuelle",
         timeRemaining: "Temps restant",
@@ -177,7 +177,7 @@ export const fr = {
             },
             refresh: {
                 label: "Refresh",
-                description: "Force un appel vers /health et /cargo.",
+                description: "Force un appel vers /health, /cargo et /rupture-cycle.",
             },
             live: {
                 label: "Live",
@@ -212,6 +212,24 @@ export const fr = {
                 description: "Ferme l aide ou efface la selection.",
             },
         },
+    },
+    viewerUpdate: {
+        kicker: "Mise a jour",
+        title: "Interface obsolete",
+        subtitle: "Le plugin est plus recent que cette interface locale.",
+        body: "Le plugin se met a jour tout seul via le modloader, mais seule la DLL est remplacee. Les fichiers de l'interface (MapExtensionViewer.html et le dossier map-tiles/) restent sur la version que tu as installee et doivent etre remplaces a la main.",
+        pluginVersionLabel: "Version du plugin detectee :",
+        steps: {
+            download: "Telecharge la nouvelle archive de l'interface.",
+            replace: "Remplace MapExtensionViewer.html et le dossier map-tiles/ par ceux de l'archive.",
+            reload: "Recharge MapExtensionViewer.html dans le navigateur.",
+        },
+        tilesReminder: "Important : garde toujours le dossier map-tiles/ a cote de MapExtensionViewer.html, sinon le fond de carte ne s'affiche plus.",
+        noDownloadUrl: "Ce plugin est un build local de developpement : aucun lien de telechargement direct n'est fourni.",
+        downloadAction: "Telecharger l'interface",
+        releaseAction: "Voir la release GitHub",
+        modPageAction: "Page du mod",
+        laterAction: "Plus tard",
     },
     map: {
         emptyTitle: "Map locale non chargee",

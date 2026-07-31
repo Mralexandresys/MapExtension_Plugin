@@ -10,6 +10,7 @@ import MapNotesPanel from "./components/mapview/MapNotesPanel.vue";
 import MapRupturePanel from "./components/mapview/MapRupturePanel.vue";
 import MapSelectionPanel from "./components/mapview/MapSelectionPanel.vue";
 import MapShortcutDialog from "./components/mapview/MapShortcutDialog.vue";
+import MapViewerUpdateDialog from "./components/mapview/MapViewerUpdateDialog.vue";
 import { useMapViewState } from "./composables/useMapViewState";
 import { useUserAnnotations } from "./composables/useUserAnnotations";
 import type {
@@ -20,6 +21,7 @@ import type {
     MapNotesPanelModel,
     MapRupturePanelModel,
     MapSelectionPanelModel,
+    MapViewerUpdateDialogModel,
     Rect2D,
     UserAnnotationDraft,
     UserAnnotationSelection,
@@ -46,6 +48,11 @@ const {
     detailsPanelExpanded,
     filtersPanelCollapsed,
     shortcutsOpen,
+    viewerUpdateOpen,
+    pluginVersion,
+    viewerUpdateDownloadUrl,
+    viewerUpdateReleaseUrl,
+    viewerUpdateModPageUrl,
     entityVisibility,
     status,
     ui,
@@ -103,6 +110,7 @@ const {
     resetMapView,
     openShortcuts,
     closeShortcuts,
+    dismissViewerUpdate,
 } = useMapViewState(mapCanvasRef);
 
 // ── Annotations ───────────────────────────────────────────────────────────────
@@ -285,6 +293,15 @@ const notesPanel = computed<MapNotesPanelModel>(() => ({
     selectedZoneLocked: selectedZoneLocked.value,
     importError: importError.value,
 }));
+
+const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
+    open: viewerUpdateOpen.value,
+    ui: ui.value,
+    pluginVersion: pluginVersion.value,
+    downloadUrl: viewerUpdateDownloadUrl.value,
+    releaseUrl: viewerUpdateReleaseUrl.value,
+    modPageUrl: viewerUpdateModPageUrl.value,
+}));
 </script>
 
 <template>
@@ -400,6 +417,11 @@ const notesPanel = computed<MapNotesPanelModel>(() => ({
             :ui="ui"
             :items="shortcutItems"
             @close="closeShortcuts"
+        />
+
+        <MapViewerUpdateDialog
+            :panel="viewerUpdatePanel"
+            @close="dismissViewerUpdate"
         />
     </div>
 </template>

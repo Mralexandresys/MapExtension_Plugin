@@ -17,6 +17,7 @@ import type {
 import { useMapViewDataSource } from "./useMapViewDataSource";
 import { useMapViewEntities } from "./useMapViewEntities";
 import { useRuptureTimeline } from "./useRuptureTimeline";
+import { useViewerUpdateNotice } from "./useViewerUpdateNotice";
 
 function isTypingTarget(target: EventTarget | null): boolean {
     const element = target as HTMLElement | null;
@@ -52,11 +53,21 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         languageOptions,
         normalizedEndpoint,
         endpointHasPendingChanges,
+        pluginVersion,
+        viewerOutdated,
+        viewerUpdateDownloadUrl,
+        viewerUpdateReleaseUrl,
+        viewerUpdateModPageUrl,
         handleEndpointKeydown,
         updateRefreshInterval,
         refreshData,
         applyEndpoint,
     } = useMapViewDataSource();
+
+    const { viewerUpdateOpen, dismissViewerUpdate } = useViewerUpdateNotice(
+        viewerOutdated,
+        pluginVersion,
+    );
 
     const focusMode = ref(false);
     const selectedKey = ref<string | null>(null);
@@ -389,6 +400,11 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         detailsPanelExpanded,
         filtersPanelCollapsed,
         shortcutsOpen,
+        viewerUpdateOpen,
+        pluginVersion,
+        viewerUpdateDownloadUrl,
+        viewerUpdateReleaseUrl,
+        viewerUpdateModPageUrl,
         entityVisibility,
         status,
         ui,
@@ -455,5 +471,6 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         closeShortcuts: () => {
             shortcutsOpen.value = false;
         },
+        dismissViewerUpdate,
     };
 }
