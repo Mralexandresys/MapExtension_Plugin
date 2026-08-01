@@ -80,6 +80,7 @@ namespace Detail
 
 	struct PlayerMarker
 	{
+		bool IsSelf = false;
 		SDK::FVector WorldLocation{};
 		SDK::FVector2f MapLocation{};
 		std::string DisplayName;

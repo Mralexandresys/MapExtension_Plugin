@@ -65,8 +65,9 @@ Le tableau optionnel `pois` de `GET /cargo` alimente deux familles de points
 d'interet :
 
 - les bases abandonnees utilisent une icone de batiment fissure distincte ;
-- les ressources vegetales utilisent des points dont la couleur est choisie dans une
-  palette stable a partir du nom de la ressource, puis du label ou de la cle unique ;
+- les ressources vegetales utilisent des points dont la couleur HSL est derivee d'un
+  hachage stable du nom de la ressource, puis du label ou de la cle unique, ce qui
+  limite fortement les collisions de teinte entre ressources differentes ;
 - une ressource `available` utilise un remplissage plein ; une ressource avec
   `depleted: true` est attenuee, avec un anneau pointille et un centre presque vide ;
 - le survol ou le focus clavier affiche le type, le nom, la ressource et l'etat. Un POI
@@ -80,8 +81,8 @@ filtres separes.
 
 L'option `Afficher uniquement mes marqueurs et zones` masque toutes les donnees issues
 du plugin (cargo, connexions, teleporteurs, joueurs et POI) pour ne conserver que les
-marqueurs et zones crees par l'utilisateur. La desactiver restaure les elements permis
-par le mode et les autres filtres actifs.
+marqueurs et zones crees par l'utilisateur, et efface la selection en cours. La
+desactiver restaure les elements permis par le mode et les autres filtres actifs.
 
 ## Timeline Rupture et recentrage joueur
 
@@ -92,9 +93,10 @@ phase actuelle, temps restant, graduations de la timeline et legende des phases.
 meme contenu est donc disponible a la souris et au clavier.
 
 Le bouton `Joueur` de la barre d'actions et le raccourci `P` recentrent la carte sur le
-premier joueur du payload courant. Le bouton est desactive et le raccourci reste sans
-effet si aucun joueur n'est disponible. Comme les autres raccourcis, `P` est actif en
-dehors des champs de saisie.
+joueur marque `self: true` dans le payload courant (son propre joueur), ou a defaut sur
+le premier joueur. Le marqueur `self` est rendu dans une couleur distincte. Le bouton
+est desactive et le raccourci reste sans effet si aucun joueur n'est disponible. Comme
+les autres raccourcis, `P` est actif en dehors des champs de saisie.
 
 ## Test local des POI et de la retrocompatibilite
 
@@ -105,9 +107,11 @@ de couleur pour un meme nom de ressource, la palette entre ressources et les fil
 Les scenarios et les commandes detaillees sont documentes dans
 `local-test/README.md`.
 
-Pour simuler un ancien plugin, creer un fichier non vide
-`local-test/data/cargo.json` contenant un payload `/cargo` valide mais sans champ
-`pois` ni compteurs `pois`, `abandoned_bases` et `plant_resources`. Le mock sert cet
+Pour simuler un ancien plugin, copier la fixture fournie
+`local-test/examples/cargo-legacy-no-pois.json` vers `local-test/data/cargo.json` :
+elle contient un payload `/cargo` valide mais sans champ `pois`, sans compteurs
+`pois`, `abandoned_bases` et `plant_resources`, et sans champ `self` sur les joueurs.
+Le mock sert cet
 override tel quel : apres un refresh, le viewer doit continuer a afficher la carte et
 les anciennes entites, avec zero POI. Supprimer l'override permet de revenir au payload
 POI interne.

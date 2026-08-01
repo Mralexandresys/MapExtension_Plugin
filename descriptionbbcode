@@ -36,7 +36,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]Added separate abandoned-base and plant-resource filters[/*]
 [*]Added a compact Rupture view with phase, time remaining, legend, and timeline details on hover or keyboard focus[/*]
 [*]Added a filter that leaves only personal markers and zones, plus player centering from the Player control or the P shortcut[/*]
-[*][b]Dedicated-server sync now uses protocol v2. Update the client and dedicated-server builds together; mixed protocol versions ignore each other's packets.[/b][/*]
+[*][b]Dedicated-server sync now uses protocol v3. Update the client and dedicated-server builds together; mixed protocol versions ignore each other's packets.[/b][/*]
 [*]The Mod Loader still updates only the plugin DLL. Replace MapExtensionViewer.html and map-tiles manually to receive viewer changes[/*]
 [/list]
 
@@ -114,7 +114,7 @@ The plugin works in both solo and multiplayer, but rupture data is not sourced t
 
 The map viewer runs on the client. In dedicated-server play, the client plugin communicates with the server plugin, and the server plugin sends map, POI, and rupture updates back to the client plugin.
 
-[b]Important:[/b] dedicated-server synchronization uses protocol v2 and requires matching protocol versions. Update the client and dedicated-server builds together; a mixed-version pair ignores incompatible packets and cannot synchronize a remote snapshot.
+[b]Important:[/b] dedicated-server synchronization uses protocol v3 and requires matching protocol versions. Update the client and dedicated-server builds together; a mixed-version pair ignores incompatible packets and cannot synchronize a remote snapshot.
 
 [line]
 
@@ -167,7 +167,7 @@ When that happens:
 Always keep the [b]map-tiles[/b] folder next to [b]MapExtensionViewer.html[/b], otherwise the map background will not load.
 
 [list]
-[*]On a dedicated server, the server build is [b]not[/b] updated automatically: protocol v2 requires you to replace the server [b]MapExtension_Plugin.dll[/b] by hand and update it together with the client build[/*]
+[*]On a dedicated server, the server build is [b]not[/b] updated automatically: protocol v3 requires you to replace the server [b]MapExtension_Plugin.dll[/b] by hand and update it together with the client build[/*]
 [*]Automatic updates can be turned off in the Mod Loader by setting [code]Enabled=0[/code] under the [code][AutoUpdate][/code] section of [b]modloader.ini[/b][/*]
 [/list]
 

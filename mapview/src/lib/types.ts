@@ -76,7 +76,10 @@ export interface NamedMapEntity {
 
 export interface Teleporter extends NamedMapEntity {}
 
-export interface Player extends NamedMapEntity {}
+export interface Player extends NamedMapEntity {
+    /** True for the marker representing the local viewer's own player. Older plugins do not send this field. */
+    self?: boolean;
+}
 
 export type PoiKind = "abandoned_base" | "plant_resource";
 

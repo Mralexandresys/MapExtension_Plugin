@@ -12,12 +12,12 @@ The plugin works in both single-player and multiplayer. For solo/local sessions,
 - View their positions directly on the map
 - See the items currently travelling through the network
 - Display the positions of `teleporters`
-- Display the positions of `players`
+- Display the positions of `players`, with your own player highlighted in a distinct color
 - Display abandoned bases and plant resources as points of interest (POIs)
 - Distinguish available and depleted plant resources, with a stable color assigned per resource
 - Use a compact rupture-cycle view with phase, remaining-time, legend, and timeline details
 - Filter the map down to personal markers and zones only
-- Center the map on the player with the `Player` control or the `P` shortcut
+- Center the map on your own player with the `Player` control or the `P` shortcut
 - Expose `GET /health`, `GET /cargo`, and `GET /rupture-cycle` on the local HTTP server
 - Receive authoritative map and rupture-cycle snapshots from the server build in dedicated-server sessions
 - Fall back to the local `UCrEnviroWaveSubsystem` in solo/local sessions when no server snapshot is available
@@ -68,7 +68,7 @@ The viewer can reduce the rupture timeline to a compact bar; hover it or focus i
 
 ## Dedicated-server sync compatibility
 
-Dedicated-server snapshots use sync protocol v2, which carries POIs and validates snapshot IDs, generations, item counts, and chunk counts before publishing a remote snapshot. Protocol versions must match exactly: a v2 client or server ignores packets from a different protocol version rather than attempting a downgrade.
+Dedicated-server snapshots use sync protocol v3, which carries POIs in pages of up to 64 entries per request, flags each client's own player marker, and validates snapshot IDs, generations, item counts, chunk counts, and page layout before publishing a remote snapshot. Protocol versions must match exactly: a v3 client or server ignores packets from a different protocol version rather than attempting a downgrade.
 
 **Update the client and dedicated-server builds together.** The modloader auto-updater replaces only the client DLL; the dedicated-server DLL must be replaced manually during the same update. Do not leave the two sides on different releases.
 
@@ -88,7 +88,7 @@ Copy the `Plugins/` content into `StarRupture/Binaries/Win64/Plugins/`, then kee
 Two limits are worth knowing:
 
 - The auto-updater replaces the DLL only. `MapExtensionViewer.html` and `map-tiles/` are never touched, since they live outside the game folder. The viewer detects incompatible payload contracts: when the plugin reports a contract newer than the one the local viewer was built with, a dialog offers a direct download of the matching `MapExtension_Plugin-<tag>-viewer.zip` asset, along with links to the GitHub release and the mod page. Backward-compatible viewer improvements may not trigger that dialog, so install the matching viewer archive manually to receive new UI features. Replace `MapExtensionViewer.html` and `map-tiles/` together, then reload the page.
-- The server build is not covered by the sidecar. Sync protocol v2 requires matching client and server builds, so update both DLLs together and replace the dedicated-server DLL by hand.
+- The server build is not covered by the sidecar. Sync protocol v3 requires matching client and server builds, so update both DLLs together and replace the dedicated-server DLL by hand.
 
 Automatic updates can be disabled modloader-wide with `[AutoUpdate] Enabled=0` in `modloader.ini`.
 

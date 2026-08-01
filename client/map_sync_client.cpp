@@ -349,7 +349,13 @@ namespace MapExtensionClient
 
 			const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
 			const int64_t lastReceivedAtUnixMs = RemoteCache::GetLastReceivedAtUnixMs();
-			if (lastReceivedAtUnixMs > 0 && nowUnixMs - lastReceivedAtUnixMs < kRefreshIntervalMs)
+			// While POI pages are still missing, keep requesting at the minimum
+			// interval instead of waiting for the full refresh window so large
+			// worlds converge to a complete POI set quickly.
+			const bool hasPendingPoiPages = RemoteCache::HasPendingPoiPages();
+			if (!hasPendingPoiPages
+				&& lastReceivedAtUnixMs > 0
+				&& nowUnixMs - lastReceivedAtUnixMs < kRefreshIntervalMs)
 			{
 				return false;
 			}
@@ -362,14 +368,16 @@ namespace MapExtensionClient
 			MapSyncProtocol::ClientSnapshotRequestPacket packet{};
 			packet.request_sequence = ++g_requestSequence;
 			packet.request_flags = MapSyncProtocol::kRequestFlagAll;
+			packet.poi_page = RemoteCache::GetNextPoiPageToRequest();
 
 			Network::SendPacketToServer(hooks, self, packet);
 			g_lastRequestAtUnixMs = nowUnixMs;
 
 			LOG_DEBUG(
-				"Requested dedicated snapshot via network (%s, request_sequence=%llu)",
+				"Requested dedicated snapshot via network (%s, request_sequence=%llu, poi_page=%u)",
 				reason ? reason : "unknown",
-				static_cast<unsigned long long>(packet.request_sequence));
+				static_cast<unsigned long long>(packet.request_sequence),
+				packet.poi_page);
 			return true;
 		}
 

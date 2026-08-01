@@ -71,16 +71,6 @@ const TELEPORTER_HITBOX_SIZE = 36;
 const TELEPORTER_HITBOX_HALF = TELEPORTER_HITBOX_SIZE / 2;
 const POI_HITBOX_SIZE = 32;
 const POI_HITBOX_HALF = POI_HITBOX_SIZE / 2;
-const POI_RESOURCE_COLORS = [
-  '#65d6ff',
-  '#7ee787',
-  '#ffd166',
-  '#ff9f6e',
-  '#c99cff',
-  '#ff82b2',
-  '#5eead4',
-  '#9db7ff',
-] as const;
 const TILE_SOURCE_WIDTH = 9019;
 const TILE_SOURCE_HEIGHT = 11691;
 const TILE_SIZE = 2048;
@@ -414,8 +404,13 @@ function poiTooltipLines(poi: Poi): string[] {
 
 function poiColorStyle(poi: Poi): Record<string, string> {
   const colorKey = (poi.resource || poi.label || poi.unique_key).trim().toLowerCase();
-  const colorIndex = stableStringHash(colorKey) % POI_RESOURCE_COLORS.length;
-  return { '--poi-color': POI_RESOURCE_COLORS[colorIndex] };
+  const hash = stableStringHash(colorKey);
+  // Derive a stable HSL color from the full hash instead of a small fixed
+  // palette so distinct resources rarely share the same hue.
+  const hue = hash % 360;
+  const saturation = 62 + (Math.floor(hash / 360) % 21); // 62–82%
+  const lightness = 60 + (Math.floor(hash / 7560) % 13); // 60–72%
+  return { '--poi-color': `hsl(${hue}, ${saturation}%, ${lightness}%)` };
 }
 
 function cargoAriaLabel(marker: CargoMarker): string {
@@ -904,6 +899,7 @@ defineExpose({
             :key="player.unique_key"
             class="map-marker player"
             :class="{
+              self: player.self === true,
               active: selectedKey === player.unique_key,
               dimmed: isDimmed(player.unique_key),
             }"
@@ -1117,6 +1113,12 @@ defineExpose({
     stroke-width: 1.2;
 }
 
+:deep(.map-marker.player.self path) {
+    fill: var(--player-self);
+    stroke: #fff4d6;
+    filter: drop-shadow(0 0 5px var(--player-self));
+}
+
 :deep(.map-marker.poi .poi-hitbox) {
     fill: transparent;
     stroke: none;
@@ -1186,6 +1188,7 @@ defineExpose({
 :deep(.map-marker.sender.active polygon)  { filter: drop-shadow(0 0 6px var(--sender)); }
 :deep(.map-marker.receiver.active circle) { filter: drop-shadow(0 0 6px var(--receiver)); }
 :deep(.map-marker.player.active path)     { filter: drop-shadow(0 0 6px var(--player)); }
+:deep(.map-marker.player.self.active path) { filter: drop-shadow(0 0 6px var(--player-self)); }
 :deep(.map-marker.poi.abandoned_base.active .abandoned-base-shell) { filter: drop-shadow(0 0 7px #ffb36b); }
 :deep(.map-marker.poi.plant_resource.active .plant-resource-core)  { filter: drop-shadow(0 0 7px var(--poi-color)); }
 :deep(.map-marker.orphan rect),

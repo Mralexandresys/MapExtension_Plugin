@@ -12,12 +12,12 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local,
 - Afficher leurs positions directement sur la carte
 - Voir les objets actuellement transportes dans le reseau
 - Afficher la position des `teleporteurs`
-- Afficher la position des `joueurs`
+- Afficher la position des `joueurs`, avec son propre joueur mis en avant dans une couleur distincte
 - Afficher les bases abandonnees et les ressources vegetales comme points d'interet (POI)
 - Distinguer les ressources vegetales disponibles et `depleted`, avec une couleur stable attribuee par ressource
 - Utiliser une vue compacte du cycle de rupture avec phase, temps restant, legende et details de timeline
 - Filtrer la carte pour ne garder que les marqueurs et zones personnels
-- Centrer la carte sur le joueur avec le controle `Joueur` ou le raccourci `P`
+- Centrer la carte sur son propre joueur avec le controle `Joueur` ou le raccourci `P`
 - Exposer `GET /health`, `GET /cargo` et `GET /rupture-cycle` sur le serveur HTTP local
 - Recevoir les snapshots de carte et de cycle de rupture envoyes par la build serveur en session serveur dediee
 - Utiliser un fallback local via `UCrEnviroWaveSubsystem` en solo/local quand aucun snapshot serveur n'est disponible
@@ -68,7 +68,7 @@ L'interface peut reduire la timeline de rupture en barre compacte ; son survol o
 
 ## Compatibilite de la synchronisation serveur dedie
 
-Les snapshots de serveur dedie utilisent le protocole de synchronisation v2, qui transporte les POI et valide les identifiants de snapshot, generations, nombres d'elements et nombres de chunks avant de publier un snapshot distant. Les versions de protocole doivent correspondre exactement : un client ou serveur v2 ignore les paquets d'une autre version de protocole au lieu de tenter un downgrade.
+Les snapshots de serveur dedie utilisent le protocole de synchronisation v3, qui transporte les POI par pages de 64 entrees maximum par requete, marque le marqueur joueur propre a chaque client, et valide les identifiants de snapshot, generations, nombres d'elements, nombres de chunks et la disposition des pages avant de publier un snapshot distant. Les versions de protocole doivent correspondre exactement : un client ou serveur v3 ignore les paquets d'une autre version de protocole au lieu de tenter un downgrade.
 
 **Mettre a jour les builds client et serveur dedie ensemble.** La mise a jour automatique du modloader ne remplace que la DLL client ; la DLL du serveur dedie doit etre remplacee manuellement pendant la meme mise a jour. Ne pas laisser les deux cotes sur des releases differentes.
 
@@ -88,7 +88,7 @@ Copier le contenu de `Plugins/` dans `StarRupture/Binaries/Win64/Plugins/`, puis
 Deux limites a connaitre :
 
 - La mise a jour automatique ne remplace que la DLL. `MapExtensionViewer.html` et `map-tiles/` ne sont jamais touches, puisqu'ils vivent hors du dossier du jeu. L'interface detecte les contrats de payload incompatibles : quand le plugin annonce un contrat plus recent que celui avec lequel l'interface locale a ete construite, une fenetre propose le telechargement direct de l'asset `MapExtension_Plugin-<tag>-viewer.zip` correspondant, avec les liens vers la release GitHub et la page du mod. Les ameliorations retrocompatibles du viewer peuvent ne pas declencher cette fenetre ; installer donc manuellement l'archive viewer correspondante pour profiter des nouvelles fonctions d'interface. Remplacer `MapExtensionViewer.html` et `map-tiles/` ensemble, puis recharger la page.
-- Le build serveur n'est pas couvert par le sidecar. Le protocole de synchronisation v2 exige des builds client et serveur correspondants : mettre a jour les deux DLL ensemble et remplacer manuellement celle du serveur dedie.
+- Le build serveur n'est pas couvert par le sidecar. Le protocole de synchronisation v3 exige des builds client et serveur correspondants : mettre a jour les deux DLL ensemble et remplacer manuellement celle du serveur dedie.
 
 Les mises a jour automatiques peuvent etre desactivees globalement dans le modloader avec `[AutoUpdate] Enabled=0` dans `modloader.ini`.
 

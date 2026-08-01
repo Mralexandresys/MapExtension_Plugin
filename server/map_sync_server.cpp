@@ -15,6 +15,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -458,11 +459,17 @@ namespace
 		MapSyncProtocol::CopyCStringTruncated(packet.step, sizeof(packet.step), snapshot.Step.c_str());
 	}
 
-	void FillPlayerEntry(MapSyncProtocol::ServerPlayerEntry& entry, const PlayerMarker& marker)
+	void FillPlayerEntry(
+		MapSyncProtocol::ServerPlayerEntry& entry,
+		const PlayerMarker& marker,
+		const std::string& recipientSelfKey)
 	{
 		entry.world_x = static_cast<float>(marker.WorldLocation.X);
 		entry.world_y = static_cast<float>(marker.WorldLocation.Y);
 		entry.world_z = static_cast<float>(marker.WorldLocation.Z);
+		const bool isSelf = marker.IsSelf
+			|| (!recipientSelfKey.empty() && marker.PublicKey == recipientSelfKey);
+		entry.flags = isSelf ? MapSyncProtocol::kPlayerEntrySelf : 0;
 		MapSyncProtocol::CopyCStringTruncated(entry.label, sizeof(entry.label), marker.DisplayName.c_str());
 		MapSyncProtocol::CopyCStringTruncated(entry.source, sizeof(entry.source), marker.Source.c_str());
 		MapSyncProtocol::CopyCStringTruncated(entry.unique_key, sizeof(entry.unique_key), marker.PublicKey.c_str());
@@ -569,7 +576,10 @@ namespace
 		return true;
 	}
 
-	bool TryBuildSnapshotWireCounts(const CargoSnapshot& snapshot, SnapshotWireCounts& outCounts)
+	bool TryBuildSnapshotWireCounts(
+		const CargoSnapshot& snapshot,
+		size_t poiPageItemCount,
+		SnapshotWireCounts& outCounts)
 	{
 		return TryBuildCollectionWireCounts<MapSyncProtocol::kPlayerChunkCapacity>(
 				snapshot.Players.size(),
@@ -584,7 +594,7 @@ namespace
 				snapshot.Connections.size(),
 				outCounts.CargoConnections)
 			&& TryBuildCollectionWireCounts<MapSyncProtocol::kPoiChunkCapacity>(
-				snapshot.Pois.size(),
+				poiPageItemCount,
 				outCounts.Pois);
 	}
 
@@ -636,7 +646,7 @@ namespace
 		return true;
 	}
 
-	void SendFullSnapshotToPlayer(void* senderPlayerController, const char* reason)
+	void SendFullSnapshotToPlayer(void* senderPlayerController, const char* reason, uint16_t requestedPoiPage)
 	{
 		IPluginHooks* hooks = GetHooks();
 		const IPluginSelf* self = GetPluginSelf();
@@ -653,11 +663,36 @@ namespace
 
 		MapStateRuntime::Detail::RefreshCargoSnapshot(g_trackedWorld, reason ? reason : "ServerSnapshotRequest");
 		CargoSnapshot snapshot = MapStateRuntime::Detail::CopySnapshot();
-		SnapshotWireCounts wireCounts{};
-		if (!TryBuildSnapshotWireCounts(snapshot, wireCounts))
+
+		// Protocol v3 paginates POIs: each snapshot carries a single POI page of
+		// at most kPoiPageCapacity items, selected by the client request.
+		uint16_t poiTotalCount = 0;
+		if (!TryConvertToUint16(snapshot.Pois.size(), poiTotalCount))
 		{
 			LOG_WARN(
-				"Cannot send protocol v2 snapshot: a collection exceeds uint16 limits "
+				"Cannot send protocol v3 snapshot: POI total exceeds uint16 limits (pois=%llu)",
+				static_cast<unsigned long long>(snapshot.Pois.size()));
+			return;
+		}
+
+		const size_t poiPageCountRaw = snapshot.Pois.empty()
+			? 1
+			: (snapshot.Pois.size() + MapSyncProtocol::kPoiPageCapacity - 1) / MapSyncProtocol::kPoiPageCapacity;
+		const uint16_t poiPageCount = static_cast<uint16_t>(poiPageCountRaw);
+		const uint16_t poiPage = static_cast<uint16_t>(requestedPoiPage % poiPageCount);
+		const size_t poiPageStart = static_cast<size_t>(poiPage) * MapSyncProtocol::kPoiPageCapacity;
+		const size_t poiPageEnd = poiPageStart + MapSyncProtocol::kPoiPageCapacity < snapshot.Pois.size()
+			? poiPageStart + MapSyncProtocol::kPoiPageCapacity
+			: snapshot.Pois.size();
+		const std::vector<MapStateRuntime::Detail::PoiMarker> poiPageItems(
+			snapshot.Pois.begin() + poiPageStart,
+			snapshot.Pois.begin() + poiPageEnd);
+
+		SnapshotWireCounts wireCounts{};
+		if (!TryBuildSnapshotWireCounts(snapshot, poiPageItems.size(), wireCounts))
+		{
+			LOG_WARN(
+				"Cannot send protocol v3 snapshot: a collection exceeds uint16 limits "
 				"(players=%llu, teleporters=%llu, cargo_markers=%llu, cargo_connections=%llu, pois=%llu)",
 				static_cast<unsigned long long>(snapshot.Players.size()),
 				static_cast<unsigned long long>(snapshot.Teleporters.size()),
@@ -668,6 +703,8 @@ namespace
 		}
 
 		const uint64_t snapshotId = ++g_snapshotId;
+		const std::string recipientSelfKey =
+			MapStateRuntime::Detail::BuildPlayerPublicKeyForController(senderPlayerController);
 
 		MapSyncProtocol::ServerRuptureStatePacket rupturePacket{};
 		FillRupturePacket(rupturePacket, snapshot.RuptureCycle);
@@ -689,12 +726,15 @@ namespace
 		beginPacket.cargo_connections_chunk_count = wireCounts.CargoConnections.ChunkCount;
 		beginPacket.pois_count = wireCounts.Pois.ItemCount;
 		beginPacket.pois_chunk_count = wireCounts.Pois.ChunkCount;
+		beginPacket.poi_page = poiPage;
+		beginPacket.poi_page_count = poiPageCount;
+		beginPacket.pois_total_count = poiTotalCount;
 		MapSyncProtocol::CopyCStringTruncated(beginPacket.world_name, sizeof(beginPacket.world_name), snapshot.WorldName.c_str());
 		if (!snapshot.Players.empty()) beginPacket.content_flags |= MapSyncProtocol::kSnapshotHasPlayers;
 		if (!snapshot.Teleporters.empty()) beginPacket.content_flags |= MapSyncProtocol::kSnapshotHasTeleporters;
 		if (!snapshot.Markers.empty()) beginPacket.content_flags |= MapSyncProtocol::kSnapshotHasCargoMarkers;
 		if (!snapshot.Connections.empty()) beginPacket.content_flags |= MapSyncProtocol::kSnapshotHasCargoConnections;
-		if (!snapshot.Pois.empty()) beginPacket.content_flags |= MapSyncProtocol::kSnapshotHasPois;
+		if (!poiPageItems.empty()) beginPacket.content_flags |= MapSyncProtocol::kSnapshotHasPois;
 		Network::SendPacketToPlayer(hooks, self, senderPlayerController, beginPacket);
 
 		const bool playersSent =
@@ -703,9 +743,9 @@ namespace
 				snapshotId,
 				wireCounts.Players.ChunkCount,
 				snapshot.Players,
-				[](MapSyncProtocol::ServerPlayerEntry& entry, const PlayerMarker& marker)
+				[&recipientSelfKey](MapSyncProtocol::ServerPlayerEntry& entry, const PlayerMarker& marker)
 				{
-					FillPlayerEntry(entry, marker);
+					FillPlayerEntry(entry, marker, recipientSelfKey);
 				});
 
 		const bool teleportersSent =
@@ -742,11 +782,11 @@ namespace
 				});
 
 		const bool poisSent =
-			SendChunkedCollection<MapSyncProtocol::ServerPoisChunkPacket, MapSyncProtocol::ServerPoiEntry, decltype(snapshot.Pois), MapSyncProtocol::kPoiChunkCapacity>(
+			SendChunkedCollection<MapSyncProtocol::ServerPoisChunkPacket, MapSyncProtocol::ServerPoiEntry, decltype(poiPageItems), MapSyncProtocol::kPoiChunkCapacity>(
 				senderPlayerController,
 				snapshotId,
 				wireCounts.Pois.ChunkCount,
-				snapshot.Pois,
+				poiPageItems,
 				[](MapSyncProtocol::ServerPoiEntry& entry, const MapStateRuntime::Detail::PoiMarker& marker)
 				{
 					FillPoiEntry(entry, marker);
@@ -761,7 +801,7 @@ namespace
 		if (!chunksSent)
 		{
 			LOG_WARN(
-				"Protocol v2 snapshot %llu could not dispatch every chunk; sending an unsuccessful end packet",
+				"Protocol v3 snapshot %llu could not dispatch every chunk; sending an unsuccessful end packet",
 				static_cast<unsigned long long>(snapshotId));
 		}
 
@@ -775,6 +815,8 @@ namespace
 		endPacket.cargo_markers_count = beginPacket.cargo_markers_count;
 		endPacket.cargo_connections_count = beginPacket.cargo_connections_count;
 		endPacket.pois_count = beginPacket.pois_count;
+		endPacket.poi_page = poiPage;
+		endPacket.poi_page_count = poiPageCount;
 		Network::SendPacketToPlayer(hooks, self, senderPlayerController, endPacket);
 	}
 
@@ -789,7 +831,7 @@ namespace
 			return;
 		}
 
-		// request_flags are reserved in protocol v2. Selective responses would
+		// request_flags are reserved in protocol v3. Selective responses would
 		// replace omitted collections with empty data in current clients, so the
 		// server deliberately sends the complete snapshot for every request.
 		(void)packet.request_flags;
@@ -800,7 +842,7 @@ namespace
 		{
 			LogRuptureStateChangeIfNeeded("ClientSnapshotRequest", state);
 		}
-		SendFullSnapshotToPlayer(senderPlayerController, "ClientSnapshotRequest");
+		SendFullSnapshotToPlayer(senderPlayerController, "ClientSnapshotRequest", packet.poi_page);
 	}
 }
 

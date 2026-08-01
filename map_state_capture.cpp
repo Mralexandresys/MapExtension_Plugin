@@ -2,6 +2,7 @@
 
 #include "plugin_config.h"
 #include "plugin_helpers.h"
+#include "shared/map_sync_protocol.h"
 
 #if !defined(MODLOADER_SERVER_BUILD)
 #include "client/map_sync_client.h"
@@ -88,6 +89,7 @@ namespace
 	float g_engineTickAccumulatorSeconds = 0.0f;
 	int64_t g_lastCargoActorRefreshAtUnixMs = 0;
 	int64_t g_lastPoiScanAtUnixMs = 0;
+	bool g_poiScanInProgress = false;
 	std::string g_lastPoiScanWorldName;
 	// Timestamp at which the ChimeraMain world was first detected. Realtime
 	// refreshes are suppressed for kPostWorldBeginPlayGraceMs after this point
@@ -136,6 +138,7 @@ namespace
 	{
 		std::lock_guard<std::mutex> lock(g_poiScanMutex);
 		g_lastPoiScanAtUnixMs = 0;
+		g_poiScanInProgress = false;
 		g_lastPoiScanWorldName.clear();
 	}
 
@@ -1494,6 +1497,38 @@ namespace
 		return out;
 	}
 
+	uint64_t Fnv1aHash64(const std::string& value)
+	{
+		uint64_t hash = 1469598103934665603ull;
+		for (unsigned char ch : value)
+		{
+			hash ^= ch;
+			hash *= 1099511628211ull;
+		}
+		return hash;
+	}
+
+	// Public keys travel through fixed-size sync packet fields
+	// (MapSyncProtocol::kKeyCapacity). Keys longer than that capacity would be
+	// silently truncated on the wire and could collide; replace the overflowing
+	// tail with a hash of the full key to keep keys unique and wire-safe.
+	std::string FitPublicKey(std::string key)
+	{
+		constexpr size_t kMaxLength = MapSyncProtocol::kKeyCapacity - 1;
+		if (key.size() <= kMaxLength)
+		{
+			return key;
+		}
+
+		std::ostringstream suffix;
+		suffix << std::hex << Fnv1aHash64(key);
+		const std::string hash = suffix.str();
+		key.resize(kMaxLength - hash.size() - 1);
+		key.push_back('~');
+		key.append(hash);
+		return key;
+	}
+
 	std::string MakePublicKey(CargoKind kind, const std::string& internalKey)
 	{
 		bool isMostlyPrintable = !internalKey.empty();
@@ -1509,10 +1544,10 @@ namespace
 		const std::string prefix = kind == CargoKind::Sender ? "sender_" : "receiver_";
 		if (isMostlyPrintable)
 		{
-			return prefix + SanitizePrintableKey(internalKey);
+			return FitPublicKey(prefix + SanitizePrintableKey(internalKey));
 		}
 
-		return prefix + HexEncode(internalKey);
+		return FitPublicKey(prefix + HexEncode(internalKey));
 	}
 
 	std::string MakeTaggedPublicKey(const char* prefix, const std::string& internalKey)
@@ -1530,10 +1565,10 @@ namespace
 
 		if (isMostlyPrintable)
 		{
-			return safePrefix + "_" + SanitizePrintableKey(internalKey);
+			return FitPublicKey(safePrefix + "_" + SanitizePrintableKey(internalKey));
 		}
 
-		return safePrefix + "_" + HexEncode(internalKey);
+		return FitPublicKey(safePrefix + "_" + HexEncode(internalKey));
 	}
 
 	void LogSnapshotSummary(const CargoSnapshot& snapshot)
@@ -2083,6 +2118,31 @@ namespace
 		return playerPawn->GetName();
 	}
 
+	std::string GetControllerInternalKey(SDK::AController* controller)
+	{
+		if (!controller)
+		{
+			return {};
+		}
+
+		if (SDK::APlayerState* playerState = controller->PlayerState)
+		{
+			const std::string playerStateName = playerState->GetName();
+			if (!playerStateName.empty())
+			{
+				return "player_state:" + playerStateName;
+			}
+		}
+
+		const std::string controllerName = controller->GetName();
+		if (!controllerName.empty())
+		{
+			return "controller:" + controllerName;
+		}
+
+		return {};
+	}
+
 	std::string GetPlayerInternalKey(SDK::APawn* playerPawn)
 	{
 		if (!playerPawn)
@@ -2090,22 +2150,10 @@ namespace
 			return {};
 		}
 
-		if (SDK::AController* controller = playerPawn->GetController())
+		const std::string controllerKey = GetControllerInternalKey(playerPawn->GetController());
+		if (!controllerKey.empty())
 		{
-			if (SDK::APlayerState* playerState = controller->PlayerState)
-			{
-				const std::string playerStateName = playerState->GetName();
-				if (!playerStateName.empty())
-				{
-					return "player_state:" + playerStateName;
-				}
-			}
-
-			const std::string controllerName = controller->GetName();
-			if (!controllerName.empty())
-			{
-				return "controller:" + controllerName;
-			}
+			return controllerKey;
 		}
 
 		const std::string pawnName = playerPawn->GetName();
@@ -2121,7 +2169,8 @@ namespace
 		CargoSnapshot& snapshot,
 		std::unordered_map<std::string, size_t>& playerIndexes,
 		SDK::APawn* playerPawn,
-		const char* source)
+		const char* source,
+		bool isSelf = false)
 	{
 		if (!playerPawn)
 		{
@@ -2135,13 +2184,17 @@ namespace
 			internalKey = BuildLocationKey("player", worldLocation);
 		}
 
-		AddOrUpdatePlayer(
+		PlayerMarker* marker = AddOrUpdatePlayer(
 			snapshot,
 			playerIndexes,
 			worldLocation,
 			internalKey,
 			source,
 			GetPlayerDisplayName(playerPawn));
+		if (marker && isSelf)
+		{
+			marker->IsSelf = true;
+		}
 	}
 
 	void CaptureFromReplicator(
@@ -2725,6 +2778,8 @@ namespace
 			SDK::UGameplayStatics::GetNumLocalPlayerControllers(world));
 		for (int playerIndex = 0; playerIndex < localPlayerCount; ++playerIndex)
 		{
+			// The primary local player controller is "me" for the local viewer.
+			const bool isSelf = playerIndex == 0;
 			SDK::APawn* playerPawn = SDK::UGameplayStatics::GetPlayerPawn(world, playerIndex);
 			if (playerPawn)
 			{
@@ -2732,7 +2787,8 @@ namespace
 					snapshot,
 					playerIndexes,
 					playerPawn,
-					"local_player_pawn");
+					"local_player_pawn",
+					isSelf);
 				continue;
 			}
 
@@ -2747,7 +2803,8 @@ namespace
 				snapshot,
 				playerIndexes,
 				controller->K2_GetPawn(),
-				"local_player_controller");
+				"local_player_controller",
+				isSelf);
 		}
 
 		snapshot.PlayerCount = static_cast<int>(snapshot.Players.size());
@@ -2859,14 +2916,14 @@ namespace
 		{
 			std::lock_guard<std::mutex> lock(g_poiScanMutex);
 			scanIsFresh =
-				g_lastPoiScanAtUnixMs != 0
-				&& observedAtUnixMs >= g_lastPoiScanAtUnixMs
-				&& observedAtUnixMs - g_lastPoiScanAtUnixMs < kPoiScanMinIntervalMs
-				&& g_lastPoiScanWorldName == worldName;
+				g_poiScanInProgress
+				|| (g_lastPoiScanAtUnixMs != 0
+					&& observedAtUnixMs >= g_lastPoiScanAtUnixMs
+					&& observedAtUnixMs - g_lastPoiScanAtUnixMs < kPoiScanMinIntervalMs
+					&& g_lastPoiScanWorldName == worldName);
 			if (!scanIsFresh)
 			{
-				g_lastPoiScanAtUnixMs = observedAtUnixMs;
-				g_lastPoiScanWorldName = worldName;
+				g_poiScanInProgress = true;
 			}
 		}
 
@@ -2935,6 +2992,14 @@ namespace
 		}
 
 		UpdatePoiCounts(snapshot);
+		{
+			// Commit the throttle window only after a completed scan so an
+			// interrupted scan can be retried immediately.
+			std::lock_guard<std::mutex> lock(g_poiScanMutex);
+			g_poiScanInProgress = false;
+			g_lastPoiScanAtUnixMs = observedAtUnixMs;
+			g_lastPoiScanWorldName = worldName;
+		}
 		return true;
 	}
 
@@ -3171,6 +3236,35 @@ namespace MapStateRuntime
 		void LogRuntimePlanIfNeeded()
 		{
 			LogRuntimePlanIfNeededImpl();
+		}
+
+		std::string BuildPlayerPublicKeyForController(void* playerController)
+		{
+			SDK::AController* controller = static_cast<SDK::AController*>(playerController);
+			if (!controller)
+			{
+				return {};
+			}
+
+			std::string internalKey = GetControllerInternalKey(controller);
+			if (internalKey.empty())
+			{
+				if (SDK::APawn* pawn = controller->K2_GetPawn())
+				{
+					const std::string pawnName = pawn->GetName();
+					if (!pawnName.empty())
+					{
+						internalKey = "pawn:" + pawnName;
+					}
+				}
+			}
+
+			if (internalKey.empty())
+			{
+				return {};
+			}
+
+			return MakeTaggedPublicKey("player", internalKey);
 		}
 
 	bool IsRelevantRealtimeActor(SDK::AActor* actor)

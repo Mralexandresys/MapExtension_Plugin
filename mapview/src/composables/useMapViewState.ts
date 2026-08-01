@@ -274,7 +274,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     );
 
     function centerOnPlayer(): void {
-        const player = cargo.value?.players?.[0];
+        const players = cargo.value?.players ?? [];
+        const player = players.find((entry) => entry.self) ?? players[0];
         if (!player) return;
         mapCanvasRef.value?.focusPoint(player.map.x, player.map.y);
     }
@@ -385,6 +386,12 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
                 return;
         }
     }
+
+    watch(userAnnotationsOnly, (enabled) => {
+        if (enabled) {
+            clearSelection();
+        }
+    });
 
     watch(
         [selectedKey, visibleEntityKeys],

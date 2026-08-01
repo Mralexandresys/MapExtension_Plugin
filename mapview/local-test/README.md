@@ -31,7 +31,8 @@ Sans override, le mock fournit :
   pop-up de mise a jour ;
 - un `/rupture-cycle` sans donnees live, utile pour verifier l'etat vide et les vues
   detaillee/compacte ;
-- un `/cargo` avec quatre POI visibles dans une zone rapprochee de la carte :
+- un `/cargo` avec deux joueurs (`MockSelf` avec `self: true`, rendu dans la couleur
+  « moi », et `MockAlly`) et quatre POI visibles dans une zone rapprochee de la carte :
   - une base abandonnee, rendue avec l'icone de batiment fissure ;
   - une ressource `Gold Fruit` `available`, rendue avec un point plein ;
   - une ressource `Gold Fruit` `depleted`, rendue attenuee et en contour ;
@@ -73,26 +74,16 @@ rupture live et une version de contrat superieure dans `/health`.
 
 ## Tester un ancien payload `/cargo` sans POI
 
-Pour verifier la retrocompatibilite avec un plugin anterieur aux POI, creer
-`local-test/data/cargo.json` avec un payload valide qui omet volontairement le tableau
-`pois` et ses compteurs :
+Pour verifier la retrocompatibilite avec un plugin anterieur aux POI (et au champ
+`self` des joueurs), copier la fixture fournie :
 
-```json
-{
-  "generation": 1,
-  "world": "LegacyMock",
-  "reason": "legacy-override",
-  "counts": {
-    "markers": 0,
-    "teleporters": 0,
-    "players": 0
-  },
-  "markers": [],
-  "connections": [],
-  "teleporters": [],
-  "players": []
-}
+```bash
+cp examples/cargo-legacy-no-pois.json data/cargo.json
 ```
+
+Cette fixture omet volontairement le tableau `pois`, les compteurs
+`counts.pois`/`counts.abandoned_bases`/`counts.plant_resources` et le champ `self`
+des joueurs, comme le ferait un plugin plus ancien.
 
 Forcer ensuite un refresh du viewer. Le resultat attendu est une carte toujours
 utilisable, aucun POI rendu et des compteurs POI a zero, sans exiger les champs

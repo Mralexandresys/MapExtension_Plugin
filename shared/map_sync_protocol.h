@@ -6,10 +6,10 @@
 
 namespace MapSyncProtocol
 {
-	constexpr uint32_t kProtocolVersion = 2;
+	constexpr uint32_t kProtocolVersion = 3;
 
-	// Reserved in protocol v2 for future selective snapshots. The v2 server
-	// intentionally ignores request_flags and always returns a full snapshot.
+	// Reserved for future selective snapshots. The server intentionally
+	// ignores request_flags and always returns a full snapshot.
 	constexpr uint32_t kRequestFlagRuptureCycle = 1u << 0;
 	constexpr uint32_t kRequestFlagPlayers = 1u << 1;
 	constexpr uint32_t kRequestFlagTeleporters = 1u << 2;
@@ -36,6 +36,12 @@ namespace MapSyncProtocol
 	constexpr size_t kCargoConnectionChunkCapacity = 4;
 	constexpr size_t kPoiChunkCapacity = 4;
 	constexpr size_t kPreferredPoiPacketSizeLimit = 1024;
+	// POIs are paginated in protocol v3: each snapshot response carries at most
+	// one page of POIs and the client requests the remaining pages across
+	// subsequent snapshot requests. This bounds the packet burst emitted for a
+	// single request on worlds with thousands of gatherable actors.
+	constexpr size_t kPoiChunksPerPage = 16;
+	constexpr size_t kPoiPageCapacity = kPoiChunkCapacity * kPoiChunksPerPage;
 
 	enum ServerRuptureStateFlags : uint32_t
 	{
@@ -79,12 +85,21 @@ namespace MapSyncProtocol
 		kPoiEntryDepleted = 1u << 0
 	};
 
+	enum PlayerEntryFlags : uint8_t
+	{
+		// Set by the server on the entry matching the requesting player, so the
+		// receiving client can highlight "me" on the map.
+		kPlayerEntrySelf = 1u << 0
+	};
+
 	struct ClientSnapshotRequestPacket
 	{
 		uint32_t protocol_version = kProtocolVersion;
 		uint32_t request_flags = kRequestFlagAll;
 		uint64_t request_sequence = 0;
-		uint8_t reserved[16] = {};
+		// POI page requested for this snapshot (protocol v3 pagination).
+		uint16_t poi_page = 0;
+		uint8_t reserved[14] = {};
 	};
 
 	struct ServerSnapshotBeginPacket
@@ -101,8 +116,15 @@ namespace MapSyncProtocol
 		uint16_t teleporters_chunk_count = 0;
 		uint16_t cargo_markers_chunk_count = 0;
 		uint16_t cargo_connections_chunk_count = 0;
+		// POI pagination (protocol v3): pois_count/pois_chunk_count describe the
+		// page carried by this snapshot; pois_total_count is the full POI count
+		// across all poi_page_count pages.
 		uint16_t pois_count = 0;
 		uint16_t pois_chunk_count = 0;
+		uint16_t poi_page = 0;
+		uint16_t poi_page_count = 0;
+		uint16_t pois_total_count = 0;
+		uint16_t reserved_pois = 0;
 		char world_name[kWorldNameCapacity] = {};
 	};
 
@@ -117,7 +139,9 @@ namespace MapSyncProtocol
 		uint16_t cargo_markers_count = 0;
 		uint16_t cargo_connections_count = 0;
 		uint16_t pois_count = 0;
-		uint8_t reserved[14] = {};
+		uint16_t poi_page = 0;
+		uint16_t poi_page_count = 0;
+		uint8_t reserved[10] = {};
 	};
 
 	struct ServerRuptureStatePacket
@@ -138,6 +162,8 @@ namespace MapSyncProtocol
 		float world_x = 0.0f;
 		float world_y = 0.0f;
 		float world_z = 0.0f;
+		uint8_t flags = 0;
+		uint8_t reserved[3] = {};
 		char label[kLabelCapacity] = {};
 		char source[kSourceCapacity] = {};
 		char unique_key[kKeyCapacity] = {};

@@ -74,7 +74,7 @@ def default_payloads(port: int) -> dict[str, Any]:
             "counts": {
                 "markers": 0,
                 "teleporters": 0,
-                "players": 0,
+                "players": 2,
                 "pois": 4,
                 "abandoned_bases": 1,
                 "plant_resources": 3,
@@ -96,7 +96,24 @@ def default_payloads(port: int) -> dict[str, Any]:
             "markers": [],
             "connections": [],
             "teleporters": [],
-            "players": [],
+            "players": [
+                {
+                    "label": "MockSelf",
+                    "source": "local_player_pawn",
+                    "unique_key": "player:mock-self",
+                    "self": True,
+                    "world": {"x": -220000.0, "y": -145000.0, "z": 100.0},
+                    "map": {"x": 2865.8, "y": 2457.5},
+                },
+                {
+                    "label": "MockAlly",
+                    "source": "actor_scan.player",
+                    "unique_key": "player:mock-ally",
+                    "self": False,
+                    "world": {"x": -200000.0, "y": -135000.0, "z": 95.0},
+                    "map": {"x": 3279.4, "y": 2664.4},
+                },
+            ],
             "pois": [
                 {
                     "kind": "abandoned_base",

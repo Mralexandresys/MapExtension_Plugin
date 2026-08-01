@@ -165,23 +165,24 @@ The workflow:
 
 The modloader auto-updater replaces `MapExtension_Plugin.dll` only. `MapExtensionViewer.html` and `map-tiles/` live outside the game folder and are never updated, so any change to the `/cargo`, `/health`, or `/rupture-cycle` payload shape must stay backward compatible with an older viewer, or bump the viewer contract version described below so the viewer prompts the user to download the viewer zip.
 
-The server build ships no sidecar and is not auto-updated. Sync protocol v2 requires an exact protocol-version match, so releases using it must tell server admins to update the client and dedicated-server DLLs together. A mixed-version pair ignores incompatible packets and cannot publish a remote snapshot.
+The server build ships no sidecar and is not auto-updated. Sync protocol v3 requires an exact protocol-version match, so releases using it must tell server admins to update the client and dedicated-server DLLs together. A mixed-version pair ignores incompatible packets and cannot publish a remote snapshot.
 
 `interface_version_min`/`interface_version_max` in the manifest are read from `PLUGIN_INTERFACE_VERSION_MIN`/`PLUGIN_INTERFACE_VERSION_MAX` in the SDK header, matching the SDK's reference workflow. The loader only checks that this range overlaps its own, so the published range is wider than the single `PLUGIN_INTERFACE_VERSION` the DLL actually declares.
 
-## Dedicated-server sync protocol v2
+## Dedicated-server sync protocol v3
 
-`shared/map_sync_protocol.h` defines strict protocol version `2` for authoritative dedicated-server snapshots. The client and server both reject packets whose `protocol_version` does not equal `kProtocolVersion`; there is no v1 fallback or partial downgrade path.
+`shared/map_sync_protocol.h` defines strict protocol version `3` for authoritative dedicated-server snapshots. The client and server both reject packets whose `protocol_version` does not equal `kProtocolVersion`; there is no fallback or partial downgrade path to older versions.
 
-Protocol v2 adds POIs to the existing rupture, player, teleporter, cargo-marker, and cargo-connection stream:
+Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker, and cargo-connection stream; protocol v3 adds POI pagination and a per-recipient "self" player flag:
 
-- `kRequestFlagPois` and `kSnapshotHasPois` identify POI content. All request flags are reserved in v2; the server intentionally ignores `request_flags` and returns a complete snapshot.
-- `ServerSnapshotBeginPacket` declares `pois_count` and `pois_chunk_count`; `ServerSnapshotEndPacket` repeats `pois_count` with the snapshot ID and generation.
+- `kRequestFlagPois` and `kSnapshotHasPois` identify POI content. All request flags are reserved; the server intentionally ignores `request_flags` and returns a complete snapshot.
+- POIs are paginated: each `ClientSnapshotRequestPacket` carries a `poi_page`, and the server responds with at most `kPoiPageCapacity` POIs (currently 64, i.e. `kPoiChunksPerPage` = 16 chunks) for that page. `ServerSnapshotBeginPacket` declares the page slice via `pois_count`/`pois_chunk_count` plus `poi_page`, `poi_page_count`, and `pois_total_count`; `ServerSnapshotEndPacket` repeats `pois_count`, `poi_page`, and `poi_page_count`. The client retains previously fetched pages per world and merges them into every published snapshot, and it keeps requesting the next page at the minimum request interval until all pages have been fetched.
+- `ServerPlayerEntry` carries a `flags` byte; `kPlayerEntrySelf` marks the marker that belongs to the requesting player. The server matches the requesting player controller against the captured player keys, so each connected client sees its own marker flagged.
 - `ServerPoiEntry` carries world coordinates, `kind`, the `kPoiEntryDepleted` flag, label, resource, source, and unique key.
 - `ServerPoisChunkPacket` carries at most `kPoiChunkCapacity` entries (currently four). The packet remains trivially copyable and is statically limited to the recommended 1 KiB payload size.
-- The server rejects collections that cannot be represented by the `uint16_t` wire counters. The client validates the snapshot ID, generation, begin/end counts, chunk counts, chunk indexes, and per-chunk item counts before publishing the assembled snapshot.
+- The server rejects collections that cannot be represented by the `uint16_t` wire counters. The client validates the snapshot ID, generation, begin/end counts, chunk counts, chunk indexes, per-chunk item counts, and the POI page layout before publishing the assembled snapshot.
 
-**Always update the client and dedicated-server builds together when deploying protocol v2.** The client sidecar updates only `MapExtension_Plugin.dll` on player machines; it does not update the dedicated-server DLL. A v2/v1 or otherwise mismatched pair will ignore each other's packets, so the server DLL must be replaced manually during the same rollout.
+**Always update the client and dedicated-server builds together when deploying protocol v3.** The client sidecar updates only `MapExtension_Plugin.dll` on player machines; it does not update the dedicated-server DLL. A mismatched pair will ignore each other's packets, so the server DLL must be replaced manually during the same rollout.
 
 ## Runtime contract
 
@@ -244,7 +245,9 @@ The payload includes `counts.pois`, `counts.abandoned_bases`, and `counts.plant_
 
 `counts.pois` equals the length of `pois`; `counts.abandoned_bases` and `counts.plant_resources` are the per-kind totals and add up to that total.
 
-The viewer renders abandoned bases with a dedicated fixed-color icon. Plant resources use a stable hash of `resource || label || unique_key`, after trimming and lowercasing, into this palette: `#65d6ff`, `#7ee787`, `#ffd166`, `#ff9f6e`, `#c99cff`, `#ff82b2`, `#5eead4`, `#9db7ff`. The mapping is independent of payload order, although different names can collide in the finite palette. Available resources use a solid core; depleted resources use a faded core and dashed/outlined ring.
+The viewer renders abandoned bases with a dedicated fixed-color icon. Plant resources use a stable FNV-1a hash of `resource || label || unique_key`, after trimming and lowercasing, to derive an HSL color (hue from the full hash range, saturation 62–82%, lightness 60–72%). The mapping is independent of payload order, and distinct resource names rarely share the same hue. Available resources use a solid core; depleted resources use a faded core and dashed/outlined ring.
+
+Player entries in `/cargo` carry an optional boolean `self`, set to `true` on the marker representing the local viewer's own player (the primary local player in solo sessions, or the marker flagged by the dedicated server for this client). The viewer renders the `self` player with a distinct color and prefers it when centering on the player. Older plugins omit the field.
 
 ## Viewer contract version
 

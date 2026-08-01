@@ -137,6 +137,7 @@ namespace Detail
 				{"label", player.DisplayName},
 				{"source", player.Source},
 				{"unique_key", player.PublicKey},
+				{"self", player.IsSelf},
 				{"world", ToJson(player.WorldLocation)},
 				{"map", ToJson(player.MapLocation)}
 			};

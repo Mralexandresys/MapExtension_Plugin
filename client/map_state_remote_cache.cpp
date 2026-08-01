@@ -1,9 +1,11 @@
 #include "map_state_remote_cache.h"
 
 #include <cstddef>
+#include <map>
 #include <mutex>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace
 {
@@ -37,6 +39,9 @@ namespace
 		uint16_t ExpectedCargoMarkersCount = 0;
 		uint16_t ExpectedCargoConnectionsCount = 0;
 		uint16_t ExpectedPoisCount = 0;
+		uint16_t PoiPage = 0;
+		uint16_t PoiPageCount = 1;
+		uint16_t PoisTotalCount = 0;
 		std::string WorldName;
 		CargoSnapshot Snapshot{};
 		std::unordered_set<uint16_t> PlayersChunksReceived;
@@ -54,6 +59,14 @@ namespace
 	SnapshotAssembly g_snapshotAssembly{};
 	bool g_hasCargoSnapshot = false;
 	CargoSnapshot g_activeCargoSnapshot{};
+
+	// Protocol v3 POI pagination: pages already fetched are retained here and
+	// merged into every finalized snapshot, keyed by page index. The store is
+	// invalidated when the world or the server-reported page count changes.
+	std::map<uint16_t, std::vector<PoiMarker>> g_poiPages;
+	uint16_t g_poiPageCount = 1;
+	std::string g_poiPagesWorldName;
+	uint16_t g_nextPoiPageToRequest = 0;
 
 	template <size_t N>
 	std::string ReadFixedString(const char (&buffer)[N])
@@ -163,6 +176,30 @@ namespace
 			return false;
 		}
 
+		// Protocol v3 POI pagination coherence: the advertised page must exist,
+		// and the page item count must match the slice of the advertised total.
+		const uint32_t expectedPoiPageCount = packet.pois_total_count == 0
+			? 1u
+			: (static_cast<uint32_t>(packet.pois_total_count) + MapSyncProtocol::kPoiPageCapacity - 1)
+				/ MapSyncProtocol::kPoiPageCapacity;
+		if (packet.poi_page_count != expectedPoiPageCount
+			|| packet.poi_page >= packet.poi_page_count)
+		{
+			return false;
+		}
+		const uint32_t poiPageStart =
+			static_cast<uint32_t>(packet.poi_page) * MapSyncProtocol::kPoiPageCapacity;
+		const uint32_t poiPageRemaining = packet.pois_total_count > poiPageStart
+			? packet.pois_total_count - poiPageStart
+			: 0u;
+		const uint32_t expectedPoiPageItems = poiPageRemaining > MapSyncProtocol::kPoiPageCapacity
+			? MapSyncProtocol::kPoiPageCapacity
+			: poiPageRemaining;
+		if (packet.pois_count != expectedPoiPageItems)
+		{
+			return false;
+		}
+
 		return HasExpectedContentFlag(
 				packet.content_flags,
 				MapSyncProtocol::kSnapshotHasPlayers,
@@ -268,7 +305,9 @@ namespace
 			&& packet.teleporters_count == assembly.ExpectedTeleportersCount
 			&& packet.cargo_markers_count == assembly.ExpectedCargoMarkersCount
 			&& packet.cargo_connections_count == assembly.ExpectedCargoConnectionsCount
-			&& packet.pois_count == assembly.ExpectedPoisCount;
+			&& packet.pois_count == assembly.ExpectedPoisCount
+			&& packet.poi_page == assembly.PoiPage
+			&& packet.poi_page_count == assembly.PoiPageCount;
 	}
 }
 
@@ -285,6 +324,10 @@ namespace MapExtensionClient
 			g_snapshotAssembly.Reset();
 			g_hasCargoSnapshot = false;
 			g_activeCargoSnapshot = {};
+			g_poiPages.clear();
+			g_poiPageCount = 1;
+			g_poiPagesWorldName.clear();
+			g_nextPoiPageToRequest = 0;
 		}
 
 		void StoreRuptureState(const MapSyncProtocol::ServerRuptureStatePacket& packet, int64_t receivedAtUnixMs)
@@ -338,6 +381,9 @@ namespace MapExtensionClient
 			g_snapshotAssembly.ExpectedCargoMarkersCount = packet.cargo_markers_count;
 			g_snapshotAssembly.ExpectedCargoConnectionsCount = packet.cargo_connections_count;
 			g_snapshotAssembly.ExpectedPoisCount = packet.pois_count;
+			g_snapshotAssembly.PoiPage = packet.poi_page;
+			g_snapshotAssembly.PoiPageCount = packet.poi_page_count;
+			g_snapshotAssembly.PoisTotalCount = packet.pois_total_count;
 			g_snapshotAssembly.WorldName = ReadFixedString(packet.world_name);
 			ApplySnapshotMetadata(
 				g_snapshotAssembly.Snapshot,
@@ -363,6 +409,7 @@ namespace MapExtensionClient
 			{
 				const auto& item = packet.items[index];
 				PlayerMarker marker{};
+				marker.IsSelf = (item.flags & MapSyncProtocol::kPlayerEntrySelf) != 0;
 				marker.WorldLocation = MakeVector(item.world_x, item.world_y, item.world_z);
 				marker.MapLocation = MapStateRuntime::Detail::WorldToMap(marker.WorldLocation);
 				marker.DisplayName = ReadFixedString(item.label);
@@ -523,6 +570,29 @@ namespace MapExtensionClient
 			{
 				snapshot.RuptureCycle = g_ruptureCycleSnapshot;
 			}
+
+			// Merge protocol v3 POI pages: keep previously fetched pages and
+			// replace only the page carried by this snapshot. Invalidate the
+			// retained pages when the world or the page layout changes.
+			if (g_poiPagesWorldName != g_snapshotAssembly.WorldName
+				|| g_poiPageCount != g_snapshotAssembly.PoiPageCount)
+			{
+				g_poiPages.clear();
+				g_poiPagesWorldName = g_snapshotAssembly.WorldName;
+				g_poiPageCount = g_snapshotAssembly.PoiPageCount;
+			}
+			g_poiPages[g_snapshotAssembly.PoiPage] = std::move(snapshot.Pois);
+			snapshot.Pois.clear();
+			for (const auto& pageEntry : g_poiPages)
+			{
+				snapshot.Pois.insert(
+					snapshot.Pois.end(),
+					pageEntry.second.begin(),
+					pageEntry.second.end());
+			}
+			g_nextPoiPageToRequest = static_cast<uint16_t>(
+				(g_snapshotAssembly.PoiPage + 1) % g_snapshotAssembly.PoiPageCount);
+
 			UpdateCounts(snapshot);
 			g_activeCargoSnapshot = std::move(snapshot);
 			g_hasCargoSnapshot = true;
@@ -573,6 +643,18 @@ namespace MapExtensionClient
 		{
 			std::lock_guard<std::mutex> lock(g_remoteCacheMutex);
 			return g_lastReceivedAtUnixMs;
+		}
+
+		uint16_t GetNextPoiPageToRequest()
+		{
+			std::lock_guard<std::mutex> lock(g_remoteCacheMutex);
+			return g_nextPoiPageToRequest;
+		}
+
+		bool HasPendingPoiPages()
+		{
+			std::lock_guard<std::mutex> lock(g_remoteCacheMutex);
+			return g_hasCargoSnapshot && g_poiPages.size() < g_poiPageCount;
 		}
 	}
 }
