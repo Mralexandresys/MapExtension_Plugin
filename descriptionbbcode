@@ -30,7 +30,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]The map viewer warns you when it is out of date and gives you a direct download link[/*]
 [*]More reliable rupture timeline: it reacts to phase changes right away and recovers on its own after loading a world[/*]
 [*]Lower overhead while the rupture timeline is displayed[/*]
-[*]Removed the obsolete rupture-cycle chat settings from the config file[/*]
+[*]Removed the obsolete settings from the config file[/*]
 [/list]
 
 [size=4][b]Change Log v0.4[/b][/size]
@@ -102,7 +102,7 @@ The map viewer runs on the client. In dedicated-server play, the client plugin c
 [list]
 [*][b][url=https://www.nexusmods.com/starrupture/mods/89]AlienX's Mod Loader[/url][/b][/*]
 [*][b]MapExtension_Plugin[/b] installed on the client[/*]
-[*][b]Optional for dedicated-server play:[/b] the server build of [b]MapExtension_Plugin[/b] installed in the server plugins folder[/*]
+[*][b]Optional for dedicated-server play:[/b] the server build of [b]MapExtension_Plugin[/b] installed in the server [b]ModLoader\Plugins[/b] folder[/*]
 [/list]
 
 [line]
@@ -114,7 +114,7 @@ The map viewer runs on the client. In dedicated-server play, the client plugin c
 [code]StarRupture/Binaries/Win64/[/code]
 [/*]
 [*]Copy [b]MapExtension_Plugin.dll[/b] and [b]MapExtension_Plugin.json[/b] from the client archive into
-[code]StarRupture/Binaries/Win64/Plugins/[/code]
+[code]StarRupture/Binaries/Win64/ModLoader/Plugins/[/code]
 [/*]
 [*]Start the game once so the plugin can initialize and generate its config file[/*]
 [*]Place [b]MapExtensionViewer.html[/b] and the [b]map-tiles[/b] folder together wherever you want on your PC[/*]
@@ -124,13 +124,13 @@ The map viewer runs on the client. In dedicated-server play, the client plugin c
 
 [b]Install from the client archive, not from the standalone DLL file.[/b] The archive also contains [b]MapExtension_Plugin.json[/b], a small file that lets the Mod Loader update the plugin on its own later on. Without it, the plugin will never update by itself.
 
-If you play on a dedicated server, install the server build of [b]MapExtension_Plugin[/b] in the server [b]Plugins[/b] folder as well so the client and server plugins can communicate with each other.
+If you play on a dedicated server, install the server build of [b]MapExtension_Plugin[/b] in the server [b]ModLoader\Plugins[/b] folder as well so the client and server plugins can communicate with each other.
 
 [line]
 
 [size=4][b]Updates[/b][/size]
 
-Once [b]MapExtension_Plugin.json[/b] sits next to the DLL in your [b]Plugins[/b] folder, the Mod Loader checks for a newer plugin version when the game starts and replaces [b]MapExtension_Plugin.dll[/b] for you.
+Once [b]MapExtension_Plugin.json[/b] sits next to the DLL in your [b]ModLoader\Plugins[/b] folder, the Mod Loader checks for a newer plugin version when the game starts and replaces [b]MapExtension_Plugin.dll[/b] for you.
 
 [b]Important:[/b] the automatic update only replaces the plugin DLL. It does [b]not[/b] touch [b]MapExtensionViewer.html[/b] or the [b]map-tiles[/b] folder, because those live wherever you chose to put them on your PC.
 
@@ -172,7 +172,7 @@ Always keep the [b]map-tiles[/b] folder next to [b]MapExtensionViewer.html[/b], 
 
 On first launch, the plugin creates:
 
-[code]Plugins/config/MapExtension_Plugin.ini[/code]
+[code]ModLoader/Plugins/config/MapExtension_Plugin.ini[/code]
 
 Main defaults:
 
@@ -233,7 +233,7 @@ Yes. [b]MapExtension_Plugin[/b] is installed on the client.
 
 [b]Do I need anything on a dedicated server?[/b]
 
-Yes. For dedicated-server play, install the server build of [b]MapExtension_Plugin[/b] in the server [b]Plugins[/b] folder so the client and server plugins can exchange data.
+Yes. For dedicated-server play, install the server build of [b]MapExtension_Plugin[/b] in the server [b]ModLoader\Plugins[/b] folder so the client and server plugins can exchange data.
 
 [b]Do I need to configure anything before using it?[/b]
 
@@ -241,7 +241,7 @@ Usually no. The default configuration is enough for most players.
 
 [b]Does the mod update itself?[/b]
 
-Yes, as long as you installed from the client archive so that [b]MapExtension_Plugin.json[/b] sits next to the DLL in your [b]Plugins[/b] folder. Only the plugin DLL is updated automatically.
+Yes, as long as you installed from the client archive so that [b]MapExtension_Plugin.json[/b] sits next to the DLL in your [b]ModLoader\Plugins[/b] folder. Only the plugin DLL is updated automatically.
 
 [b]How do I know when the map viewer needs updating?[/b]
 
@@ -272,11 +272,12 @@ After installation, your files should look similar to this:
 |-- Binaries/
 |   `-- Win64/
 |       |-- <Mod Loader files> (dwmapi.dll)
-|       `-- Plugins/
-|           |-- MapExtension_Plugin.dll
-|           |-- MapExtension_Plugin.json (enables automatic updates)
-|           `-- config/
-|               `-- MapExtension_Plugin.ini (auto create)
+|       `-- ModLoader/
+|           `-- Plugins/
+|               |-- MapExtension_Plugin.dll
+|               |-- MapExtension_Plugin.json (enables automatic updates)
+|               `-- config/
+|                   `-- MapExtension_Plugin.ini (auto create)
 
 Anywhere on your PC
 |-- MapExtensionViewer.html
@@ -293,8 +294,8 @@ Desktop/
 [*]The Mod Loader files must be inside
 [code]StarRupture/Binaries/Win64/[/code]
 [/*]
-[*][b]MapExtension_Plugin.dll[/b] must be inside
-[code]StarRupture/Binaries/Win64/Plugins/[/code]
+[*][b]MapExtension_Plugin.dll[/b] and [b]MapExtension_Plugin.json[/b] must be inside
+[code]StarRupture/Binaries/Win64/ModLoader/Plugins/[/code]
 [/*]
 [*][b]MapExtension_Plugin.json[/b] must stay next to the DLL so the Mod Loader can update the plugin automatically[/*]
 [*][b]MapExtensionViewer.html[/b] and the [b]map-tiles[/b] folder can be stored anywhere, including your Desktop[/*]
