@@ -13,6 +13,11 @@ The plugin works in both single-player and multiplayer. For solo/local sessions,
 - See the items currently travelling through the network
 - Display the positions of `teleporters`
 - Display the positions of `players`
+- Display abandoned bases and plant resources as points of interest (POIs)
+- Distinguish available and depleted plant resources, with a stable color assigned per resource
+- Use a compact rupture-cycle view with phase, remaining-time, legend, and timeline details
+- Filter the map down to personal markers and zones only
+- Center the map on the player with the `Player` control or the `P` shortcut
 - Expose `GET /health`, `GET /cargo`, and `GET /rupture-cycle` on the local HTTP server
 - Receive authoritative map and rupture-cycle snapshots from the server build in dedicated-server sessions
 - Fall back to the local `UCrEnviroWaveSubsystem` in solo/local sessions when no server snapshot is available
@@ -24,6 +29,48 @@ The included `mapview` is a local web UI designed to read the plugin data and di
 When packaged, keep the generated `map-tiles/` folder next to `MapExtensionViewer.html`; the viewer loads the map background from those tiles.
 
 It consumes both cargo/map data and the rupture cycle endpoint to render the timeline shown in the HUD replacement UI.
+
+Abandoned bases use their own map icon. Plant resources use a stable palette color derived from the resource name, so the same resource keeps the same color after refreshes; available resources use a solid marker, while depleted resources use a faded outlined marker. Separate filters control abandoned bases and plant resources.
+
+The viewer can reduce the rupture timeline to a compact bar; hover it or focus it with the keyboard to show the current phase, remaining time, legend, and timeline ticks. The filters can hide every game entity and leave only personal markers and zones, and the `Player` control or `P` shortcut centers the map on the first reported player position.
+
+## `/cargo` POI data
+
+`GET /cargo` includes POI totals in `counts` and a `pois` array:
+
+```json
+{
+  "counts": {
+    "pois": 1,
+    "abandoned_bases": 0,
+    "plant_resources": 1
+  },
+  "pois": [
+    {
+      "kind": "plant_resource",
+      "label": "Example Plant",
+      "resource": "Example Resource",
+      "depleted": false,
+      "source": "actor_scan.gatherable",
+      "unique_key": "example-plant-key",
+      "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
+      "map": { "x": 0.0, "y": 0.0 }
+    }
+  ]
+}
+```
+
+- `kind` is `abandoned_base` or `plant_resource`.
+- `label` is the display label; `resource` is the detected resource name and can be empty for an abandoned base.
+- `depleted` is the resource state: `false` means available, while `true` means depleted or permanently gathered. There is no separate `available` field.
+- `source` identifies the capture path, `unique_key` identifies the POI to the viewer, `world` contains Unreal `x`/`y`/`z` coordinates, and `map` contains projected `x`/`y` coordinates.
+- `counts.pois` is the total POI count; `counts.abandoned_bases` and `counts.plant_resources` contain the per-kind totals.
+
+## Dedicated-server sync compatibility
+
+Dedicated-server snapshots use sync protocol v2, which carries POIs and validates snapshot IDs, generations, item counts, and chunk counts before publishing a remote snapshot. Protocol versions must match exactly: a v2 client or server ignores packets from a different protocol version rather than attempting a downgrade.
+
+**Update the client and dedicated-server builds together.** The modloader auto-updater replaces only the client DLL; the dedicated-server DLL must be replaced manually during the same update. Do not leave the two sides on different releases.
 
 ## Installation and updates
 
@@ -40,8 +87,8 @@ Copy the `Plugins/` content into `StarRupture/Binaries/Win64/Plugins/`, then kee
 
 Two limits are worth knowing:
 
-- The auto-updater replaces the DLL only. `MapExtensionViewer.html` and `map-tiles/` are never touched, since they live outside the game folder. The viewer detects this on its own: when the plugin reports a payload contract newer than the one the local viewer was built with, a dialog offers a direct download of the matching `MapExtension_Plugin-<tag>-viewer.zip` asset, along with links to the GitHub release and the mod page. Replace `MapExtensionViewer.html` and `map-tiles/` together, then reload the page.
-- The server build is not covered by the sidecar. Update it by hand and keep it on the same version as the client, since both sides share `shared/map_sync_protocol.h`.
+- The auto-updater replaces the DLL only. `MapExtensionViewer.html` and `map-tiles/` are never touched, since they live outside the game folder. The viewer detects incompatible payload contracts: when the plugin reports a contract newer than the one the local viewer was built with, a dialog offers a direct download of the matching `MapExtension_Plugin-<tag>-viewer.zip` asset, along with links to the GitHub release and the mod page. Backward-compatible viewer improvements may not trigger that dialog, so install the matching viewer archive manually to receive new UI features. Replace `MapExtensionViewer.html` and `map-tiles/` together, then reload the page.
+- The server build is not covered by the sidecar. Sync protocol v2 requires matching client and server builds, so update both DLLs together and replace the dedicated-server DLL by hand.
 
 Automatic updates can be disabled modloader-wide with `[AutoUpdate] Enabled=0` in `modloader.ini`.
 

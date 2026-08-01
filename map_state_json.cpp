@@ -142,6 +142,25 @@ namespace Detail
 			};
 		}
 
+		std::string PoiKindToString(PoiKind kind)
+		{
+			return kind == PoiKind::AbandonedBase ? "abandoned_base" : "plant_resource";
+		}
+
+		json ToJson(const PoiMarker& poi)
+		{
+			return json{
+				{"kind", PoiKindToString(poi.Kind)},
+				{"label", poi.DisplayName},
+				{"resource", poi.ResourceName},
+				{"depleted", poi.Depleted},
+				{"source", poi.Source},
+				{"unique_key", poi.PublicKey},
+				{"world", ToJson(poi.WorldLocation)},
+				{"map", ToJson(poi.MapLocation)}
+			};
+		}
+
 		json ToJson(const CargoConnection& connection)
 		{
 			return json{
@@ -221,6 +240,12 @@ namespace Detail
 			connections.push_back(ToJson(connection));
 		}
 
+		json pois = json::array();
+		for (const PoiMarker& poi : snapshot.Pois)
+		{
+			pois.push_back(ToJson(poi));
+		}
+
 		const json payload = {
 			{"generation", snapshot.Generation},
 			{"world", snapshot.WorldName},
@@ -231,7 +256,10 @@ namespace Detail
 				{"receivers", snapshot.ReceiverCount},
 				{"connections", snapshot.Connections.size()},
 				{"teleporters", snapshot.Teleporters.size()},
-				{"players", snapshot.Players.size()}
+				{"players", snapshot.Players.size()},
+				{"pois", snapshot.Pois.size()},
+				{"abandoned_bases", snapshot.AbandonedBaseCount},
+				{"plant_resources", snapshot.PlantResourceCount}
 			}},
 			{"map", {
 				{"src_x1", RoundJsonNumber(kMapSrcX1)},
@@ -250,7 +278,8 @@ namespace Detail
 			{"markers", std::move(markers)},
 			{"teleporters", std::move(teleporters)},
 			{"players", std::move(players)},
-			{"connections", std::move(connections)}
+			{"connections", std::move(connections)},
+			{"pois", std::move(pois)}
 		};
 		return payload.dump();
 	}

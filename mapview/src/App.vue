@@ -36,6 +36,7 @@ const {
     lang,
     showAllLinks,
     highlightOrphans,
+    userAnnotationsOnly,
     focusMode,
     viewMode,
     autoRefresh,
@@ -45,6 +46,7 @@ const {
     hoveredKey,
     controlSettingsOpen,
     rupturePanelCollapsed,
+    ruptureCompact,
     detailsPanelExpanded,
     filtersPanelCollapsed,
     shortcutsOpen,
@@ -65,6 +67,7 @@ const {
     visibleCargoConnections,
     displayedTeleporters,
     displayedPlayers,
+    displayedPois,
     selectedEntity,
     orphanKeySet,
     focusKeys,
@@ -101,8 +104,11 @@ const {
     selectEntity,
     toggleControlSettings,
     toggleRupturePanel,
+    toggleRuptureCompact,
     toggleDetailsPanel,
     centerSelection,
+    canCenterOnPlayer,
+    centerOnPlayer,
     toggleFocusMode,
     clearFilters,
     toggleFiltersPanel,
@@ -235,6 +241,7 @@ const controlDockPanel = computed<MapControlDockModel>(() => ({
 
 const rupturePanel = computed<MapRupturePanelModel>(() => ({
     collapsed: rupturePanelCollapsed.value,
+    compact: ruptureCompact.value,
     ui: ui.value,
     currentPhaseKey: ruptureCurrentPhaseKey.value,
     currentPhaseLabel: ruptureCurrentPhaseLabel.value,
@@ -272,6 +279,7 @@ const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     entityVisibility: readonly(entityVisibility),
     showAllLinks: showAllLinks.value,
     highlightOrphans: highlightOrphans.value,
+    userAnnotationsOnly: userAnnotationsOnly.value,
     canEnableFocusMode: canEnableFocusMode.value,
     focusMode: focusMode.value,
 }));
@@ -282,6 +290,7 @@ const canvasToolbarPanel = computed<MapCanvasToolbarModel>(() => ({
     canEnableFocusMode: canEnableFocusMode.value,
     focusMode: focusMode.value,
     filtersOpen: !filtersPanelCollapsed.value,
+    canCenterOnPlayer: canCenterOnPlayer.value,
 }));
 
 const notesPanel = computed<MapNotesPanelModel>(() => ({
@@ -333,6 +342,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 :cargo-connections="visibleCargoConnections"
                 :teleporters="displayedTeleporters"
                 :players="displayedPlayers"
+                :pois="displayedPois"
                 :selected-key="selectedKey"
                 :selected-entity="selectedEntity"
                 :orphan-keys="Array.from(orphanKeySet)"
@@ -364,6 +374,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                     }
                 "
                 @center="centerSelection"
+                @center-player="centerOnPlayer"
                 @toggle-focus="toggleFocusMode"
                 @toggle-filters="toggleFiltersPanel"
             />
@@ -371,6 +382,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
             <MapRupturePanel
                 :panel="rupturePanel"
                 @toggle-collapse="toggleRupturePanel"
+                @toggle-compact="toggleRuptureCompact"
             />
 
             <MapNotesPanel
@@ -408,6 +420,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @update:view-mode="viewMode = $event"
                 @update:show-all-links="showAllLinks = $event"
                 @update:highlight-orphans="highlightOrphans = $event"
+                @update:user-annotations-only="userAnnotationsOnly = $event"
                 @toggle-focus="toggleFocusMode"
             />
         </section>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref, watch } from "vue";
+
 import droneProhibitedSvg from "../../assets/drone-prohibited-1-svgrepo-com.svg?raw";
 import type { MapRupturePanelModel } from "../../lib/types";
 
@@ -6,13 +8,38 @@ const incomingDroneIconMarkup = droneProhibitedSvg
     .replace("fill:#000000;", "fill:currentColor;")
     .replace("<svg", '<svg class="rupture-legend-icon-svg"');
 
-defineProps<{
+const props = defineProps<{
     panel: MapRupturePanelModel;
 }>();
 
 const emit = defineEmits<{
     "toggle-collapse": [];
+    "toggle-compact": [];
 }>();
+
+const compactHovered = ref(false);
+const compactFocused = ref(false);
+
+function resetCompactInteractionState() {
+    compactHovered.value = false;
+    compactFocused.value = false;
+}
+
+function handleCompactFocusOut(event: FocusEvent) {
+    const panelElement = event.currentTarget as HTMLElement;
+    const nextFocusedElement = event.relatedTarget as Node | null;
+
+    if (nextFocusedElement && panelElement.contains(nextFocusedElement)) {
+        return;
+    }
+
+    compactFocused.value = false;
+}
+
+watch(
+    [() => props.panel.compact, () => props.panel.collapsed],
+    resetCompactInteractionState,
+);
 </script>
 
 <template>
@@ -31,6 +58,126 @@ const emit = defineEmits<{
             <span class="collapse-arrow down" aria-hidden="true"></span>
         </button>
         <section
+            v-if="panel.compact && !panel.collapsed"
+            class="floating-panel timeline-panel timeline-panel-compact"
+            tabindex="0"
+            :aria-label="panel.ui.rupture.title"
+            @mouseenter="compactHovered = true"
+            @mouseleave="compactHovered = false"
+            @focusin="compactFocused = true"
+            @focusout="handleCompactFocusOut"
+        >
+            <div class="compact-track-row">
+                <div class="rupture-track rupture-track-compact">
+                    <div
+                        v-for="phase in panel.phases"
+                        :key="phase.key"
+                        class="rupture-segment"
+                        :class="[phase.toneClass, { active: phase.active }]"
+                        :style="{ width: `${phase.widthPercent}%` }"
+                    ></div>
+                    <div
+                        v-if="panel.markerPercent !== null"
+                        class="rupture-marker rupture-marker-compact"
+                        :style="{ left: `${panel.markerPercent}%` }"
+                    >
+                        <span>{{ panel.markerLabel }}</span>
+                    </div>
+                </div>
+                <div class="compact-actions">
+                    <button
+                        class="compact-action-button"
+                        type="button"
+                        :aria-label="panel.ui.rupture.detailedView"
+                        :title="panel.ui.rupture.detailedView"
+                        @click="emit('toggle-compact')"
+                    >
+                        <span aria-hidden="true">⤢</span>
+                    </button>
+                    <button
+                        class="compact-action-button"
+                        type="button"
+                        :aria-label="panel.ui.buttons.collapse"
+                        :title="panel.ui.buttons.collapse"
+                        @click="emit('toggle-collapse')"
+                    >
+                        <span class="collapse-arrow up" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </div>
+
+            <div
+                v-if="compactHovered || compactFocused"
+                class="compact-hover-details"
+            >
+                <div class="rupture-focus-inline">
+                    <span class="rupture-focus-pill">
+                        <span class="rupture-focus-label">{{
+                            panel.ui.rupture.currentPhase
+                        }}</span>
+                        <strong class="rupture-focus-value">{{
+                            panel.currentPhaseLabel
+                        }}</strong>
+                    </span>
+                    <span class="rupture-focus-pill">
+                        <span class="rupture-focus-label">{{
+                            panel.ui.rupture.timeRemaining
+                        }}</span>
+                        <strong class="rupture-focus-value">{{
+                            panel.currentPhaseRemainingLabel
+                        }}</strong>
+                    </span>
+                </div>
+                <div class="rupture-track-scale">
+                    <span
+                        v-for="tick in panel.timelineTicks"
+                        :key="tick.key"
+                        class="rupture-track-tick"
+                        :class="[
+                            tick.align,
+                            `stack-${tick.stackLevel}`,
+                        ]"
+                        :style="tick.align === 'right'
+                            ? {}
+                            : { left: `${tick.leftPercent}%` }"
+                    >
+                        {{ tick.label }}
+                    </span>
+                </div>
+                <div
+                    class="rupture-legend-row"
+                    :aria-label="panel.ui.handles.legend"
+                >
+                    <span
+                        v-for="phase in panel.phases"
+                        :key="phase.key"
+                        class="rupture-legend-item"
+                        :class="{ active: phase.active }"
+                    >
+                        <span
+                            class="rupture-track-swatch"
+                            :class="phase.toneClass"
+                        ></span>
+                        <span
+                            v-if="phase.key === 'incoming'"
+                            class="rupture-legend-icon incoming"
+                            :title="panel.ui.rupture.incomingDroneDisabledTooltip"
+                            :aria-label="panel.ui.rupture.incomingDroneDisabledTooltip"
+                            v-html="incomingDroneIconMarkup"
+                        ></span>
+                        <strong>{{ phase.label }}</strong>
+                    </span>
+                </div>
+                <div
+                    v-if="!panel.hasLiveData"
+                    class="empty-state compact-empty rupture-empty-state"
+                >
+                    {{ panel.ui.rupture.noData }}
+                </div>
+            </div>
+        </section>
+        <section
+            v-if="!panel.compact"
             class="floating-panel timeline-panel"
             :class="{ collapsed: panel.collapsed }"
         >
@@ -50,6 +197,15 @@ const emit = defineEmits<{
                     <h2>{{ panel.ui.rupture.title }}</h2>
                     <p>{{ panel.ui.rupture.subtitle }}</p>
                 </div>
+                <button
+                    class="compact-action-button"
+                    type="button"
+                    :aria-label="panel.ui.rupture.compactView"
+                    :title="panel.ui.rupture.compactView"
+                    @click="emit('toggle-compact')"
+                >
+                    <span aria-hidden="true">⤡</span>
+                </button>
             </div>
 
             <div class="drawer-body timeline-body">
@@ -111,7 +267,10 @@ const emit = defineEmits<{
                         </div>
                     </div>
 
-                    <div class="rupture-legend-row" aria-label="Timeline legend">
+                    <div
+                        class="rupture-legend-row"
+                        :aria-label="panel.ui.handles.legend"
+                    >
                         <span
                             v-for="phase in panel.phases"
                             :key="phase.key"
@@ -419,6 +578,75 @@ const emit = defineEmits<{
 
 .rupture-empty-state {
     border-style: dashed;
+}
+
+/* ── compact mode ── */
+
+.timeline-panel-compact {
+    position: relative;
+    padding: 30px 12px 10px;
+    min-width: 320px;
+}
+
+.compact-track-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rupture-track-compact {
+    flex: 1;
+    height: 14px;
+}
+
+.rupture-marker-compact {
+    top: -22px;
+    bottom: -4px;
+}
+
+.rupture-marker-compact span {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+}
+
+.compact-actions {
+    display: inline-flex;
+    gap: 4px;
+}
+
+.compact-action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 0;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+}
+
+.compact-action-button:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+}
+
+.compact-hover-details {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 5;
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border-strong);
+    background: rgba(12, 20, 38, 0.96);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 </style>

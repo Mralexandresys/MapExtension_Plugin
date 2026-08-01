@@ -31,6 +31,7 @@
 	PluginNetworkMessageCallback g_teleportersChunkReceiveHandle = nullptr;
 	PluginNetworkMessageCallback g_cargoMarkersChunkReceiveHandle = nullptr;
 	PluginNetworkMessageCallback g_cargoConnectionsChunkReceiveHandle = nullptr;
+	PluginNetworkMessageCallback g_poisChunkReceiveHandle = nullptr;
 	uint64_t g_requestSequence = 0;
 	int64_t g_lastRequestAtUnixMs = 0;
 	bool g_protocolMismatchLogged = false;
@@ -288,6 +289,18 @@ namespace MapExtensionClient
 					RemoteCache::StoreCargoConnectionsChunk(packet);
 				});
 
+			g_poisChunkReceiveHandle = Network::OnReceive<MapSyncProtocol::ServerPoisChunkPacket>(
+				hooks,
+				self,
+				[](const MapSyncProtocol::ServerPoisChunkPacket& packet)
+				{
+					if (!ValidateProtocol(packet))
+					{
+						return;
+					}
+					RemoteCache::StorePoisChunk(packet);
+				});
+
 			return true;
 		}
 
@@ -300,6 +313,7 @@ namespace MapExtensionClient
 			UnregisterHandler(g_teleportersChunkReceiveHandle, typeid(MapSyncProtocol::ServerTeleportersChunkPacket).name());
 			UnregisterHandler(g_cargoMarkersChunkReceiveHandle, typeid(MapSyncProtocol::ServerCargoMarkersChunkPacket).name());
 			UnregisterHandler(g_cargoConnectionsChunkReceiveHandle, typeid(MapSyncProtocol::ServerCargoConnectionsChunkPacket).name());
+			UnregisterHandler(g_poisChunkReceiveHandle, typeid(MapSyncProtocol::ServerPoisChunkPacket).name());
 
 			g_requestSequence = 0;
 			g_lastRequestAtUnixMs = 0;

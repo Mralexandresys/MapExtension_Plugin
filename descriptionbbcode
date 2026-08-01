@@ -18,11 +18,27 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]Show [b]items currently moving[/b] through the cargo network[/*]
 [*]Show [b]teleporter positions[/b][/*]
 [*]Show [b]player positions[/b][/*]
-[*]Show a [b]rupture-cycle timeline[/b][/*]
+[*]Show [b]abandoned bases[/b] and [b]plant resources[/b][/*]
+[*]Distinguish [b]available[/b] and [b]depleted[/b] resources, with a stable color for each resource type[/*]
+[*]Show a [b]rupture-cycle timeline[/b] in detailed or compact mode[/*]
+[*]Filter the map to show [b]only your personal markers and zones[/b][/*]
+[*]Center the map on the player with the [b]Player[/b] control or the [b]P[/b] shortcut[/*]
 [*]Provide local data through built-in HTTP endpoints used by the viewer[/*]
 [/list]
 
 [line]
+
+[size=4][b]Latest Changes[/b][/size]
+[list]
+[*]Added abandoned-base and plant-resource points of interest to the map[/*]
+[*]Available resources use solid markers; depleted or permanently gathered resources use faded outlined markers[/*]
+[*]Plant-resource colors are assigned consistently from the resource name, so they stay stable between refreshes[/*]
+[*]Added separate abandoned-base and plant-resource filters[/*]
+[*]Added a compact Rupture view with phase, time remaining, legend, and timeline details on hover or keyboard focus[/*]
+[*]Added a filter that leaves only personal markers and zones, plus player centering from the Player control or the P shortcut[/*]
+[*][b]Dedicated-server sync now uses protocol v2. Update the client and dedicated-server builds together; mixed protocol versions ignore each other's packets.[/b][/*]
+[*]The Mod Loader still updates only the plugin DLL. Replace MapExtensionViewer.html and map-tiles manually to receive viewer changes[/*]
+[/list]
 
 [size=4][b]Change Log v0.5[/b][/size]
 [list]
@@ -78,7 +94,9 @@ This is [b]not[/b] an online service and [b]not[/b] a separate game client. It i
 [*]Which items are travelling through those links[/*]
 [*]Where teleporters are placed[/*]
 [*]Where players are located[/*]
-[*]The current rupture-cycle timeline[/*]
+[*]Where abandoned bases and plant resources are located[/*]
+[*]Which plant resources are available or depleted, with consistent colors by resource[/*]
+[*]The current rupture-cycle timeline in detailed or compact mode[/*]
 [/list]
 
 This is especially useful when your base grows and you want a cleaner overview of your layout, logistics lines, and rupture activity.
@@ -91,10 +109,12 @@ The plugin works in both solo and multiplayer, but rupture data is not sourced t
 
 [list]
 [*][b]Solo / local-host:[/b] the plugin can read rupture data locally from the running game[/*]
-[*][b]Dedicated server:[/b] install the server build of [b]MapExtension_Plugin[/b] on the server so the client and server plugins can exchange map and rupture data[/*]
+[*][b]Dedicated server:[/b] install the server build of [b]MapExtension_Plugin[/b] on the server so the client and server plugins can exchange map, POI, and rupture data[/*]
 [/list]
 
-The map viewer runs on the client. In dedicated-server play, the client plugin communicates with the server plugin, and the server plugin sends map and rupture updates back to the client plugin.
+The map viewer runs on the client. In dedicated-server play, the client plugin communicates with the server plugin, and the server plugin sends map, POI, and rupture updates back to the client plugin.
+
+[b]Important:[/b] dedicated-server synchronization uses protocol v2 and requires matching protocol versions. Update the client and dedicated-server builds together; a mixed-version pair ignores incompatible packets and cannot synchronize a remote snapshot.
 
 [line]
 
@@ -134,7 +154,7 @@ Once [b]MapExtension_Plugin.json[/b] sits next to the DLL in your [b]Plugins[/b]
 
 [b]Important:[/b] the automatic update only replaces the plugin DLL. It does [b]not[/b] touch [b]MapExtensionViewer.html[/b] or the [b]map-tiles[/b] folder, because those live wherever you chose to put them on your PC.
 
-Good news: [b]the map viewer tells you when it is out of date.[/b] If the plugin has moved on to a version the viewer no longer understands, a window opens in the browser page with a direct download link for the new viewer, plus links to the GitHub release and to this mod page.
+Good news: [b]the map viewer tells you when its payload contract is incompatible.[/b] If the plugin has moved on to a contract the viewer no longer understands, a window opens in the browser page with a direct download link for the new viewer, plus links to the GitHub release and to this mod page. Backward-compatible viewer improvements may not open that window, so install the matching viewer archive manually when a release includes viewer changes.
 
 When that happens:
 
@@ -147,7 +167,7 @@ When that happens:
 Always keep the [b]map-tiles[/b] folder next to [b]MapExtensionViewer.html[/b], otherwise the map background will not load.
 
 [list]
-[*]On a dedicated server, the server build is [b]not[/b] updated automatically: replace the server [b]MapExtension_Plugin.dll[/b] by hand and keep it on the same version as the client[/*]
+[*]On a dedicated server, the server build is [b]not[/b] updated automatically: protocol v2 requires you to replace the server [b]MapExtension_Plugin.dll[/b] by hand and update it together with the client build[/*]
 [*]Automatic updates can be turned off in the Mod Loader by setting [code]Enabled=0[/code] under the [code][AutoUpdate][/code] section of [b]modloader.ini[/b][/*]
 [/list]
 

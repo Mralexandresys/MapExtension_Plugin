@@ -1,7 +1,13 @@
 import type { Language, Messages } from "../lang";
 
 export type CargoKind = "sender" | "receiver";
-export type EntityToggleKey = "sender" | "receiver" | "teleporter" | "player";
+export type EntityToggleKey =
+    | "sender"
+    | "receiver"
+    | "teleporter"
+    | "player"
+    | "abandonedBase"
+    | "plantResource";
 export type ViewMode = "network" | "resources" | "teleporters" | "players";
 export type StatusTone = "loading" | "online" | "stale" | "offline";
 export type SelectionTone =
@@ -72,10 +78,21 @@ export interface Teleporter extends NamedMapEntity {}
 
 export interface Player extends NamedMapEntity {}
 
+export type PoiKind = "abandoned_base" | "plant_resource";
+
+export interface Poi extends NamedMapEntity {
+    kind: PoiKind;
+    resource?: string;
+    depleted?: boolean;
+}
+
 export interface CargoCounts {
     markers?: number;
     teleporters?: number;
     players?: number;
+    pois?: number;
+    abandoned_bases?: number;
+    plant_resources?: number;
 }
 
 export interface MapProjection {
@@ -97,6 +114,8 @@ export interface CargoResponse {
     connections: CargoConnection[];
     teleporters: Teleporter[];
     players: Player[];
+    /** Optional: older plugins do not send POIs. */
+    pois?: Poi[];
 }
 
 export interface ViewerUpdateInfo {
@@ -125,13 +144,16 @@ export interface HealthResponse {
 export type SelectedEntity =
     | { type: "cargo"; raw: CargoMarker }
     | { type: "teleporter"; raw: Teleporter }
-    | { type: "player"; raw: Player };
+    | { type: "player"; raw: Player }
+    | { type: "poi"; raw: Poi };
 
 export interface EntityVisibility {
     sender: boolean;
     receiver: boolean;
     teleporter: boolean;
     player: boolean;
+    abandonedBase: boolean;
+    plantResource: boolean;
 }
 
 export interface MapCanvasHandle {
@@ -248,6 +270,7 @@ export interface MapControlDockModel {
 
 export interface MapRupturePanelModel {
     collapsed: boolean;
+    compact: boolean;
     ui: Messages;
     currentPhaseKey: RupturePhaseKey;
     currentPhaseLabel: string;
@@ -271,7 +294,14 @@ export interface MapSelectionPanelModel {
     selectedEntityActive: boolean;
     canEnableFocusMode: boolean;
     focusMode: boolean;
-    totalCounts: { markers: number; teleporters: number; players: number };
+    totalCounts: {
+        markers: number;
+        teleporters: number;
+        players: number;
+        pois: number;
+        abandonedBases: number;
+        plantResources: number;
+    };
     visibleCargoConnectionsCount: number;
     statsOverview: DetailRow[];
 }
@@ -289,6 +319,7 @@ export interface MapFiltersPanelModel {
     entityVisibility: EntityVisibility;
     showAllLinks: boolean;
     highlightOrphans: boolean;
+    userAnnotationsOnly: boolean;
     canEnableFocusMode: boolean;
     focusMode: boolean;
 }
@@ -299,6 +330,7 @@ export interface MapCanvasToolbarModel {
     canEnableFocusMode: boolean;
     focusMode: boolean;
     filtersOpen: boolean;
+    canCenterOnPlayer: boolean;
 }
 
 export interface MapViewerUpdateDialogModel {

@@ -48,6 +48,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         now,
         viewMode,
         entityVisibility,
+        ruptureCompact,
         status,
         ui,
         languageOptions,
@@ -70,6 +71,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     );
 
     const focusMode = ref(false);
+    const userAnnotationsOnly = ref(false);
     const selectedKey = ref<string | null>(null);
     const hoveredKey = ref<string | null>(null);
     const controlSettingsOpen = ref(false);
@@ -85,6 +87,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         { key: "receiver", label: ui.value.entityLabels.receiver },
         { key: "teleporter", label: ui.value.entityLabels.teleporter },
         { key: "player", label: ui.value.entityLabels.player },
+        { key: "abandonedBase", label: ui.value.entityLabels.abandonedBase },
+        { key: "plantResource", label: ui.value.entityLabels.plantResource },
     ]);
 
     const shortcutItems = computed<ShortcutItem[]>(() => [
@@ -129,6 +133,11 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
             description: ui.value.shortcuts.items.center.description,
         },
         {
+            keys: ["P"],
+            label: ui.value.shortcuts.items.centerPlayer.label,
+            description: ui.value.shortcuts.items.centerPlayer.description,
+        },
+        {
             keys: ["0"],
             label: ui.value.shortcuts.items.reset.label,
             description: ui.value.shortcuts.items.reset.description,
@@ -171,6 +180,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         viewMode,
         showAllLinks,
         highlightOrphans,
+        userAnnotationsOnly,
         focusMode,
         selectedKey,
         hoveredKey,
@@ -188,6 +198,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         visibleCargoConnections,
         displayedTeleporters,
         displayedPlayers,
+        displayedPois,
         entityFilterCounts,
         visibleEntityKeys,
         selectedEntity,
@@ -223,12 +234,15 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     function clearFilters(): void {
         showAllLinks.value = true;
         highlightOrphans.value = false;
+        userAnnotationsOnly.value = false;
         focusMode.value = false;
         viewMode.value = "network";
         entityVisibility.sender = true;
         entityVisibility.receiver = true;
         entityVisibility.teleporter = true;
         entityVisibility.player = true;
+        entityVisibility.abandonedBase = true;
+        entityVisibility.plantResource = true;
     }
 
     function clearSelection(): void {
@@ -255,6 +269,16 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         mapCanvasRef.value?.focusSelection();
     }
 
+    const canCenterOnPlayer = computed(
+        () => (cargo.value?.players?.length ?? 0) > 0,
+    );
+
+    function centerOnPlayer(): void {
+        const player = cargo.value?.players?.[0];
+        if (!player) return;
+        mapCanvasRef.value?.focusPoint(player.map.x, player.map.y);
+    }
+
     function toggleFocusMode(): void {
         if (!canEnableFocusMode.value) return;
         focusMode.value = !focusMode.value;
@@ -271,6 +295,10 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
 
     function toggleRupturePanel(): void {
         rupturePanelCollapsed.value = !rupturePanelCollapsed.value;
+    }
+
+    function toggleRuptureCompact(): void {
+        ruptureCompact.value = !ruptureCompact.value;
     }
 
     function toggleDetailsPanel(): void {
@@ -349,6 +377,10 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
                 event.preventDefault();
                 centerSelection();
                 return;
+            case "p":
+                event.preventDefault();
+                centerOnPlayer();
+                return;
             default:
                 return;
         }
@@ -388,6 +420,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         lang,
         showAllLinks,
         highlightOrphans,
+        userAnnotationsOnly,
         focusMode,
         viewMode,
         autoRefresh,
@@ -397,6 +430,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         hoveredKey,
         controlSettingsOpen,
         rupturePanelCollapsed,
+        ruptureCompact,
         detailsPanelExpanded,
         filtersPanelCollapsed,
         shortcutsOpen,
@@ -422,6 +456,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         visibleCargoConnections,
         displayedTeleporters,
         displayedPlayers,
+        displayedPois,
         selectedEntity,
         orphanKeySet,
         focusKeys,
@@ -458,8 +493,11 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         selectEntity,
         toggleControlSettings,
         toggleRupturePanel,
+        toggleRuptureCompact,
         toggleDetailsPanel,
         centerSelection,
+        canCenterOnPlayer,
+        centerOnPlayer,
         toggleFocusMode,
         clearFilters,
         toggleFiltersPanel,

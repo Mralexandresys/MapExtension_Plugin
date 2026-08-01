@@ -15,6 +15,7 @@ Frontend Vue 3 + Vite de l'interface web locale de `MapExtension_Plugin`.
 ```bash
 npm install
 npm run dev
+npm run mock-api
 npm run check
 npm run build
 ```
@@ -56,7 +57,60 @@ Pour utiliser ou distribuer l'interface, garder `map-tiles/` a cote de `MapExten
 - Regle de bump : incrementer `VIEWER_CONTRACT_VERSION` et `kViewerContractVersion` (`map_state_json.cpp`) dans le meme changement, uniquement quand une evolution de payload casse les interfaces plus anciennes. Un ajout de champ retro-compatible ne doit pas etre bumpe.
 - Le rejet de la pop-up est memorise dans `localStorage` sous la cle dediee `starrupture-mapview:viewer-update-dismissed:v1`, par `plugin_version` : fermer la pop-up la masque pour cette version du plugin, et elle revient des que le plugin passe a une version plus recente. Les cles existantes (preferences, annotations) ne sont pas touchees.
 - L'interface inclut des modes de vue reseau/ressources/teleporteurs/joueurs, des filtres, l'echelle d'icones et des annotations personnelles exportables/importables en JSON.
-- Raccourcis utiles : `?`, `/`, `R`, `L`, `G`, `E`, `S`, `F`, `C`, `0`, `Esc`.
+- Raccourcis utiles : `?`, `/`, `R`, `L`, `G`, `E`, `S`, `F`, `C`, `P`, `0`, `Esc`.
+
+## POI et filtres de carte
+
+Le tableau optionnel `pois` de `GET /cargo` alimente deux familles de points
+d'interet :
+
+- les bases abandonnees utilisent une icone de batiment fissure distincte ;
+- les ressources vegetales utilisent des points dont la couleur est choisie dans une
+  palette stable a partir du nom de la ressource, puis du label ou de la cle unique ;
+- une ressource `available` utilise un remplissage plein ; une ressource avec
+  `depleted: true` est attenuee, avec un anneau pointille et un centre presque vide ;
+- le survol ou le focus clavier affiche le type, le nom, la ressource et l'etat. Un POI
+  peut etre selectionne a la souris ou avec `Entree`/`Espace`.
+
+Le volet `Filtres` propose des boutons de visibilite separes pour les bases abandonnees
+et les ressources vegetales. Le mode `Reseau` peut afficher les deux familles, le mode
+`Ressources` affiche uniquement les ressources vegetales, et les modes `Teleporteurs`
+et `Joueurs` masquent les POI. `available` et `depleted` sont des etats visuels, pas des
+filtres separes.
+
+L'option `Afficher uniquement mes marqueurs et zones` masque toutes les donnees issues
+du plugin (cargo, connexions, teleporteurs, joueurs et POI) pour ne conserver que les
+marqueurs et zones crees par l'utilisateur. La desactiver restaure les elements permis
+par le mode et les autres filtres actifs.
+
+## Timeline Rupture et recentrage joueur
+
+Le bouton de vue compacte du panneau Rupture remplace le panneau detaille par une barre
+de timeline reduite ; le choix est conserve dans les preferences du navigateur. En
+mode compact, survoler la barre ou lui donner le focus avec `Tab` ouvre les details :
+phase actuelle, temps restant, graduations de la timeline et legende des phases. Le
+meme contenu est donc disponible a la souris et au clavier.
+
+Le bouton `Joueur` de la barre d'actions et le raccourci `P` recentrent la carte sur le
+premier joueur du payload courant. Le bouton est desactive et le raccourci reste sans
+effet si aucun joueur n'est disponible. Comme les autres raccourcis, `P` est actif en
+dehors des champs de saisie.
+
+## Test local des POI et de la retrocompatibilite
+
+Le payload `/cargo` interne de `npm run mock-api` contient une base abandonnee, une
+ressource `Gold Fruit` disponible, la meme ressource en etat `depleted` et une ressource
+`Plant Fiber` disponible. Il permet de verifier les icones, les deux etats, la stabilite
+de couleur pour un meme nom de ressource, la palette entre ressources et les filtres.
+Les scenarios et les commandes detaillees sont documentes dans
+`local-test/README.md`.
+
+Pour simuler un ancien plugin, creer un fichier non vide
+`local-test/data/cargo.json` contenant un payload `/cargo` valide mais sans champ
+`pois` ni compteurs `pois`, `abandoned_bases` et `plant_resources`. Le mock sert cet
+override tel quel : apres un refresh, le viewer doit continuer a afficher la carte et
+les anciennes entites, avec zero POI. Supprimer l'override permet de revenir au payload
+POI interne.
 
 ## Test local de la pop-up de mise a jour
 

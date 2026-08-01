@@ -17,6 +17,7 @@ namespace MapExtensionClient
 		void StoreTeleportersChunk(const MapSyncProtocol::ServerTeleportersChunkPacket& packet);
 		void StoreCargoMarkersChunk(const MapSyncProtocol::ServerCargoMarkersChunkPacket& packet);
 		void StoreCargoConnectionsChunk(const MapSyncProtocol::ServerCargoConnectionsChunkPacket& packet);
+		void StorePoisChunk(const MapSyncProtocol::ServerPoisChunkPacket& packet);
 		void FinalizeSnapshot(const MapSyncProtocol::ServerSnapshotEndPacket& packet);
 
 		bool TryCopyRuptureCycleSnapshot(MapStateRuntime::Detail::RuptureCycleSnapshot& outSnapshot);

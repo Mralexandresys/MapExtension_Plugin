@@ -6,18 +6,23 @@
 
 namespace MapSyncProtocol
 {
-	constexpr uint32_t kProtocolVersion = 1;
+	constexpr uint32_t kProtocolVersion = 2;
+
+	// Reserved in protocol v2 for future selective snapshots. The v2 server
+	// intentionally ignores request_flags and always returns a full snapshot.
 	constexpr uint32_t kRequestFlagRuptureCycle = 1u << 0;
 	constexpr uint32_t kRequestFlagPlayers = 1u << 1;
 	constexpr uint32_t kRequestFlagTeleporters = 1u << 2;
 	constexpr uint32_t kRequestFlagCargoMarkers = 1u << 3;
 	constexpr uint32_t kRequestFlagCargoConnections = 1u << 4;
+	constexpr uint32_t kRequestFlagPois = 1u << 5;
 	constexpr uint32_t kRequestFlagAll =
 		kRequestFlagRuptureCycle
 		| kRequestFlagPlayers
 		| kRequestFlagTeleporters
 		| kRequestFlagCargoMarkers
-		| kRequestFlagCargoConnections;
+		| kRequestFlagCargoConnections
+		| kRequestFlagPois;
 
 	constexpr size_t kWorldNameCapacity = 64;
 	constexpr size_t kKeyCapacity = 64;
@@ -29,6 +34,8 @@ namespace MapSyncProtocol
 	constexpr size_t kTeleporterChunkCapacity = 6;
 	constexpr size_t kCargoMarkerChunkCapacity = 6;
 	constexpr size_t kCargoConnectionChunkCapacity = 4;
+	constexpr size_t kPoiChunkCapacity = 4;
+	constexpr size_t kPreferredPoiPacketSizeLimit = 1024;
 
 	enum ServerRuptureStateFlags : uint32_t
 	{
@@ -43,13 +50,33 @@ namespace MapSyncProtocol
 		kSnapshotHasPlayers = 1u << 1,
 		kSnapshotHasTeleporters = 1u << 2,
 		kSnapshotHasCargoMarkers = 1u << 3,
-		kSnapshotHasCargoConnections = 1u << 4
+		kSnapshotHasCargoConnections = 1u << 4,
+		kSnapshotHasPois = 1u << 5
 	};
+
+	constexpr uint32_t kSnapshotContentFlagsAll =
+		kSnapshotHasRupture
+		| kSnapshotHasPlayers
+		| kSnapshotHasTeleporters
+		| kSnapshotHasCargoMarkers
+		| kSnapshotHasCargoConnections
+		| kSnapshotHasPois;
 
 	enum CargoMarkerKind : uint8_t
 	{
 		kCargoMarkerSender = 0,
 		kCargoMarkerReceiver = 1
+	};
+
+	enum PoiMarkerKind : uint8_t
+	{
+		kPoiAbandonedBase = 0,
+		kPoiPlantResource = 1
+	};
+
+	enum PoiEntryFlags : uint8_t
+	{
+		kPoiEntryDepleted = 1u << 0
 	};
 
 	struct ClientSnapshotRequestPacket
@@ -74,6 +101,8 @@ namespace MapSyncProtocol
 		uint16_t teleporters_chunk_count = 0;
 		uint16_t cargo_markers_chunk_count = 0;
 		uint16_t cargo_connections_chunk_count = 0;
+		uint16_t pois_count = 0;
+		uint16_t pois_chunk_count = 0;
 		char world_name[kWorldNameCapacity] = {};
 	};
 
@@ -87,7 +116,8 @@ namespace MapSyncProtocol
 		uint16_t teleporters_count = 0;
 		uint16_t cargo_markers_count = 0;
 		uint16_t cargo_connections_count = 0;
-		uint8_t reserved[16] = {};
+		uint16_t pois_count = 0;
+		uint8_t reserved[14] = {};
 	};
 
 	struct ServerRuptureStatePacket
@@ -153,6 +183,20 @@ namespace MapSyncProtocol
 		char item_name[kItemNameCapacity] = {};
 	};
 
+	struct ServerPoiEntry
+	{
+		float world_x = 0.0f;
+		float world_y = 0.0f;
+		float world_z = 0.0f;
+		uint8_t kind = kPoiAbandonedBase;
+		uint8_t flags = 0;
+		uint8_t reserved[2] = {};
+		char label[kLabelCapacity] = {};
+		char resource[kResourceCapacity] = {};
+		char source[kSourceCapacity] = {};
+		char unique_key[kKeyCapacity] = {};
+	};
+
 	struct ServerPlayersChunkPacket
 	{
 		uint32_t protocol_version = kProtocolVersion;
@@ -201,6 +245,18 @@ namespace MapSyncProtocol
 		ServerCargoConnectionEntry items[kCargoConnectionChunkCapacity] = {};
 	};
 
+	struct ServerPoisChunkPacket
+	{
+		uint32_t protocol_version = kProtocolVersion;
+		uint32_t reserved = 0;
+		uint64_t snapshot_id = 0;
+		uint16_t chunk_index = 0;
+		uint16_t chunk_count = 0;
+		uint16_t item_count = 0;
+		uint16_t reserved2 = 0;
+		ServerPoiEntry items[kPoiChunkCapacity] = {};
+	};
+
 	static_assert(std::is_trivially_copyable_v<ClientSnapshotRequestPacket>);
 	static_assert(std::is_trivially_copyable_v<ServerSnapshotBeginPacket>);
 	static_assert(std::is_trivially_copyable_v<ServerSnapshotEndPacket>);
@@ -209,10 +265,15 @@ namespace MapSyncProtocol
 	static_assert(std::is_trivially_copyable_v<ServerTeleporterEntry>);
 	static_assert(std::is_trivially_copyable_v<ServerCargoMarkerEntry>);
 	static_assert(std::is_trivially_copyable_v<ServerCargoConnectionEntry>);
+	static_assert(std::is_trivially_copyable_v<ServerPoiEntry>);
 	static_assert(std::is_trivially_copyable_v<ServerPlayersChunkPacket>);
 	static_assert(std::is_trivially_copyable_v<ServerTeleportersChunkPacket>);
 	static_assert(std::is_trivially_copyable_v<ServerCargoMarkersChunkPacket>);
 	static_assert(std::is_trivially_copyable_v<ServerCargoConnectionsChunkPacket>);
+	static_assert(std::is_trivially_copyable_v<ServerPoisChunkPacket>);
+	static_assert(
+		sizeof(ServerPoisChunkPacket) <= kPreferredPoiPacketSizeLimit,
+		"POI chunk packets must remain within the SDK's recommended 1 KiB payload size");
 
 	inline void CopyCStringTruncated(char* destination, size_t capacity, const char* source)
 	{

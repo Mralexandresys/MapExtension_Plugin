@@ -12,6 +12,8 @@ import type {
     EntityVisibility,
     HealthResponse,
     Player,
+    Poi,
+    PoiKind,
     SelectedEntity,
     SelectionTone,
     StatusTone,
@@ -27,6 +29,7 @@ interface UseMapViewEntitiesOptions {
     viewMode: Ref<ViewMode>;
     showAllLinks: Ref<boolean>;
     highlightOrphans: Ref<boolean>;
+    userAnnotationsOnly: Ref<boolean>;
     focusMode: Ref<boolean>;
     selectedKey: Ref<string | null>;
     hoveredKey: Ref<string | null>;
@@ -50,6 +53,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         viewMode,
         showAllLinks,
         highlightOrphans,
+        userAnnotationsOnly,
         focusMode,
         selectedKey,
         hoveredKey,
@@ -86,6 +90,12 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         () => cargo.value?.teleporters || [],
     );
     const allPlayers = computed<Player[]>(() => cargo.value?.players || []);
+    const allPois = computed<Poi[]>(() =>
+        (cargo.value?.pois ?? []).map((poi) => ({
+            ...poi,
+            depleted: poi.depleted ?? false,
+        })),
+    );
 
     function isCargoMarkerAllowedByMode(marker: CargoMarker): boolean {
         if (!isCargoViewMode.value) return false;
@@ -175,6 +185,23 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         }),
     );
 
+    function isPoiAllowedByMode(poi: Poi): boolean {
+        if (viewMode.value === "network") {
+            return poi.kind === "abandoned_base"
+                ? entityVisibility.abandonedBase
+                : entityVisibility.plantResource;
+        }
+        return (
+            viewMode.value === "resources" &&
+            poi.kind === "plant_resource" &&
+            entityVisibility.plantResource
+        );
+    }
+
+    const visiblePois = computed<Poi[]>(() =>
+        allPois.value.filter(isPoiAllowedByMode),
+    );
+
     const entityFilterCounts = computed<Record<EntityToggleKey, number>>(() => ({
         sender: isCargoViewMode.value
             ? allCargoMarkers.value.filter((marker) => marker.kind === "sender")
@@ -192,19 +219,20 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             viewMode.value === "network" || viewMode.value === "players"
                 ? allPlayers.value.length
                 : 0,
+        abandonedBase:
+            viewMode.value === "network"
+                ? allPois.value.filter((poi) => poi.kind === "abandoned_base")
+                      .length
+                : 0,
+        plantResource:
+            viewMode.value === "network" || viewMode.value === "resources"
+                ? allPois.value.filter((poi) => poi.kind === "plant_resource")
+                      .length
+                : 0,
     }));
 
-    const visibleEntityKeys = computed(
-        () =>
-            new Set([
-                ...visibleCargoMarkers.value.map((marker) => marker.unique_key),
-                ...visibleTeleporters.value.map((entry) => entry.unique_key),
-                ...visiblePlayers.value.map((entry) => entry.unique_key),
-            ]),
-    );
-
     const selectedEntity = computed<SelectedEntity | null>(() => {
-        if (!selectedKey.value) return null;
+        if (!selectedKey.value || userAnnotationsOnly.value) return null;
 
         const cargoMarker = visibleCargoMarkers.value.find(
             (marker) => marker.unique_key === selectedKey.value,
@@ -220,6 +248,11 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             (entry) => entry.unique_key === selectedKey.value,
         );
         if (player) return { type: "player", raw: player };
+
+        const poi = visiblePois.value.find(
+            (entry) => entry.unique_key === selectedKey.value,
+        );
+        if (poi) return { type: "poi", raw: poi };
 
         return null;
     });
@@ -238,6 +271,9 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         selectedEntity.value?.type === "player"
             ? selectedEntity.value.raw
             : null,
+    );
+    const selectedPoi = computed(() =>
+        selectedEntity.value?.type === "poi" ? selectedEntity.value.raw : null,
     );
 
     const hoveredCargoMarker = computed(() => {
@@ -294,6 +330,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
     });
 
     const displayedCargoMarkers = computed(() => {
+        if (userAnnotationsOnly.value) return [];
         if (!focusMode.value || focusKeys.value.size === 0) {
             return visibleCargoMarkers.value;
         }
@@ -303,6 +340,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
     });
 
     const displayedTeleporters = computed(() => {
+        if (userAnnotationsOnly.value) return [];
         if (!focusMode.value || focusKeys.value.size === 0) {
             return visibleTeleporters.value;
         }
@@ -312,6 +350,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
     });
 
     const displayedPlayers = computed(() => {
+        if (userAnnotationsOnly.value) return [];
         if (!focusMode.value || focusKeys.value.size === 0) {
             return visiblePlayers.value;
         }
@@ -320,7 +359,28 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         );
     });
 
+    const displayedPois = computed<Poi[]>(() => {
+        if (userAnnotationsOnly.value) return [];
+        if (!focusMode.value || focusKeys.value.size === 0) {
+            return visiblePois.value;
+        }
+        return visiblePois.value.filter((poi) =>
+            focusKeys.value.has(poi.unique_key),
+        );
+    });
+
+    const visibleEntityKeys = computed(
+        () =>
+            new Set([
+                ...displayedCargoMarkers.value.map((marker) => marker.unique_key),
+                ...displayedTeleporters.value.map((entry) => entry.unique_key),
+                ...displayedPlayers.value.map((entry) => entry.unique_key),
+                ...displayedPois.value.map((entry) => entry.unique_key),
+            ]),
+    );
+
     const visibleCargoConnections = computed(() => {
+        if (userAnnotationsOnly.value) return [];
         const connections = renderableCargoConnections.value;
         if (!connections.length) return [];
 
@@ -359,13 +419,21 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             cargo.value?.counts?.players ??
             health.value?.player_count ??
             allPlayers.value.length,
+        pois: cargo.value?.counts?.pois ?? allPois.value.length,
+        abandonedBases:
+            cargo.value?.counts?.abandoned_bases ??
+            allPois.value.filter((poi) => poi.kind === "abandoned_base").length,
+        plantResources:
+            cargo.value?.counts?.plant_resources ??
+            allPois.value.filter((poi) => poi.kind === "plant_resource").length,
     }));
 
     const filteredVisibleCount = computed(
         () =>
-            visibleCargoMarkers.value.length +
-            visibleTeleporters.value.length +
-            visiblePlayers.value.length,
+            displayedCargoMarkers.value.length +
+            displayedTeleporters.value.length +
+            displayedPlayers.value.length +
+            displayedPois.value.length,
     );
 
     const activeFilterChips = computed(() => {
@@ -378,6 +446,9 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         }
         if (!showAllLinks.value) chips.push(ui.value.filters.linksFocus);
         if (highlightOrphans.value) chips.push(ui.value.filters.orphansVisible);
+        if (userAnnotationsOnly.value) {
+            chips.push(ui.value.filters.userAnnotationsOnlyChip);
+        }
         if (focusMode.value && canEnableFocusMode.value) {
             chips.push(ui.value.filters.focusOnly);
         }
@@ -408,7 +479,8 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             value: String(
                 totalCounts.value.markers +
                     totalCounts.value.teleporters +
-                    totalCounts.value.players,
+                    totalCounts.value.players +
+                    totalCounts.value.pois,
             ),
             tone: "primary",
         },
@@ -452,12 +524,14 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
     );
 
     function formatEntityType(
-        type: "sender" | "receiver" | "teleporter" | "player",
+        type: "sender" | "receiver" | "teleporter" | "player" | PoiKind,
     ): string {
         if (type === "sender") return ui.value.map.senderLabel;
         if (type === "receiver") return ui.value.map.receiverLabel;
         if (type === "teleporter") return ui.value.selection.teleporterFallback;
-        return ui.value.selection.playerFallback;
+        if (type === "player") return ui.value.selection.playerFallback;
+        if (type === "abandoned_base") return ui.value.map.abandonedBaseLabel;
+        return ui.value.map.plantResourceLabel;
     }
 
     const selectedEntitySummary = computed(() => {
@@ -470,6 +544,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         if (selectedTeleporter.value)
             return ui.value.selection.teleporterFallback;
         if (selectedPlayer.value) return ui.value.selection.playerFallback;
+        if (selectedPoi.value) return formatEntityType(selectedPoi.value.kind);
         return ui.value.selection.summaryNone;
     });
 
@@ -502,6 +577,13 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         if (selectedPlayer.value) {
             return (
                 selectedPlayer.value.label || ui.value.selection.playerFallback
+            );
+        }
+        if (selectedPoi.value) {
+            return (
+                selectedPoi.value.label ||
+                selectedPoi.value.resource ||
+                formatEntityType(selectedPoi.value.kind)
             );
         }
         return ui.value.selection.summaryNone;
@@ -575,6 +657,40 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             ];
         }
 
+        if (selectedPoi.value) {
+            const rows: DetailRow[] = [
+                {
+                    label: ui.value.selection.type,
+                    value: formatEntityType(selectedPoi.value.kind),
+                },
+            ];
+
+            if (selectedPoi.value.kind === "plant_resource") {
+                rows.push({
+                    label: ui.value.selection.resource,
+                    value:
+                        selectedPoi.value.resource ||
+                        selectedPoi.value.label ||
+                        "--",
+                });
+            }
+
+            rows.push(
+                {
+                    label: ui.value.selection.state,
+                    value: selectedPoi.value.depleted
+                        ? ui.value.map.depletedLabel
+                        : ui.value.map.availableLabel,
+                },
+                {
+                    label: ui.value.selection.source,
+                    value: selectedPoi.value.source || "--",
+                },
+            );
+
+            return rows;
+        }
+
         return [];
     });
 
@@ -612,6 +728,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         visibleCargoConnections,
         displayedTeleporters,
         displayedPlayers,
+        displayedPois,
         entityFilterCounts,
         visibleEntityKeys,
         selectedEntity,

@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -508,10 +509,90 @@ namespace
 		MapSyncProtocol::CopyCStringTruncated(entry.item_name, sizeof(entry.item_name), connection.ItemDisplayName.c_str());
 	}
 
+	void FillPoiEntry(MapSyncProtocol::ServerPoiEntry& entry, const MapStateRuntime::Detail::PoiMarker& marker)
+	{
+		entry.world_x = static_cast<float>(marker.WorldLocation.X);
+		entry.world_y = static_cast<float>(marker.WorldLocation.Y);
+		entry.world_z = static_cast<float>(marker.WorldLocation.Z);
+		entry.kind = marker.Kind == MapStateRuntime::Detail::PoiKind::AbandonedBase
+			? MapSyncProtocol::kPoiAbandonedBase
+			: MapSyncProtocol::kPoiPlantResource;
+		entry.flags = marker.Depleted ? MapSyncProtocol::kPoiEntryDepleted : 0;
+		MapSyncProtocol::CopyCStringTruncated(entry.label, sizeof(entry.label), marker.DisplayName.c_str());
+		MapSyncProtocol::CopyCStringTruncated(entry.resource, sizeof(entry.resource), marker.ResourceName.c_str());
+		MapSyncProtocol::CopyCStringTruncated(entry.source, sizeof(entry.source), marker.Source.c_str());
+		MapSyncProtocol::CopyCStringTruncated(entry.unique_key, sizeof(entry.unique_key), marker.PublicKey.c_str());
+	}
+
+	struct CollectionWireCounts final
+	{
+		uint16_t ItemCount = 0;
+		uint16_t ChunkCount = 0;
+	};
+
+	struct SnapshotWireCounts final
+	{
+		CollectionWireCounts Players{};
+		CollectionWireCounts Teleporters{};
+		CollectionWireCounts CargoMarkers{};
+		CollectionWireCounts CargoConnections{};
+		CollectionWireCounts Pois{};
+	};
+
+	bool TryConvertToUint16(size_t value, uint16_t& outValue)
+	{
+		if (value > static_cast<size_t>((std::numeric_limits<uint16_t>::max)()))
+		{
+			return false;
+		}
+
+		outValue = static_cast<uint16_t>(value);
+		return true;
+	}
+
+	template <size_t Capacity>
+	bool TryBuildCollectionWireCounts(size_t totalCount, CollectionWireCounts& outCounts)
+	{
+		static_assert(Capacity > 0);
+		const size_t chunkCount = totalCount == 0
+			? 0
+			: ((totalCount - 1) / Capacity) + 1;
+
+		CollectionWireCounts counts{};
+		if (!TryConvertToUint16(totalCount, counts.ItemCount)
+			|| !TryConvertToUint16(chunkCount, counts.ChunkCount))
+		{
+			return false;
+		}
+
+		outCounts = counts;
+		return true;
+	}
+
+	bool TryBuildSnapshotWireCounts(const CargoSnapshot& snapshot, SnapshotWireCounts& outCounts)
+	{
+		return TryBuildCollectionWireCounts<MapSyncProtocol::kPlayerChunkCapacity>(
+				snapshot.Players.size(),
+				outCounts.Players)
+			&& TryBuildCollectionWireCounts<MapSyncProtocol::kTeleporterChunkCapacity>(
+				snapshot.Teleporters.size(),
+				outCounts.Teleporters)
+			&& TryBuildCollectionWireCounts<MapSyncProtocol::kCargoMarkerChunkCapacity>(
+				snapshot.Markers.size(),
+				outCounts.CargoMarkers)
+			&& TryBuildCollectionWireCounts<MapSyncProtocol::kCargoConnectionChunkCapacity>(
+				snapshot.Connections.size(),
+				outCounts.CargoConnections)
+			&& TryBuildCollectionWireCounts<MapSyncProtocol::kPoiChunkCapacity>(
+				snapshot.Pois.size(),
+				outCounts.Pois);
+	}
+
 	template <typename TPacket, typename TItem, typename TCollection, size_t Capacity, typename FillFn>
-	void SendChunkedCollection(
+	bool SendChunkedCollection(
 		void* senderPlayerController,
 		uint64_t snapshotId,
+		uint16_t expectedChunkCount,
 		const TCollection& collection,
 		FillFn fillFn)
 	{
@@ -519,24 +600,30 @@ namespace
 		const IPluginSelf* self = GetPluginSelf();
 		if (!hooks || !hooks->Network || !self || !senderPlayerController)
 		{
-			return;
+			return false;
 		}
 
-		const size_t totalCount = collection.size();
-		const uint16_t chunkCount = totalCount == 0
-			? 0
-			: static_cast<uint16_t>((totalCount + Capacity - 1) / Capacity);
+		CollectionWireCounts wireCounts{};
+		if (!TryBuildCollectionWireCounts<Capacity>(collection.size(), wireCounts)
+			|| wireCounts.ChunkCount != expectedChunkCount)
+		{
+			return false;
+		}
 
-		for (uint16_t chunkIndex = 0; chunkIndex < chunkCount; ++chunkIndex)
+		for (uint16_t chunkIndex = 0; chunkIndex < wireCounts.ChunkCount; ++chunkIndex)
 		{
 			TPacket packet{};
 			packet.protocol_version = MapSyncProtocol::kProtocolVersion;
 			packet.snapshot_id = snapshotId;
 			packet.chunk_index = chunkIndex;
-			packet.chunk_count = chunkCount;
+			packet.chunk_count = wireCounts.ChunkCount;
 			const size_t startIndex = static_cast<size_t>(chunkIndex) * Capacity;
-			const size_t remaining = totalCount - startIndex;
-			packet.item_count = static_cast<uint16_t>(remaining > Capacity ? Capacity : remaining);
+			const size_t remaining = collection.size() - startIndex;
+			const size_t itemCount = remaining > Capacity ? Capacity : remaining;
+			if (!TryConvertToUint16(itemCount, packet.item_count))
+			{
+				return false;
+			}
 
 			for (uint16_t itemIndex = 0; itemIndex < packet.item_count; ++itemIndex)
 			{
@@ -545,6 +632,8 @@ namespace
 
 			Network::SendPacketToPlayer(hooks, self, senderPlayerController, packet);
 		}
+
+		return true;
 	}
 
 	void SendFullSnapshotToPlayer(void* senderPlayerController, const char* reason)
@@ -564,6 +653,20 @@ namespace
 
 		MapStateRuntime::Detail::RefreshCargoSnapshot(g_trackedWorld, reason ? reason : "ServerSnapshotRequest");
 		CargoSnapshot snapshot = MapStateRuntime::Detail::CopySnapshot();
+		SnapshotWireCounts wireCounts{};
+		if (!TryBuildSnapshotWireCounts(snapshot, wireCounts))
+		{
+			LOG_WARN(
+				"Cannot send protocol v2 snapshot: a collection exceeds uint16 limits "
+				"(players=%llu, teleporters=%llu, cargo_markers=%llu, cargo_connections=%llu, pois=%llu)",
+				static_cast<unsigned long long>(snapshot.Players.size()),
+				static_cast<unsigned long long>(snapshot.Teleporters.size()),
+				static_cast<unsigned long long>(snapshot.Markers.size()),
+				static_cast<unsigned long long>(snapshot.Connections.size()),
+				static_cast<unsigned long long>(snapshot.Pois.size()));
+			return;
+		}
+
 		const uint64_t snapshotId = ++g_snapshotId;
 
 		MapSyncProtocol::ServerRuptureStatePacket rupturePacket{};
@@ -576,66 +679,102 @@ namespace
 		beginPacket.content_flags = MapSyncProtocol::kSnapshotHasRupture;
 		beginPacket.snapshot_id = snapshotId;
 		beginPacket.generation = snapshot.Generation != 0 ? snapshot.Generation : snapshotId;
-		beginPacket.players_count = static_cast<uint16_t>(snapshot.Players.size());
-		beginPacket.teleporters_count = static_cast<uint16_t>(snapshot.Teleporters.size());
-		beginPacket.cargo_markers_count = static_cast<uint16_t>(snapshot.Markers.size());
-		beginPacket.cargo_connections_count = static_cast<uint16_t>(snapshot.Connections.size());
-		beginPacket.players_chunk_count = static_cast<uint16_t>((snapshot.Players.size() + MapSyncProtocol::kPlayerChunkCapacity - 1) / MapSyncProtocol::kPlayerChunkCapacity);
-		beginPacket.teleporters_chunk_count = static_cast<uint16_t>((snapshot.Teleporters.size() + MapSyncProtocol::kTeleporterChunkCapacity - 1) / MapSyncProtocol::kTeleporterChunkCapacity);
-		beginPacket.cargo_markers_chunk_count = static_cast<uint16_t>((snapshot.Markers.size() + MapSyncProtocol::kCargoMarkerChunkCapacity - 1) / MapSyncProtocol::kCargoMarkerChunkCapacity);
-		beginPacket.cargo_connections_chunk_count = static_cast<uint16_t>((snapshot.Connections.size() + MapSyncProtocol::kCargoConnectionChunkCapacity - 1) / MapSyncProtocol::kCargoConnectionChunkCapacity);
+		beginPacket.players_count = wireCounts.Players.ItemCount;
+		beginPacket.teleporters_count = wireCounts.Teleporters.ItemCount;
+		beginPacket.cargo_markers_count = wireCounts.CargoMarkers.ItemCount;
+		beginPacket.cargo_connections_count = wireCounts.CargoConnections.ItemCount;
+		beginPacket.players_chunk_count = wireCounts.Players.ChunkCount;
+		beginPacket.teleporters_chunk_count = wireCounts.Teleporters.ChunkCount;
+		beginPacket.cargo_markers_chunk_count = wireCounts.CargoMarkers.ChunkCount;
+		beginPacket.cargo_connections_chunk_count = wireCounts.CargoConnections.ChunkCount;
+		beginPacket.pois_count = wireCounts.Pois.ItemCount;
+		beginPacket.pois_chunk_count = wireCounts.Pois.ChunkCount;
 		MapSyncProtocol::CopyCStringTruncated(beginPacket.world_name, sizeof(beginPacket.world_name), snapshot.WorldName.c_str());
 		if (!snapshot.Players.empty()) beginPacket.content_flags |= MapSyncProtocol::kSnapshotHasPlayers;
 		if (!snapshot.Teleporters.empty()) beginPacket.content_flags |= MapSyncProtocol::kSnapshotHasTeleporters;
 		if (!snapshot.Markers.empty()) beginPacket.content_flags |= MapSyncProtocol::kSnapshotHasCargoMarkers;
 		if (!snapshot.Connections.empty()) beginPacket.content_flags |= MapSyncProtocol::kSnapshotHasCargoConnections;
+		if (!snapshot.Pois.empty()) beginPacket.content_flags |= MapSyncProtocol::kSnapshotHasPois;
 		Network::SendPacketToPlayer(hooks, self, senderPlayerController, beginPacket);
 
-		SendChunkedCollection<MapSyncProtocol::ServerPlayersChunkPacket, MapSyncProtocol::ServerPlayerEntry, decltype(snapshot.Players), MapSyncProtocol::kPlayerChunkCapacity>(
-			senderPlayerController,
-			snapshotId,
-			snapshot.Players,
-			[](MapSyncProtocol::ServerPlayerEntry& entry, const PlayerMarker& marker)
-			{
-				FillPlayerEntry(entry, marker);
-			});
+		const bool playersSent =
+			SendChunkedCollection<MapSyncProtocol::ServerPlayersChunkPacket, MapSyncProtocol::ServerPlayerEntry, decltype(snapshot.Players), MapSyncProtocol::kPlayerChunkCapacity>(
+				senderPlayerController,
+				snapshotId,
+				wireCounts.Players.ChunkCount,
+				snapshot.Players,
+				[](MapSyncProtocol::ServerPlayerEntry& entry, const PlayerMarker& marker)
+				{
+					FillPlayerEntry(entry, marker);
+				});
 
-		SendChunkedCollection<MapSyncProtocol::ServerTeleportersChunkPacket, MapSyncProtocol::ServerTeleporterEntry, decltype(snapshot.Teleporters), MapSyncProtocol::kTeleporterChunkCapacity>(
-			senderPlayerController,
-			snapshotId,
-			snapshot.Teleporters,
-			[](MapSyncProtocol::ServerTeleporterEntry& entry, const TeleporterMarker& marker)
-			{
-				FillTeleporterEntry(entry, marker);
-			});
+		const bool teleportersSent =
+			SendChunkedCollection<MapSyncProtocol::ServerTeleportersChunkPacket, MapSyncProtocol::ServerTeleporterEntry, decltype(snapshot.Teleporters), MapSyncProtocol::kTeleporterChunkCapacity>(
+				senderPlayerController,
+				snapshotId,
+				wireCounts.Teleporters.ChunkCount,
+				snapshot.Teleporters,
+				[](MapSyncProtocol::ServerTeleporterEntry& entry, const TeleporterMarker& marker)
+				{
+					FillTeleporterEntry(entry, marker);
+				});
 
-		SendChunkedCollection<MapSyncProtocol::ServerCargoMarkersChunkPacket, MapSyncProtocol::ServerCargoMarkerEntry, decltype(snapshot.Markers), MapSyncProtocol::kCargoMarkerChunkCapacity>(
-			senderPlayerController,
-			snapshotId,
-			snapshot.Markers,
-			[](MapSyncProtocol::ServerCargoMarkerEntry& entry, const CargoMarker& marker)
-			{
-				FillCargoMarkerEntry(entry, marker);
-			});
+		const bool cargoMarkersSent =
+			SendChunkedCollection<MapSyncProtocol::ServerCargoMarkersChunkPacket, MapSyncProtocol::ServerCargoMarkerEntry, decltype(snapshot.Markers), MapSyncProtocol::kCargoMarkerChunkCapacity>(
+				senderPlayerController,
+				snapshotId,
+				wireCounts.CargoMarkers.ChunkCount,
+				snapshot.Markers,
+				[](MapSyncProtocol::ServerCargoMarkerEntry& entry, const CargoMarker& marker)
+				{
+					FillCargoMarkerEntry(entry, marker);
+				});
 
-		SendChunkedCollection<MapSyncProtocol::ServerCargoConnectionsChunkPacket, MapSyncProtocol::ServerCargoConnectionEntry, decltype(snapshot.Connections), MapSyncProtocol::kCargoConnectionChunkCapacity>(
-			senderPlayerController,
-			snapshotId,
-			snapshot.Connections,
-			[](MapSyncProtocol::ServerCargoConnectionEntry& entry, const CargoConnection& connection)
-			{
-				FillCargoConnectionEntry(entry, connection);
-			});
+		const bool cargoConnectionsSent =
+			SendChunkedCollection<MapSyncProtocol::ServerCargoConnectionsChunkPacket, MapSyncProtocol::ServerCargoConnectionEntry, decltype(snapshot.Connections), MapSyncProtocol::kCargoConnectionChunkCapacity>(
+				senderPlayerController,
+				snapshotId,
+				wireCounts.CargoConnections.ChunkCount,
+				snapshot.Connections,
+				[](MapSyncProtocol::ServerCargoConnectionEntry& entry, const CargoConnection& connection)
+				{
+					FillCargoConnectionEntry(entry, connection);
+				});
+
+		const bool poisSent =
+			SendChunkedCollection<MapSyncProtocol::ServerPoisChunkPacket, MapSyncProtocol::ServerPoiEntry, decltype(snapshot.Pois), MapSyncProtocol::kPoiChunkCapacity>(
+				senderPlayerController,
+				snapshotId,
+				wireCounts.Pois.ChunkCount,
+				snapshot.Pois,
+				[](MapSyncProtocol::ServerPoiEntry& entry, const MapStateRuntime::Detail::PoiMarker& marker)
+				{
+					FillPoiEntry(entry, marker);
+				});
+
+		const bool chunksSent =
+			playersSent
+			&& teleportersSent
+			&& cargoMarkersSent
+			&& cargoConnectionsSent
+			&& poisSent;
+		if (!chunksSent)
+		{
+			LOG_WARN(
+				"Protocol v2 snapshot %llu could not dispatch every chunk; sending an unsuccessful end packet",
+				static_cast<unsigned long long>(snapshotId));
+		}
 
 		MapSyncProtocol::ServerSnapshotEndPacket endPacket{};
 		endPacket.protocol_version = MapSyncProtocol::kProtocolVersion;
-		endPacket.success = 1;
+		endPacket.success = chunksSent ? 1u : 0u;
 		endPacket.snapshot_id = snapshotId;
 		endPacket.generation = beginPacket.generation;
 		endPacket.players_count = beginPacket.players_count;
 		endPacket.teleporters_count = beginPacket.teleporters_count;
 		endPacket.cargo_markers_count = beginPacket.cargo_markers_count;
 		endPacket.cargo_connections_count = beginPacket.cargo_connections_count;
+		endPacket.pois_count = beginPacket.pois_count;
 		Network::SendPacketToPlayer(hooks, self, senderPlayerController, endPacket);
 	}
 
@@ -649,6 +788,11 @@ namespace
 				MapSyncProtocol::kProtocolVersion);
 			return;
 		}
+
+		// request_flags are reserved in protocol v2. Selective responses would
+		// replace omitted collections with empty data in current clients, so the
+		// server deliberately sends the complete snapshot for every request.
+		(void)packet.request_flags;
 
 		LogRuptureEventProbe("ClientSnapshotRequest", g_trackedWorld);
 		RuptureCycleState state{};

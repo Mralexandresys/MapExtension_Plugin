@@ -88,6 +88,25 @@ namespace Detail
 		std::string PublicKey;
 	};
 
+	enum class PoiKind : uint8_t
+	{
+		AbandonedBase,
+		PlantResource
+	};
+
+	struct PoiMarker
+	{
+		PoiKind Kind = PoiKind::AbandonedBase;
+		bool Depleted = false;
+		SDK::FVector WorldLocation{};
+		SDK::FVector2f MapLocation{};
+		std::string DisplayName;
+		std::string ResourceName;
+		std::string Source;
+		std::string InternalKey;
+		std::string PublicKey;
+	};
+
 	struct RuptureCycleSnapshot
 	{
 		bool Available = false;
@@ -117,10 +136,13 @@ namespace Detail
 		int ActorSenderCount = 0;
 		int TeleporterCount = 0;
 		int PlayerCount = 0;
+		int AbandonedBaseCount = 0;
+		int PlantResourceCount = 0;
 		std::vector<CargoMarker> Markers;
 		std::vector<CargoConnection> Connections;
 		std::vector<TeleporterMarker> Teleporters;
 		std::vector<PlayerMarker> Players;
+		std::vector<PoiMarker> Pois;
 		RuptureCycleSnapshot RuptureCycle;
 	};
 

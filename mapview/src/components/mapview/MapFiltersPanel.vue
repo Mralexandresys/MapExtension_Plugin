@@ -29,6 +29,7 @@ const emit = defineEmits<{
     "update:view-mode": [value: ViewMode];
     "update:show-all-links": [value: boolean];
     "update:highlight-orphans": [value: boolean];
+    "update:user-annotations-only": [value: boolean];
     "toggle-focus": [];
 }>();
 
@@ -39,6 +40,13 @@ function handleShowAllLinksChange(event: Event): void {
 function handleHighlightOrphansChange(event: Event): void {
     emit(
         "update:highlight-orphans",
+        (event.target as HTMLInputElement).checked,
+    );
+}
+
+function handleUserAnnotationsOnlyChange(event: Event): void {
+    emit(
+        "update:user-annotations-only",
         (event.target as HTMLInputElement).checked,
     );
 }
@@ -130,6 +138,7 @@ function handleHighlightOrphansChange(event: Event): void {
                                 muted: !panel.entityVisibility[option.key],
                             }"
                             type="button"
+                            :aria-pressed="panel.entityVisibility[option.key]"
                             @click="emit('toggle-entity', option.key)"
                         >
                             <span class="filter-option-label">
@@ -187,6 +196,10 @@ function handleHighlightOrphansChange(event: Event): void {
                         <label class="toggle-line">
                             <input :checked="panel.highlightOrphans" type="checkbox" @change="handleHighlightOrphansChange" />
                             <span>{{ panel.ui.filters.highlightOrphans }}</span>
+                        </label>
+                        <label class="toggle-line">
+                            <input :checked="panel.userAnnotationsOnly" type="checkbox" @change="handleUserAnnotationsOnlyChange" />
+                            <span>{{ panel.ui.filters.userAnnotationsOnly }}</span>
                         </label>
                         <button
                             v-if="panel.canEnableFocusMode"
@@ -353,6 +366,27 @@ function handleHighlightOrphansChange(event: Event): void {
     border-right: 7px solid transparent;
     border-bottom: 12px solid var(--player);
     filter: drop-shadow(0 0 0.5px #d8fff0);
+}
+
+.filter-option-icon.abandonedBase::before {
+    content: "";
+    width: 12px;
+    height: 10px;
+    border: 2px solid #cbd5e1;
+    border-top-width: 4px;
+    border-radius: 2px;
+    transform: rotate(-8deg);
+    opacity: 0.9;
+}
+
+.filter-option-icon.plantResource::before {
+    content: "";
+    width: 12px;
+    height: 12px;
+    border-radius: 10px 2px 10px 2px;
+    background: #4ade80;
+    box-shadow: 0 0 0 1px #dcfce7;
+    transform: rotate(-35deg);
 }
 
 .filter-option-count {

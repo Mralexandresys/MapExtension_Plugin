@@ -165,9 +165,23 @@ The workflow:
 
 The modloader auto-updater replaces `MapExtension_Plugin.dll` only. `MapExtensionViewer.html` and `map-tiles/` live outside the game folder and are never updated, so any change to the `/cargo`, `/health`, or `/rupture-cycle` payload shape must stay backward compatible with an older viewer, or bump the viewer contract version described below so the viewer prompts the user to download the viewer zip.
 
-The server build ships no sidecar and is not auto-updated. Changes to `shared/map_sync_protocol.h` therefore have to tolerate a client and a server on different versions, or be released with an explicit upgrade note for server admins.
+The server build ships no sidecar and is not auto-updated. Sync protocol v2 requires an exact protocol-version match, so releases using it must tell server admins to update the client and dedicated-server DLLs together. A mixed-version pair ignores incompatible packets and cannot publish a remote snapshot.
 
 `interface_version_min`/`interface_version_max` in the manifest are read from `PLUGIN_INTERFACE_VERSION_MIN`/`PLUGIN_INTERFACE_VERSION_MAX` in the SDK header, matching the SDK's reference workflow. The loader only checks that this range overlaps its own, so the published range is wider than the single `PLUGIN_INTERFACE_VERSION` the DLL actually declares.
+
+## Dedicated-server sync protocol v2
+
+`shared/map_sync_protocol.h` defines strict protocol version `2` for authoritative dedicated-server snapshots. The client and server both reject packets whose `protocol_version` does not equal `kProtocolVersion`; there is no v1 fallback or partial downgrade path.
+
+Protocol v2 adds POIs to the existing rupture, player, teleporter, cargo-marker, and cargo-connection stream:
+
+- `kRequestFlagPois` and `kSnapshotHasPois` identify POI content. All request flags are reserved in v2; the server intentionally ignores `request_flags` and returns a complete snapshot.
+- `ServerSnapshotBeginPacket` declares `pois_count` and `pois_chunk_count`; `ServerSnapshotEndPacket` repeats `pois_count` with the snapshot ID and generation.
+- `ServerPoiEntry` carries world coordinates, `kind`, the `kPoiEntryDepleted` flag, label, resource, source, and unique key.
+- `ServerPoisChunkPacket` carries at most `kPoiChunkCapacity` entries (currently four). The packet remains trivially copyable and is statically limited to the recommended 1 KiB payload size.
+- The server rejects collections that cannot be represented by the `uint16_t` wire counters. The client validates the snapshot ID, generation, begin/end counts, chunk counts, chunk indexes, and per-chunk item counts before publishing the assembled snapshot.
+
+**Always update the client and dedicated-server builds together when deploying protocol v2.** The client sidecar updates only `MapExtension_Plugin.dll` on player machines; it does not update the dedicated-server DLL. A v2/v1 or otherwise mismatched pair will ignore each other's packets, so the server DLL must be replaced manually during the same rollout.
 
 ## Runtime contract
 
@@ -175,11 +189,62 @@ The server build ships no sidecar and is not auto-updated. Changes to `shared/ma
 - `GET /cargo`: current snapshot payload used by the frontend
 - `GET /rupture-cycle`: current rupture-cycle payload used by the frontend timeline
 
-`/cargo` remains the compatibility endpoint consumed by the current frontend even though the payload now includes cargo links, teleporters, and players.
+`/cargo` remains the compatibility endpoint consumed by the current frontend even though the payload now includes cargo links, teleporters, players, and POIs.
 
 `/rupture-cycle` remains a separate endpoint consumed by the frontend for the timeline view.
 
 The frontend endpoint is editable in the UI, but defaults to `http://127.0.0.1:9000`.
+
+### `/cargo` POI contract
+
+The payload includes `counts.pois`, `counts.abandoned_bases`, and `counts.plant_resources`, plus a top-level `pois` array:
+
+```json
+{
+  "counts": {
+    "pois": 2,
+    "abandoned_bases": 1,
+    "plant_resources": 1
+  },
+  "pois": [
+    {
+      "kind": "abandoned_base",
+      "label": "Abandoned Base",
+      "resource": "",
+      "depleted": false,
+      "source": "actor_scan.abandoned_base",
+      "unique_key": "example-abandoned-base-key",
+      "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
+      "map": { "x": 0.0, "y": 0.0 }
+    },
+    {
+      "kind": "plant_resource",
+      "label": "Example Plant",
+      "resource": "Example Resource",
+      "depleted": true,
+      "source": "actor_scan.gatherable",
+      "unique_key": "example-plant-key",
+      "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
+      "map": { "x": 0.0, "y": 0.0 }
+    }
+  ]
+}
+```
+
+| Field | Contract |
+| --- | --- |
+| `kind` | `abandoned_base` or `plant_resource`. |
+| `label` | Display label captured for the actor. |
+| `resource` | Detected plant resource name; empty when no resource applies, including abandoned bases. |
+| `depleted` | Boolean state. For plant resources, `false` means available and `true` means `bIsDepleted` or `bIsPermanentlyGathered` was set. Abandoned bases currently emit `false`; there is no separate JSON `available` field. |
+| `source` | Capture-path identifier such as `actor_scan.abandoned_base` or `actor_scan.gatherable`. |
+| `unique_key` | Public identity used by the viewer for selection and rendering. |
+| `world` | Unreal coordinates as numeric `x`, `y`, and `z`. |
+| `map` | Projected map coordinates as numeric `x` and `y`. |
+
+`counts.pois` equals the length of `pois`; `counts.abandoned_bases` and `counts.plant_resources` are the per-kind totals and add up to that total.
+
+The viewer renders abandoned bases with a dedicated fixed-color icon. Plant resources use a stable hash of `resource || label || unique_key`, after trimming and lowercasing, into this palette: `#65d6ff`, `#7ee787`, `#ffd166`, `#ff9f6e`, `#c99cff`, `#ff82b2`, `#5eead4`, `#9db7ff`. The mapping is independent of payload order, although different names can collide in the finite palette. Available resources use a solid core; depleted resources use a faded core and dashed/outlined ring.
 
 ## Viewer contract version
 

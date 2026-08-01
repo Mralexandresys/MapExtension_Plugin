@@ -8,6 +8,7 @@ defineProps<{
 const emit = defineEmits<{
     "reset": [];
     "center": [];
+    "center-player": [];
     "toggle-focus": [];
     "toggle-filters": [];
 }>();
@@ -26,6 +27,16 @@ const emit = defineEmits<{
                 @click="emit('center')"
             >
                 {{ panel.ui.buttons.center }}
+            </button>
+            <button
+                class="toolbar-button"
+                type="button"
+                :disabled="!panel.canCenterOnPlayer"
+                :title="panel.ui.shortcuts.items.centerPlayer.label"
+                :aria-label="panel.ui.shortcuts.items.centerPlayer.label"
+                @click="emit('center-player')"
+            >
+                {{ panel.ui.buttons.centerPlayer }}
             </button>
             <button
                 class="toolbar-button"

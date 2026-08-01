@@ -1,5 +1,6 @@
 #include "map_state_remote_cache.h"
 
+#include <cstddef>
 #include <mutex>
 #include <string>
 #include <unordered_set>
@@ -11,6 +12,8 @@ namespace
 	using CargoMarker = MapStateRuntime::Detail::CargoMarker;
 	using CargoSnapshot = MapStateRuntime::Detail::CargoSnapshot;
 	using PlayerMarker = MapStateRuntime::Detail::PlayerMarker;
+	using PoiKind = MapStateRuntime::Detail::PoiKind;
+	using PoiMarker = MapStateRuntime::Detail::PoiMarker;
 	using RuptureCycleSnapshot = MapStateRuntime::Detail::RuptureCycleSnapshot;
 	using TeleporterMarker = MapStateRuntime::Detail::TeleporterMarker;
 
@@ -28,16 +31,19 @@ namespace
 		uint16_t ExpectedTeleportersChunkCount = 0;
 		uint16_t ExpectedCargoMarkersChunkCount = 0;
 		uint16_t ExpectedCargoConnectionsChunkCount = 0;
+		uint16_t ExpectedPoisChunkCount = 0;
 		uint16_t ExpectedPlayersCount = 0;
 		uint16_t ExpectedTeleportersCount = 0;
 		uint16_t ExpectedCargoMarkersCount = 0;
 		uint16_t ExpectedCargoConnectionsCount = 0;
+		uint16_t ExpectedPoisCount = 0;
 		std::string WorldName;
 		CargoSnapshot Snapshot{};
 		std::unordered_set<uint16_t> PlayersChunksReceived;
 		std::unordered_set<uint16_t> TeleportersChunksReceived;
 		std::unordered_set<uint16_t> CargoMarkersChunksReceived;
 		std::unordered_set<uint16_t> CargoConnectionsChunksReceived;
+		std::unordered_set<uint16_t> PoisChunksReceived;
 
 		void Reset()
 		{
@@ -96,28 +102,173 @@ namespace
 		snapshot.ConnectionCount = static_cast<int>(snapshot.Connections.size());
 		snapshot.TeleporterCount = static_cast<int>(snapshot.Teleporters.size());
 		snapshot.PlayerCount = static_cast<int>(snapshot.Players.size());
+
+		snapshot.AbandonedBaseCount = 0;
+		snapshot.PlantResourceCount = 0;
+		for (const PoiMarker& poi : snapshot.Pois)
+		{
+			if (poi.Kind == PoiKind::AbandonedBase)
+			{
+				++snapshot.AbandonedBaseCount;
+			}
+			else
+			{
+				++snapshot.PlantResourceCount;
+			}
+		}
+	}
+
+	template <size_t Capacity>
+	bool HasCoherentChunkLayout(uint16_t itemCount, uint16_t chunkCount)
+	{
+		static_assert(Capacity > 0);
+		const size_t expectedChunkCount = itemCount == 0
+			? 0
+			: ((static_cast<size_t>(itemCount) - 1) / Capacity) + 1;
+		return expectedChunkCount == chunkCount;
+	}
+
+	bool HasExpectedContentFlag(uint32_t contentFlags, uint32_t flag, uint16_t itemCount)
+	{
+		return ((contentFlags & flag) != 0) == (itemCount != 0);
+	}
+
+	bool IsValidSnapshotBegin(const MapSyncProtocol::ServerSnapshotBeginPacket& packet)
+	{
+		if (packet.snapshot_id == 0 || packet.generation == 0)
+		{
+			return false;
+		}
+		if ((packet.content_flags & ~MapSyncProtocol::kSnapshotContentFlagsAll) != 0
+			|| (packet.content_flags & MapSyncProtocol::kSnapshotHasRupture) == 0)
+		{
+			return false;
+		}
+		if (!HasCoherentChunkLayout<MapSyncProtocol::kPlayerChunkCapacity>(
+				packet.players_count,
+				packet.players_chunk_count)
+			|| !HasCoherentChunkLayout<MapSyncProtocol::kTeleporterChunkCapacity>(
+				packet.teleporters_count,
+				packet.teleporters_chunk_count)
+			|| !HasCoherentChunkLayout<MapSyncProtocol::kCargoMarkerChunkCapacity>(
+				packet.cargo_markers_count,
+				packet.cargo_markers_chunk_count)
+			|| !HasCoherentChunkLayout<MapSyncProtocol::kCargoConnectionChunkCapacity>(
+				packet.cargo_connections_count,
+				packet.cargo_connections_chunk_count)
+			|| !HasCoherentChunkLayout<MapSyncProtocol::kPoiChunkCapacity>(
+				packet.pois_count,
+				packet.pois_chunk_count))
+		{
+			return false;
+		}
+
+		return HasExpectedContentFlag(
+				packet.content_flags,
+				MapSyncProtocol::kSnapshotHasPlayers,
+				packet.players_count)
+			&& HasExpectedContentFlag(
+				packet.content_flags,
+				MapSyncProtocol::kSnapshotHasTeleporters,
+				packet.teleporters_count)
+			&& HasExpectedContentFlag(
+				packet.content_flags,
+				MapSyncProtocol::kSnapshotHasCargoMarkers,
+				packet.cargo_markers_count)
+			&& HasExpectedContentFlag(
+				packet.content_flags,
+				MapSyncProtocol::kSnapshotHasCargoConnections,
+				packet.cargo_connections_count)
+			&& HasExpectedContentFlag(
+				packet.content_flags,
+				MapSyncProtocol::kSnapshotHasPois,
+				packet.pois_count);
+	}
+
+	template <size_t Capacity, typename TPacket>
+	bool IsExpectedChunk(
+		const SnapshotAssembly& assembly,
+		const TPacket& packet,
+		uint16_t expectedChunkCount,
+		uint16_t expectedItemCount)
+	{
+		static_assert(Capacity > 0);
+		if (assembly.SnapshotId == 0
+			|| packet.snapshot_id == 0
+			|| packet.snapshot_id != assembly.SnapshotId
+			|| expectedChunkCount == 0
+			|| packet.chunk_count != expectedChunkCount
+			|| packet.chunk_index >= expectedChunkCount)
+		{
+			return false;
+		}
+
+		const size_t startIndex = static_cast<size_t>(packet.chunk_index) * Capacity;
+		if (startIndex >= expectedItemCount)
+		{
+			return false;
+		}
+
+		const size_t remaining = static_cast<size_t>(expectedItemCount) - startIndex;
+		const size_t expectedPacketItemCount = remaining > Capacity ? Capacity : remaining;
+		return packet.item_count == expectedPacketItemCount;
+	}
+
+	template <typename TSet>
+	bool HasAllExpectedChunkIndexes(uint16_t expectedChunkCount, const TSet& receivedChunks)
+	{
+		if (receivedChunks.size() != expectedChunkCount)
+		{
+			return false;
+		}
+
+		for (uint32_t index = 0; index < expectedChunkCount; ++index)
+		{
+			if (receivedChunks.find(static_cast<uint16_t>(index)) == receivedChunks.end())
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	bool HasAllExpectedChunks(const SnapshotAssembly& assembly)
 	{
-		if (assembly.ExpectedPlayersChunkCount != assembly.PlayersChunksReceived.size())
-		{
-			return false;
-		}
-		if (assembly.ExpectedTeleportersChunkCount != assembly.TeleportersChunksReceived.size())
-		{
-			return false;
-		}
-		if (assembly.ExpectedCargoMarkersChunkCount != assembly.CargoMarkersChunksReceived.size())
-		{
-			return false;
-		}
-		if (assembly.ExpectedCargoConnectionsChunkCount != assembly.CargoConnectionsChunksReceived.size())
-		{
-			return false;
-		}
+		return HasAllExpectedChunkIndexes(
+				assembly.ExpectedPlayersChunkCount,
+				assembly.PlayersChunksReceived)
+			&& HasAllExpectedChunkIndexes(
+				assembly.ExpectedTeleportersChunkCount,
+				assembly.TeleportersChunksReceived)
+			&& HasAllExpectedChunkIndexes(
+				assembly.ExpectedCargoMarkersChunkCount,
+				assembly.CargoMarkersChunksReceived)
+			&& HasAllExpectedChunkIndexes(
+				assembly.ExpectedCargoConnectionsChunkCount,
+				assembly.CargoConnectionsChunksReceived)
+			&& HasAllExpectedChunkIndexes(
+				assembly.ExpectedPoisChunkCount,
+				assembly.PoisChunksReceived);
+	}
 
-		return true;
+	bool HasExpectedItemCounts(const SnapshotAssembly& assembly)
+	{
+		return assembly.Snapshot.Players.size() == assembly.ExpectedPlayersCount
+			&& assembly.Snapshot.Teleporters.size() == assembly.ExpectedTeleportersCount
+			&& assembly.Snapshot.Markers.size() == assembly.ExpectedCargoMarkersCount
+			&& assembly.Snapshot.Connections.size() == assembly.ExpectedCargoConnectionsCount
+			&& assembly.Snapshot.Pois.size() == assembly.ExpectedPoisCount;
+	}
+
+	bool HasMatchingEndCounters(
+		const SnapshotAssembly& assembly,
+		const MapSyncProtocol::ServerSnapshotEndPacket& packet)
+	{
+		return packet.players_count == assembly.ExpectedPlayersCount
+			&& packet.teleporters_count == assembly.ExpectedTeleportersCount
+			&& packet.cargo_markers_count == assembly.ExpectedCargoMarkersCount
+			&& packet.cargo_connections_count == assembly.ExpectedCargoConnectionsCount
+			&& packet.pois_count == assembly.ExpectedPoisCount;
 	}
 }
 
@@ -167,6 +318,11 @@ namespace MapExtensionClient
 
 		void BeginSnapshot(const MapSyncProtocol::ServerSnapshotBeginPacket& packet)
 		{
+			if (!IsValidSnapshotBegin(packet))
+			{
+				return;
+			}
+
 			std::lock_guard<std::mutex> lock(g_remoteCacheMutex);
 			g_snapshotAssembly.Reset();
 			g_snapshotAssembly.SnapshotId = packet.snapshot_id;
@@ -176,33 +332,33 @@ namespace MapExtensionClient
 			g_snapshotAssembly.ExpectedTeleportersChunkCount = packet.teleporters_chunk_count;
 			g_snapshotAssembly.ExpectedCargoMarkersChunkCount = packet.cargo_markers_chunk_count;
 			g_snapshotAssembly.ExpectedCargoConnectionsChunkCount = packet.cargo_connections_chunk_count;
+			g_snapshotAssembly.ExpectedPoisChunkCount = packet.pois_chunk_count;
 			g_snapshotAssembly.ExpectedPlayersCount = packet.players_count;
 			g_snapshotAssembly.ExpectedTeleportersCount = packet.teleporters_count;
 			g_snapshotAssembly.ExpectedCargoMarkersCount = packet.cargo_markers_count;
 			g_snapshotAssembly.ExpectedCargoConnectionsCount = packet.cargo_connections_count;
+			g_snapshotAssembly.ExpectedPoisCount = packet.pois_count;
 			g_snapshotAssembly.WorldName = ReadFixedString(packet.world_name);
 			ApplySnapshotMetadata(
 				g_snapshotAssembly.Snapshot,
-				packet.generation != 0 ? packet.generation : packet.snapshot_id,
+				packet.generation,
 				g_snapshotAssembly.WorldName);
 		}
 
 		void StorePlayersChunk(const MapSyncProtocol::ServerPlayersChunkPacket& packet)
 		{
 			std::lock_guard<std::mutex> lock(g_remoteCacheMutex);
-			if (packet.snapshot_id == 0 || packet.snapshot_id != g_snapshotAssembly.SnapshotId)
-			{
-				return;
-			}
-			if (!g_snapshotAssembly.PlayersChunksReceived.emplace(packet.chunk_index).second)
+			if (!IsExpectedChunk<MapSyncProtocol::kPlayerChunkCapacity>(
+					g_snapshotAssembly,
+					packet,
+					g_snapshotAssembly.ExpectedPlayersChunkCount,
+					g_snapshotAssembly.ExpectedPlayersCount)
+				|| !g_snapshotAssembly.PlayersChunksReceived.emplace(packet.chunk_index).second)
 			{
 				return;
 			}
 
-			const uint16_t itemCount =
-				packet.item_count > MapSyncProtocol::kPlayerChunkCapacity
-					? static_cast<uint16_t>(MapSyncProtocol::kPlayerChunkCapacity)
-					: packet.item_count;
+			const uint16_t itemCount = packet.item_count;
 			for (uint16_t index = 0; index < itemCount; ++index)
 			{
 				const auto& item = packet.items[index];
@@ -220,19 +376,17 @@ namespace MapExtensionClient
 		void StoreTeleportersChunk(const MapSyncProtocol::ServerTeleportersChunkPacket& packet)
 		{
 			std::lock_guard<std::mutex> lock(g_remoteCacheMutex);
-			if (packet.snapshot_id == 0 || packet.snapshot_id != g_snapshotAssembly.SnapshotId)
-			{
-				return;
-			}
-			if (!g_snapshotAssembly.TeleportersChunksReceived.emplace(packet.chunk_index).second)
+			if (!IsExpectedChunk<MapSyncProtocol::kTeleporterChunkCapacity>(
+					g_snapshotAssembly,
+					packet,
+					g_snapshotAssembly.ExpectedTeleportersChunkCount,
+					g_snapshotAssembly.ExpectedTeleportersCount)
+				|| !g_snapshotAssembly.TeleportersChunksReceived.emplace(packet.chunk_index).second)
 			{
 				return;
 			}
 
-			const uint16_t itemCount =
-				packet.item_count > MapSyncProtocol::kTeleporterChunkCapacity
-					? static_cast<uint16_t>(MapSyncProtocol::kTeleporterChunkCapacity)
-					: packet.item_count;
+			const uint16_t itemCount = packet.item_count;
 			for (uint16_t index = 0; index < itemCount; ++index)
 			{
 				const auto& item = packet.items[index];
@@ -250,19 +404,17 @@ namespace MapExtensionClient
 		void StoreCargoMarkersChunk(const MapSyncProtocol::ServerCargoMarkersChunkPacket& packet)
 		{
 			std::lock_guard<std::mutex> lock(g_remoteCacheMutex);
-			if (packet.snapshot_id == 0 || packet.snapshot_id != g_snapshotAssembly.SnapshotId)
-			{
-				return;
-			}
-			if (!g_snapshotAssembly.CargoMarkersChunksReceived.emplace(packet.chunk_index).second)
+			if (!IsExpectedChunk<MapSyncProtocol::kCargoMarkerChunkCapacity>(
+					g_snapshotAssembly,
+					packet,
+					g_snapshotAssembly.ExpectedCargoMarkersChunkCount,
+					g_snapshotAssembly.ExpectedCargoMarkersCount)
+				|| !g_snapshotAssembly.CargoMarkersChunksReceived.emplace(packet.chunk_index).second)
 			{
 				return;
 			}
 
-			const uint16_t itemCount =
-				packet.item_count > MapSyncProtocol::kCargoMarkerChunkCapacity
-					? static_cast<uint16_t>(MapSyncProtocol::kCargoMarkerChunkCapacity)
-					: packet.item_count;
+			const uint16_t itemCount = packet.item_count;
 			for (uint16_t index = 0; index < itemCount; ++index)
 			{
 				const auto& item = packet.items[index];
@@ -284,19 +436,17 @@ namespace MapExtensionClient
 		void StoreCargoConnectionsChunk(const MapSyncProtocol::ServerCargoConnectionsChunkPacket& packet)
 		{
 			std::lock_guard<std::mutex> lock(g_remoteCacheMutex);
-			if (packet.snapshot_id == 0 || packet.snapshot_id != g_snapshotAssembly.SnapshotId)
-			{
-				return;
-			}
-			if (!g_snapshotAssembly.CargoConnectionsChunksReceived.emplace(packet.chunk_index).second)
+			if (!IsExpectedChunk<MapSyncProtocol::kCargoConnectionChunkCapacity>(
+					g_snapshotAssembly,
+					packet,
+					g_snapshotAssembly.ExpectedCargoConnectionsChunkCount,
+					g_snapshotAssembly.ExpectedCargoConnectionsCount)
+				|| !g_snapshotAssembly.CargoConnectionsChunksReceived.emplace(packet.chunk_index).second)
 			{
 				return;
 			}
 
-			const uint16_t itemCount =
-				packet.item_count > MapSyncProtocol::kCargoConnectionChunkCapacity
-					? static_cast<uint16_t>(MapSyncProtocol::kCargoConnectionChunkCapacity)
-					: packet.item_count;
+			const uint16_t itemCount = packet.item_count;
 			for (uint16_t index = 0; index < itemCount; ++index)
 			{
 				const auto& item = packet.items[index];
@@ -316,14 +466,54 @@ namespace MapExtensionClient
 			}
 		}
 
-		void FinalizeSnapshot(const MapSyncProtocol::ServerSnapshotEndPacket& packet)
+		void StorePoisChunk(const MapSyncProtocol::ServerPoisChunkPacket& packet)
 		{
 			std::lock_guard<std::mutex> lock(g_remoteCacheMutex);
-			if (!packet.success || packet.snapshot_id == 0 || packet.snapshot_id != g_snapshotAssembly.SnapshotId)
+			if (!IsExpectedChunk<MapSyncProtocol::kPoiChunkCapacity>(
+					g_snapshotAssembly,
+					packet,
+					g_snapshotAssembly.ExpectedPoisChunkCount,
+					g_snapshotAssembly.ExpectedPoisCount)
+				|| !g_snapshotAssembly.PoisChunksReceived.emplace(packet.chunk_index).second)
 			{
 				return;
 			}
-			if (!HasAllExpectedChunks(g_snapshotAssembly))
+
+			const uint16_t itemCount = packet.item_count;
+			for (uint16_t index = 0; index < itemCount; ++index)
+			{
+				const auto& item = packet.items[index];
+				PoiMarker marker{};
+				marker.Kind = item.kind == MapSyncProtocol::kPoiAbandonedBase
+					? PoiKind::AbandonedBase
+					: PoiKind::PlantResource;
+				marker.Depleted = (item.flags & MapSyncProtocol::kPoiEntryDepleted) != 0;
+				marker.WorldLocation = MakeVector(item.world_x, item.world_y, item.world_z);
+				marker.MapLocation = MapStateRuntime::Detail::WorldToMap(marker.WorldLocation);
+				marker.DisplayName = ReadFixedString(item.label);
+				marker.ResourceName = ReadFixedString(item.resource);
+				marker.Source = ReadFixedString(item.source);
+				marker.PublicKey = ReadFixedString(item.unique_key);
+				marker.InternalKey = marker.PublicKey;
+				g_snapshotAssembly.Snapshot.Pois.push_back(std::move(marker));
+			}
+		}
+
+		void FinalizeSnapshot(const MapSyncProtocol::ServerSnapshotEndPacket& packet)
+		{
+			std::lock_guard<std::mutex> lock(g_remoteCacheMutex);
+			if (packet.success != 1u
+				|| packet.snapshot_id == 0
+				|| packet.snapshot_id != g_snapshotAssembly.SnapshotId
+				|| packet.generation == 0
+				|| packet.generation != g_snapshotAssembly.Generation
+				|| g_snapshotAssembly.Snapshot.Generation != g_snapshotAssembly.Generation)
+			{
+				return;
+			}
+			if (!HasMatchingEndCounters(g_snapshotAssembly, packet)
+				|| !HasAllExpectedChunks(g_snapshotAssembly)
+				|| !HasExpectedItemCounts(g_snapshotAssembly))
 			{
 				return;
 			}
@@ -340,6 +530,7 @@ namespace MapExtensionClient
 			{
 				g_lastReceivedAtUnixMs = g_activeCargoSnapshot.RuptureCycle.ObservedAtUnixMs;
 			}
+			g_snapshotAssembly.Reset();
 		}
 
 		bool TryCopyRuptureCycleSnapshot(RuptureCycleSnapshot& outSnapshot)

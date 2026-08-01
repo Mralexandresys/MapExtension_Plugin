@@ -61,6 +61,7 @@ interface PersistedPreferences {
     viewMode?: ViewMode;
     lang?: Language;
     entityVisibility?: Partial<EntityVisibility>;
+    ruptureCompact?: boolean;
 }
 
 export function useMapViewDataSource() {
@@ -78,12 +79,15 @@ export function useMapViewDataSource() {
     const lastUpdatedAt = ref(0);
     const now = ref(Date.now());
     const viewMode = ref<ViewMode>("network");
+    const ruptureCompact = ref(false);
 
     const entityVisibility = reactive<EntityVisibility>({
         sender: true,
         receiver: true,
         teleporter: true,
         player: true,
+        abandonedBase: true,
+        plantResource: true,
     });
 
     const status = reactive<MapViewStatus>({
@@ -148,6 +152,7 @@ export function useMapViewDataSource() {
             showAllLinks.value = saved.showAllLinks ?? true;
             highlightOrphans.value = saved.highlightOrphans ?? false;
             viewMode.value = saved.viewMode || "network";
+            ruptureCompact.value = saved.ruptureCompact ?? false;
             if (saved.lang && LANGUAGE_OPTIONS.includes(saved.lang as Language)) {
                 lang.value = saved.lang as Language;
             }
@@ -155,6 +160,10 @@ export function useMapViewDataSource() {
             entityVisibility.receiver = saved.entityVisibility?.receiver ?? true;
             entityVisibility.teleporter = saved.entityVisibility?.teleporter ?? true;
             entityVisibility.player = saved.entityVisibility?.player ?? true;
+            entityVisibility.abandonedBase =
+                saved.entityVisibility?.abandonedBase ?? true;
+            entityVisibility.plantResource =
+                saved.entityVisibility?.plantResource ?? true;
         } catch {
             endpoint.value = DEFAULT_ENDPOINT;
             endpointDraft.value = DEFAULT_ENDPOINT;
@@ -176,6 +185,7 @@ export function useMapViewDataSource() {
                 viewMode: viewMode.value,
                 lang: lang.value,
                 entityVisibility: { ...entityVisibility },
+                ruptureCompact: ruptureCompact.value,
             }),
         );
     }
@@ -286,6 +296,7 @@ export function useMapViewDataSource() {
             viewMode: viewMode.value,
             lang: lang.value,
             entityVisibility: { ...entityVisibility },
+            ruptureCompact: ruptureCompact.value,
         }),
         savePreferences,
         { deep: true },
@@ -333,6 +344,7 @@ export function useMapViewDataSource() {
         lastUpdatedAt,
         now,
         viewMode,
+        ruptureCompact,
         entityVisibility,
         status,
         ui,

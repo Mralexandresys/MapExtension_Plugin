@@ -13,6 +13,11 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local,
 - Voir les objets actuellement transportes dans le reseau
 - Afficher la position des `teleporteurs`
 - Afficher la position des `joueurs`
+- Afficher les bases abandonnees et les ressources vegetales comme points d'interet (POI)
+- Distinguer les ressources vegetales disponibles et `depleted`, avec une couleur stable attribuee par ressource
+- Utiliser une vue compacte du cycle de rupture avec phase, temps restant, legende et details de timeline
+- Filtrer la carte pour ne garder que les marqueurs et zones personnels
+- Centrer la carte sur le joueur avec le controle `Joueur` ou le raccourci `P`
 - Exposer `GET /health`, `GET /cargo` et `GET /rupture-cycle` sur le serveur HTTP local
 - Recevoir les snapshots de carte et de cycle de rupture envoyes par la build serveur en session serveur dediee
 - Utiliser un fallback local via `UCrEnviroWaveSubsystem` en solo/local quand aucun snapshot serveur n'est disponible
@@ -24,6 +29,48 @@ Le `mapview` inclus est une interface web locale concue pour lire les donnees du
 Une fois packagee, il faut garder le dossier genere `map-tiles/` a cote de `MapExtensionViewer.html` ; l'interface charge le fond de carte depuis ces tuiles.
 
 Il consomme a la fois les donnees de carte/cargo et l'endpoint de cycle de rupture pour afficher la timeline de l'interface.
+
+Les bases abandonnees utilisent leur propre icone sur la carte. Les ressources vegetales utilisent une couleur de palette stable derivee du nom de la ressource, afin qu'une meme ressource garde la meme couleur apres les refreshs ; les ressources disponibles ont un marqueur plein, tandis que les ressources `depleted` ont un marqueur attenue et en contour. Des filtres separes controlent les bases abandonnees et les ressources vegetales.
+
+L'interface peut reduire la timeline de rupture en barre compacte ; son survol ou son focus clavier affiche la phase courante, le temps restant, la legende et les reperes de timeline. Les filtres peuvent masquer toutes les entites du jeu pour ne laisser que les marqueurs et zones personnels, et le controle `Joueur` ou le raccourci `P` centre la carte sur la premiere position de joueur recue.
+
+## Donnees POI de `/cargo`
+
+`GET /cargo` inclut les totaux POI dans `counts` et un tableau `pois` :
+
+```json
+{
+  "counts": {
+    "pois": 1,
+    "abandoned_bases": 0,
+    "plant_resources": 1
+  },
+  "pois": [
+    {
+      "kind": "plant_resource",
+      "label": "Example Plant",
+      "resource": "Example Resource",
+      "depleted": false,
+      "source": "actor_scan.gatherable",
+      "unique_key": "example-plant-key",
+      "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
+      "map": { "x": 0.0, "y": 0.0 }
+    }
+  ]
+}
+```
+
+- `kind` vaut `abandoned_base` ou `plant_resource`.
+- `label` est le libelle affiche ; `resource` est le nom de ressource detecte et peut etre vide pour une base abandonnee.
+- `depleted` represente l'etat de la ressource : `false` signifie disponible (`available`), tandis que `true` signifie epuisee (`depleted`) ou recoltee de facon permanente. Il n'existe pas de champ `available` separe.
+- `source` identifie le chemin de capture, `unique_key` identifie le POI pour l'interface, `world` contient les coordonnees Unreal `x`/`y`/`z` et `map` contient les coordonnees projetees `x`/`y`.
+- `counts.pois` est le nombre total de POI ; `counts.abandoned_bases` et `counts.plant_resources` contiennent les totaux par kind.
+
+## Compatibilite de la synchronisation serveur dedie
+
+Les snapshots de serveur dedie utilisent le protocole de synchronisation v2, qui transporte les POI et valide les identifiants de snapshot, generations, nombres d'elements et nombres de chunks avant de publier un snapshot distant. Les versions de protocole doivent correspondre exactement : un client ou serveur v2 ignore les paquets d'une autre version de protocole au lieu de tenter un downgrade.
+
+**Mettre a jour les builds client et serveur dedie ensemble.** La mise a jour automatique du modloader ne remplace que la DLL client ; la DLL du serveur dedie doit etre remplacee manuellement pendant la meme mise a jour. Ne pas laisser les deux cotes sur des releases differentes.
 
 ## Installation et mises a jour
 
@@ -40,8 +87,8 @@ Copier le contenu de `Plugins/` dans `StarRupture/Binaries/Win64/Plugins/`, puis
 
 Deux limites a connaitre :
 
-- La mise a jour automatique ne remplace que la DLL. `MapExtensionViewer.html` et `map-tiles/` ne sont jamais touches, puisqu'ils vivent hors du dossier du jeu. L'interface le detecte d'elle-meme : quand le plugin annonce un contrat de payload plus recent que celui avec lequel l'interface locale a ete construite, une fenetre propose le telechargement direct de l'asset `MapExtension_Plugin-<tag>-viewer.zip` correspondant, avec les liens vers la release GitHub et la page du mod. Remplacer `MapExtensionViewer.html` et `map-tiles/` ensemble, puis recharger la page.
-- Le build serveur n'est pas couvert par le sidecar. Il faut le mettre a jour a la main et le garder sur la meme version que le client, les deux cotes partageant `shared/map_sync_protocol.h`.
+- La mise a jour automatique ne remplace que la DLL. `MapExtensionViewer.html` et `map-tiles/` ne sont jamais touches, puisqu'ils vivent hors du dossier du jeu. L'interface detecte les contrats de payload incompatibles : quand le plugin annonce un contrat plus recent que celui avec lequel l'interface locale a ete construite, une fenetre propose le telechargement direct de l'asset `MapExtension_Plugin-<tag>-viewer.zip` correspondant, avec les liens vers la release GitHub et la page du mod. Les ameliorations retrocompatibles du viewer peuvent ne pas declencher cette fenetre ; installer donc manuellement l'archive viewer correspondante pour profiter des nouvelles fonctions d'interface. Remplacer `MapExtensionViewer.html` et `map-tiles/` ensemble, puis recharger la page.
+- Le build serveur n'est pas couvert par le sidecar. Le protocole de synchronisation v2 exige des builds client et serveur correspondants : mettre a jour les deux DLL ensemble et remplacer manuellement celle du serveur dedie.
 
 Les mises a jour automatiques peuvent etre desactivees globalement dans le modloader avec `[AutoUpdate] Enabled=0` dans `modloader.ini`.
 

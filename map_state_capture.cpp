@@ -15,6 +15,7 @@
 #include "AuItems_classes.hpp"
 #include "BP_PackageReceiver_classes.hpp"
 #include "BP_PackageSender_classes.hpp"
+#include "BP_Sulphur_Logic_Large_AbandonedBase_classes.hpp"
 #include "BP_Teleporter_classes.hpp"
 #include "Chimera_classes.hpp"
 #include "Chimera_structs.hpp"
@@ -48,6 +49,8 @@ using CargoMarker = MapStateRuntime::Detail::CargoMarker;
 using CargoSnapshot = MapStateRuntime::Detail::CargoSnapshot;
 using RuptureCycleSnapshot = MapStateRuntime::Detail::RuptureCycleSnapshot;
 using PlayerMarker = MapStateRuntime::Detail::PlayerMarker;
+using PoiKind = MapStateRuntime::Detail::PoiKind;
+using PoiMarker = MapStateRuntime::Detail::PoiMarker;
 using ReceiverLinkInfo = MapStateRuntime::Detail::ReceiverLinkInfo;
 using TeleporterMarker = MapStateRuntime::Detail::TeleporterMarker;
 
@@ -57,6 +60,11 @@ namespace
 	constexpr int kMaxLoggedActorsPerKind = 4;
 	constexpr int64_t kCargoActorRefreshMinIntervalMs = 750;
 	constexpr int64_t kConnectionRetentionMs = 15000;
+	// POI actors (abandoned bases, gatherable plant resources) are static or
+	// slow-changing; rescanning them with GetAllActorsOfClass on every refresh
+	// would be wasteful, so scans are throttled and the previous snapshot's
+	// POIs are reused in between.
+	constexpr int64_t kPoiScanMinIntervalMs = 5000;
 	struct TrackedChimeraWorldState final
 	{
 		SDK::UWorld* World = nullptr;
@@ -79,6 +87,8 @@ namespace
 	bool g_chimeraWorldReady = false;
 	float g_engineTickAccumulatorSeconds = 0.0f;
 	int64_t g_lastCargoActorRefreshAtUnixMs = 0;
+	int64_t g_lastPoiScanAtUnixMs = 0;
+	std::string g_lastPoiScanWorldName;
 	// Timestamp at which the ChimeraMain world was first detected. Realtime
 	// refreshes are suppressed for kPostWorldBeginPlayGraceMs after this point
 	// to avoid main-thread stalls during the heavy replication / Mass /
@@ -86,6 +96,7 @@ namespace
 	int64_t g_chimeraWorldDetectedAtUnixMs = 0;
 	constexpr int64_t kPostWorldBeginPlayGraceMs = 8000;
 	std::mutex g_runtimeStateMutex;
+	std::mutex g_poiScanMutex;
 	std::mutex g_snapshotMutex;
 	CargoSnapshot g_snapshot{};
 	std::unordered_set<uint32_t> g_requestedCustomNameEntityIds;
@@ -120,6 +131,13 @@ namespace
 	// The SDK documents FindObjectsByClassNameInto as expensive (walks GObjects,
 	// tens of thousands of entries) and requires callers to cache results.
 	constexpr int64_t kWaveSubsystemObjectWalkerRetryIntervalMs = 10000;
+
+	void ResetPoiScanState()
+	{
+		std::lock_guard<std::mutex> lock(g_poiScanMutex);
+		g_lastPoiScanAtUnixMs = 0;
+		g_lastPoiScanWorldName.clear();
+	}
 
 #if defined(PLUGIN_INTERFACE_VERSION_MAX) && PLUGIN_INTERFACE_VERSION_MAX >= 47
 	struct RuptureCycleDelegateHooks final
@@ -220,13 +238,14 @@ namespace
 
 			const int64_t nowMs = GetCurrentUnixTimeMilliseconds();
 			LOG_INFO(
-				"Refresh timing '%s': total=%lld ms markers=%zu connections=%zu teleporters=%zu players=%zu",
+				"Refresh timing '%s': total=%lld ms markers=%zu connections=%zu teleporters=%zu players=%zu pois=%zu",
 				Reason,
 				static_cast<long long>(nowMs - StartedAtMs),
 				snapshot.Markers.size(),
 				snapshot.Connections.size(),
 				snapshot.Teleporters.size(),
-				snapshot.Players.size());
+				snapshot.Players.size(),
+				snapshot.Pois.size());
 		}
 	};
 
@@ -257,11 +276,14 @@ namespace
 			snapshot.Connections.clear();
 			snapshot.Teleporters.clear();
 			snapshot.Players.clear();
+			snapshot.Pois.clear();
 			snapshot.SenderCount = 0;
 			snapshot.ReceiverCount = 0;
 			snapshot.ConnectionCount = 0;
 			snapshot.TeleporterCount = 0;
 			snapshot.PlayerCount = 0;
+			snapshot.AbandonedBaseCount = 0;
+			snapshot.PlantResourceCount = 0;
 			snapshot.ActorReceiverCount = 0;
 			snapshot.ActorSenderCount = 0;
 			snapshot.UsedReplicator = false;
@@ -1195,6 +1217,7 @@ namespace
 				g_chimeraWorldDetectedAtUnixMs = 0;
 				g_requestedCustomNameEntityIds.clear();
 			}
+			ResetPoiScanState();
 		}
 
 		if (!hadState)
@@ -2730,6 +2753,191 @@ namespace
 		snapshot.PlayerCount = static_cast<int>(snapshot.Players.size());
 	}
 
+	std::string PrettifyPoiClassName(std::string name)
+	{
+		// e.g. "BP_Gatherable_GoldFruitTree_Large_A_C" -> "GoldFruitTree Large A"
+		const auto stripPrefix = [&name](const char* prefix)
+		{
+			const size_t length = std::strlen(prefix);
+			if (name.rfind(prefix, 0) == 0)
+			{
+				name.erase(0, length);
+			}
+		};
+		stripPrefix("BP_");
+		stripPrefix("Gatherable_");
+		if (name.size() > 2 && name.compare(name.size() - 2, 2, "_C") == 0)
+		{
+			name.erase(name.size() - 2);
+		}
+		std::replace(name.begin(), name.end(), '_', ' ');
+		return name;
+	}
+
+	std::string GetGatherableResourceName(SDK::ACrGatherableBaseActor* actor)
+	{
+		if (!actor)
+		{
+			return {};
+		}
+
+		SDK::UClass* itemClass = actor->InteractionRewardResource.Get();
+		if (!itemClass)
+		{
+			return {};
+		}
+
+		SDK::UObject* defaultObject = itemClass->ClassDefaultObject;
+		if (!defaultObject || !defaultObject->IsA(SDK::UAuItemDataBase::StaticClass()))
+		{
+			return {};
+		}
+
+		return GetItemDisplayName(static_cast<SDK::UAuItemDataBase*>(defaultObject));
+	}
+
+	void AddPoiMarker(
+		CargoSnapshot& snapshot,
+		std::unordered_set<std::string>& poiKeys,
+		PoiKind kind,
+		const SDK::FVector& worldLocation,
+		const char* keyPrefix,
+		const char* source,
+		std::string displayName,
+		std::string resourceName,
+		bool depleted)
+	{
+		std::string internalKey = BuildLocationKey(keyPrefix, worldLocation);
+		if (!poiKeys.emplace(internalKey).second)
+		{
+			return;
+		}
+
+		PoiMarker marker{};
+		marker.Kind = kind;
+		marker.Depleted = depleted;
+		marker.WorldLocation = worldLocation;
+		marker.MapLocation = MapStateRuntime::Detail::WorldToMap(worldLocation);
+		marker.DisplayName = std::move(displayName);
+		marker.ResourceName = std::move(resourceName);
+		marker.Source = source ? source : "unknown";
+		marker.InternalKey = std::move(internalKey);
+		marker.PublicKey = MakeTaggedPublicKey("poi", marker.InternalKey);
+		snapshot.Pois.push_back(std::move(marker));
+	}
+
+	void UpdatePoiCounts(CargoSnapshot& snapshot)
+	{
+		snapshot.AbandonedBaseCount = 0;
+		snapshot.PlantResourceCount = 0;
+		for (const PoiMarker& marker : snapshot.Pois)
+		{
+			if (marker.Kind == PoiKind::AbandonedBase)
+			{
+				++snapshot.AbandonedBaseCount;
+			}
+			else
+			{
+				++snapshot.PlantResourceCount;
+			}
+		}
+	}
+
+	bool CapturePois(
+		SDK::UWorld* world,
+		CargoSnapshot& snapshot,
+		const CargoSnapshot& previousSnapshot,
+		int64_t observedAtUnixMs)
+	{
+		if (!world)
+		{
+			return false;
+		}
+
+		const std::string worldName = world->GetName();
+		bool scanIsFresh = false;
+		{
+			std::lock_guard<std::mutex> lock(g_poiScanMutex);
+			scanIsFresh =
+				g_lastPoiScanAtUnixMs != 0
+				&& observedAtUnixMs >= g_lastPoiScanAtUnixMs
+				&& observedAtUnixMs - g_lastPoiScanAtUnixMs < kPoiScanMinIntervalMs
+				&& g_lastPoiScanWorldName == worldName;
+			if (!scanIsFresh)
+			{
+				g_lastPoiScanAtUnixMs = observedAtUnixMs;
+				g_lastPoiScanWorldName = worldName;
+			}
+		}
+
+		if (scanIsFresh)
+		{
+			snapshot.Pois = previousSnapshot.Pois;
+			UpdatePoiCounts(snapshot);
+			return false;
+		}
+
+		std::unordered_set<std::string> poiKeys;
+
+		SDK::TArray<SDK::AActor*> abandonedBases;
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world,
+			SDK::ABP_Sulphur_Logic_Large_AbandonedBase_C::StaticClass(),
+			&abandonedBases);
+		for (int index = 0; index < abandonedBases.Num(); ++index)
+		{
+			SDK::AActor* actor = abandonedBases[index];
+			if (!actor)
+			{
+				continue;
+			}
+
+			AddPoiMarker(
+				snapshot,
+				poiKeys,
+				PoiKind::AbandonedBase,
+				actor->K2_GetActorLocation(),
+				"poi.base",
+				"actor_scan.abandoned_base",
+				"Abandoned Base",
+				{},
+				false);
+		}
+
+		SDK::TArray<SDK::AActor*> gatherables;
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world,
+			SDK::ACrGatherableBaseActor::StaticClass(),
+			&gatherables);
+		for (int index = 0; index < gatherables.Num(); ++index)
+		{
+			SDK::ACrGatherableBaseActor* actor =
+				static_cast<SDK::ACrGatherableBaseActor*>(gatherables[index]);
+			if (!actor)
+			{
+				continue;
+			}
+
+			std::string resourceName = GetGatherableResourceName(actor);
+			std::string displayName = !resourceName.empty()
+				? resourceName
+				: PrettifyPoiClassName(actor->Class ? actor->Class->GetName() : actor->GetName());
+			AddPoiMarker(
+				snapshot,
+				poiKeys,
+				PoiKind::PlantResource,
+				actor->K2_GetActorLocation(),
+				"poi.plant",
+				"actor_scan.gatherable",
+				std::move(displayName),
+				std::move(resourceName),
+				actor->bIsDepleted || actor->bIsPermanentlyGathered);
+		}
+
+		UpdatePoiCounts(snapshot);
+		return true;
+	}
+
 	CargoSnapshot CopySnapshotImpl()
 	{
 		std::lock_guard<std::mutex> lock(g_snapshotMutex);
@@ -2807,7 +3015,8 @@ namespace
 			timing.Finish(nextSnapshot);
 			return !nextSnapshot.Markers.empty()
 				|| !nextSnapshot.Teleporters.empty()
-				|| !nextSnapshot.Players.empty();
+				|| !nextSnapshot.Players.empty()
+				|| !nextSnapshot.Pois.empty();
 		}
 #endif
 
@@ -2850,6 +3059,8 @@ namespace
 		{
 			LOG_INFO("Cargo refresh '%s': player stage completed", nextSnapshot.Reason.c_str());
 		}
+		const bool didScanPois = CapturePois(world, nextSnapshot, previousSnapshot, observedAtUnixMs);
+		timing.Phase(didScanPois ? "poi_scan" : "poi_cache_reuse");
 		MergeRetainedConnections(nextSnapshot, previousSnapshot, observedAtUnixMs);
 		timing.Phase("merge_retained_connections");
 
@@ -2919,7 +3130,8 @@ namespace
 		timing.Finish(nextSnapshot);
 		return !nextSnapshot.Markers.empty()
 			|| !nextSnapshot.Teleporters.empty()
-			|| !nextSnapshot.Players.empty();
+			|| !nextSnapshot.Players.empty()
+			|| !nextSnapshot.Pois.empty();
 	}
 
 	void TryRefreshCurrentWorldImpl(const char* reason)
@@ -3040,6 +3252,7 @@ namespace MapStateRuntime
 			g_lastCargoActorRefreshAtUnixMs = 0;
 			g_chimeraWorldDetectedAtUnixMs = 0;
 			g_requestedCustomNameEntityIds.clear();
+			ResetPoiScanState();
 		}
 		ResetRuptureCycleState();
 
@@ -3261,6 +3474,7 @@ namespace MapStateRuntime
 				g_lastCargoActorRefreshAtUnixMs = 0;
 				g_chimeraWorldDetectedAtUnixMs = GetCurrentUnixTimeMilliseconds();
 				g_requestedCustomNameEntityIds.clear();
+				ResetPoiScanState();
 			}
 			g_engineTickAccumulatorSeconds = 0.0f;
 			ResetRuptureCycleState();
@@ -3387,6 +3601,7 @@ namespace MapStateRuntime
 			{
 				wasTracked = true;
 				g_chimeraWorldReady = false;
+				ResetPoiScanState();
 			}
 		}
 

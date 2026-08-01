@@ -9,6 +9,7 @@ import type {
   CargoMarker,
   CargoResponse,
   Player,
+  Poi,
   Rect2D,
   SelectedEntity,
   Teleporter,
@@ -27,6 +28,7 @@ const props = defineProps<{
   cargoConnections: CargoConnection[];
   teleporters: Teleporter[];
   players: Player[];
+  pois: Poi[];
   selectedKey: string | null;
   selectedEntity: SelectedEntity | null;
   orphanKeys: string[];
@@ -67,6 +69,18 @@ const TELEPORTER_ICON_SIZE = 28;
 const TELEPORTER_ICON_HALF = TELEPORTER_ICON_SIZE / 2;
 const TELEPORTER_HITBOX_SIZE = 36;
 const TELEPORTER_HITBOX_HALF = TELEPORTER_HITBOX_SIZE / 2;
+const POI_HITBOX_SIZE = 32;
+const POI_HITBOX_HALF = POI_HITBOX_SIZE / 2;
+const POI_RESOURCE_COLORS = [
+  '#65d6ff',
+  '#7ee787',
+  '#ffd166',
+  '#ff9f6e',
+  '#c99cff',
+  '#ff82b2',
+  '#5eead4',
+  '#9db7ff',
+] as const;
 const TILE_SOURCE_WIDTH = 9019;
 const TILE_SOURCE_HEIGHT = 11691;
 const TILE_SIZE = 2048;
@@ -100,10 +114,10 @@ const tileScaleX = computed(() => imageWidth.value / TILE_SOURCE_WIDTH);
 const tileScaleY = computed(() => imageHeight.value / TILE_SOURCE_HEIGHT);
 
 const visibleMapBounds = computed(() => {
-  const left = (0 - mapTranslateX.value) / mapScale.value;
-  const top = (0 - mapTranslateY.value) / mapScale.value;
-  const right = (viewBoxWidth.value - mapTranslateX.value) / mapScale.value;
-  const bottom = (viewBoxHeight.value - mapTranslateY.value) / mapScale.value;
+  const left = (viewportBounds.value.left - mapTranslateX.value) / mapScale.value;
+  const top = (viewportBounds.value.top - mapTranslateY.value) / mapScale.value;
+  const right = (viewportBounds.value.right - mapTranslateX.value) / mapScale.value;
+  const bottom = (viewportBounds.value.bottom - mapTranslateY.value) / mapScale.value;
 
   return {
     left: Math.min(left, right),
@@ -186,7 +200,12 @@ const {
   moveTooltip,
 } = useMapTooltip(mapShell);
 
-const panZoom = useMapPanZoom(mapShell, viewBoxWidth, viewBoxHeight);
+const panZoom = useMapPanZoom(mapShell, viewBoxWidth, viewBoxHeight, {
+  x: imageX,
+  y: imageY,
+  width: imageWidth,
+  height: imageHeight,
+});
 
 const {
   mapScale,
@@ -194,8 +213,11 @@ const {
   mapTranslateY,
   transform,
   isDragging,
+  viewportBounds,
   resetView,
   centerOnPoint,
+  screenToMapPoint,
+  consumeDragMovement,
   handleMouseDown: panZoomHandleMouseDown,
   handleWheel,
 } = panZoom;
@@ -214,31 +236,22 @@ const activeDrag = ref<ActiveDrag | null>(null);
 // Keep zone labels readable regardless of zoom.
 const zoneLabelFontSize = computed(() => Math.max(20, Math.round(26 / mapScale.value)));
 
-/**
- * Convert a client mouse position to SVG viewBox (map) coordinates.
- * Takes into account the container bounding rect, the fit-scale that the SVG
- * applies automatically (xMidYMid meet) and the current pan/zoom transform.
- */
-function screenToMapPoint(clientX: number, clientY: number): { x: number; y: number } {
-  if (!mapShell.value) return { x: 0, y: 0 };
-  const rect = mapShell.value.getBoundingClientRect();
-  const fitScale = Math.min(rect.width / viewBoxWidth.value, rect.height / viewBoxHeight.value);
-  // offset due to "meet" centering
-  const svgLeft = rect.left + (rect.width - viewBoxWidth.value * fitScale) / 2;
-  const svgTop  = rect.top  + (rect.height - viewBoxHeight.value * fitScale) / 2;
-  // position in viewBox space (before pan/zoom transform)
-  const vx = (clientX - svgLeft) / fitScale;
-  const vy = (clientY - svgTop) / fitScale;
-  // undo the pan/zoom transform: map = (viewBox - translate) / scale
-  return {
-    x: (vx - mapTranslateX.value) / mapScale.value,
-    y: (vy - mapTranslateY.value) / mapScale.value,
-  };
+function isMapPointWithinImage(point: { x: number; y: number }): boolean {
+  const imageRight = imageX.value + imageWidth.value;
+  const imageBottom = imageY.value + imageHeight.value;
+  const left = Math.min(imageX.value, imageRight);
+  const right = Math.max(imageX.value, imageRight);
+  const top = Math.min(imageY.value, imageBottom);
+  const bottom = Math.max(imageY.value, imageBottom);
+
+  return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom;
 }
 
 function handleWindowMouseMove(event: MouseEvent): void {
   if (activeDrag.value) {
     const pt = screenToMapPoint(event.clientX, event.clientY);
+    if (!pt) return;
+
     if (activeDrag.value.type === 'marker') {
       ghostPoint.value = pt;
       return;
@@ -259,6 +272,8 @@ function handleWindowMouseMove(event: MouseEvent): void {
 
   if (zoneDraft.value) {
     const pt = screenToMapPoint(event.clientX, event.clientY);
+    if (!pt) return;
+
     const dx = pt.x - zoneDraft.value.startX;
     const dy = pt.y - zoneDraft.value.startY;
     zoneDraft.value = {
@@ -274,6 +289,13 @@ function handleWindowMouseMove(event: MouseEvent): void {
 function handleWindowMouseUp(event: MouseEvent): void {
   if (activeDrag.value) {
     const pt = screenToMapPoint(event.clientX, event.clientY);
+    if (!pt) {
+      activeDrag.value = null;
+      ghostPoint.value = null;
+      zoneDraft.value = null;
+      return;
+    }
+
     if (activeDrag.value.type === 'marker') {
       emit('move-marker', pt);
       activeDrag.value = null;
@@ -353,6 +375,49 @@ function playerLabel(player: Player): string {
   return player.label || ui.value.selection.playerFallback;
 }
 
+function stableStringHash(value: string): number {
+  let hash = 0x811c9dc5;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+
+  return hash >>> 0;
+}
+
+function poiKindLabel(poi: Poi): string {
+  return poi.kind === 'abandoned_base'
+    ? ui.value.map.abandonedBaseLabel
+    : ui.value.map.plantResourceLabel;
+}
+
+function poiLabel(poi: Poi): string {
+  return poi.label || poi.resource || poiKindLabel(poi);
+}
+
+function poiStateLabel(poi: Poi): string {
+  return poi.depleted === true
+    ? ui.value.map.depletedLabel
+    : ui.value.map.availableLabel;
+}
+
+function poiTooltipLines(poi: Poi): string[] {
+  return [
+    `${ui.value.selection.type}: ${poiKindLabel(poi)}`,
+    `${ui.value.selection.name}: ${poiLabel(poi)}`,
+    `${ui.value.selection.resource}: ${poi.resource || ui.value.map.noResource}`,
+    `${ui.value.selection.state}: ${poiStateLabel(poi)}`,
+    ui.value.map.clickToSelect,
+  ];
+}
+
+function poiColorStyle(poi: Poi): Record<string, string> {
+  const colorKey = (poi.resource || poi.label || poi.unique_key).trim().toLowerCase();
+  const colorIndex = stableStringHash(colorKey) % POI_RESOURCE_COLORS.length;
+  return { '--poi-color': POI_RESOURCE_COLORS[colorIndex] };
+}
+
 function cargoAriaLabel(marker: CargoMarker): string {
   return `${cargoLabel(marker)}. ${markerTypeLabel(marker)}. ${ui.value.format.relatedConnections(relatedConnectionCount(marker.unique_key))}.`;
 }
@@ -363,6 +428,10 @@ function teleporterAriaLabel(teleporter: Teleporter): string {
 
 function playerAriaLabel(player: Player): string {
   return `${playerLabel(player)}. ${player.source || ui.value.map.unknownSource}.`;
+}
+
+function poiAriaLabel(poi: Poi): string {
+  return `${poiLabel(poi)}. ${poiKindLabel(poi)}. ${poi.resource || ui.value.map.noResource}. ${poiStateLabel(poi)}.`;
 }
 
 function handleMarkerKeydown(event: KeyboardEvent, key: string): void {
@@ -408,6 +477,14 @@ function handlePlayerFocus(player: Player, event: FocusEvent): void {
   );
 }
 
+function handlePoiFocus(poi: Poi, event: FocusEvent): void {
+  const target = event.target as Element | null;
+  if (!target) return;
+
+  emit('hover', poi.unique_key);
+  showTooltipFromElement(poiLabel(poi), poiTooltipLines(poi), target);
+}
+
 function handleCargoBlur(): void {
   emit('hover', null);
   hideTooltip();
@@ -432,6 +509,16 @@ function showPlayerTooltip(player: Player, event: MouseEvent): void {
     [player.source || ui.value.map.unknownSource, ui.value.map.clickToSelect],
     event,
   );
+}
+
+function showPoiTooltip(poi: Poi, event: MouseEvent): void {
+  emit('hover', poi.unique_key);
+  showTooltip(poiLabel(poi), poiTooltipLines(poi), event);
+}
+
+function handlePoiBlur(): void {
+  emit('hover', null);
+  hideTooltip();
 }
 
 function userMarkerLabel(marker: UserMarker): string {
@@ -484,12 +571,15 @@ function showConnectionTooltip(connection: CargoConnection, event: MouseEvent): 
 
 function handleMouseDown(event: MouseEvent): void {
   const target = event.target as Element | null;
-  if (target?.closest('.map-marker, .connection-line, .user-marker, .user-zone')) return;
+  if (!target?.closest('.map-svg')) return;
+  if (target.closest('.map-marker, .connection-line, .user-marker, .user-zone')) return;
 
   const mode = props.annotationMode ?? 'idle';
 
   if (mode === 'zone') {
     const pt = screenToMapPoint(event.clientX, event.clientY);
+    if (!pt || !isMapPointWithinImage(pt)) return;
+
     zoneDraft.value = { x: pt.x, y: pt.y, w: 0, h: 0, startX: pt.x, startY: pt.y };
     return;
   }
@@ -510,11 +600,14 @@ function handleUserZoneMouseDown(zone: UserZone, event: MouseEvent): void {
   if (props.annotationEditMode !== 'edit-zone' || !isAnnotationSelected('zone', zone.id)) return;
   event.stopPropagation();
   event.preventDefault();
+  const originPoint = screenToMapPoint(event.clientX, event.clientY);
+  if (!originPoint) return;
+
   activeDrag.value = {
     type: 'zone',
     id: zone.id,
     originRect: { ...zone.rect },
-    originPoint: screenToMapPoint(event.clientX, event.clientY),
+    originPoint,
   };
   zoneDraft.value = {
     x: zone.rect.x,
@@ -528,17 +621,24 @@ function handleUserZoneMouseDown(zone: UserZone, event: MouseEvent): void {
 }
 
 function handleCanvasClick(event: MouseEvent): void {
+  const target = event.target as Element | null;
+  if (!target?.closest('.map-svg')) return;
+
   const mode = props.annotationMode ?? 'idle';
-  if (mode === 'marker') {
-    const pt = screenToMapPoint(event.clientX, event.clientY);
-    emit('create-marker', pt);
-  }
+  if (mode !== 'marker' || consumeDragMovement()) return;
+
+  const pt = screenToMapPoint(event.clientX, event.clientY);
+  if (!pt || !isMapPointWithinImage(pt)) return;
+
+  emit('create-marker', pt);
 }
 
 function handleMouseMove(event: MouseEvent): void {
+  const target = event.target as Element | null;
   const mode = props.annotationMode ?? 'idle';
-  if (mode === 'marker') {
-    ghostPoint.value = screenToMapPoint(event.clientX, event.clientY);
+  if (mode === 'marker' && target?.closest('.map-svg')) {
+    const pt = screenToMapPoint(event.clientX, event.clientY);
+    ghostPoint.value = pt && isMapPointWithinImage(pt) ? pt : null;
   } else {
     ghostPoint.value = null;
   }
@@ -707,6 +807,58 @@ defineExpose({
               :points="`${marker.map.x},${marker.map.y-7} ${marker.map.x+7},${marker.map.y} ${marker.map.x},${marker.map.y+7} ${marker.map.x-7},${marker.map.y}`"
             />
             <circle v-else :cx="marker.map.x" :cy="marker.map.y" r="6" stroke-width="1.5" />
+          </g>
+
+          <g
+            v-for="poi in pois"
+            :key="poi.unique_key"
+            class="map-marker poi"
+            :class="[
+              poi.kind,
+              {
+                active: selectedKey === poi.unique_key,
+                dimmed: isDimmed(poi.unique_key),
+                depleted: poi.depleted === true,
+                available: poi.depleted !== true,
+              },
+            ]"
+            :style="poi.kind === 'plant_resource' ? poiColorStyle(poi) : undefined"
+            tabindex="0"
+            role="button"
+            :aria-pressed="selectedKey === poi.unique_key"
+            :aria-label="poiAriaLabel(poi)"
+            :transform="markerTranslateTransform(poi.map.x, poi.map.y)"
+            @click.stop="emit('select', poi.unique_key)"
+            @dblclick.stop
+            @keydown="handleMarkerKeydown($event, poi.unique_key)"
+            @focus.stop="handlePoiFocus(poi, $event)"
+            @mouseenter.stop="showPoiTooltip(poi, $event)"
+            @mousemove.stop="moveTooltip($event)"
+            @blur.stop="handlePoiBlur"
+            @mouseleave.stop="handlePoiBlur"
+          >
+            <rect
+              class="poi-hitbox"
+              :x="poi.map.x - POI_HITBOX_HALF"
+              :y="poi.map.y - POI_HITBOX_HALF"
+              :width="POI_HITBOX_SIZE"
+              :height="POI_HITBOX_SIZE"
+              rx="4"
+            />
+            <template v-if="poi.kind === 'abandoned_base'">
+              <path
+                class="abandoned-base-shell"
+                :d="`M ${poi.map.x - 10} ${poi.map.y + 8} V ${poi.map.y - 5} H ${poi.map.x - 5} V ${poi.map.y - 1} H ${poi.map.x} V ${poi.map.y - 8} H ${poi.map.x + 8} V ${poi.map.y + 8} Z`"
+              />
+              <path
+                class="abandoned-base-crack"
+                :d="`M ${poi.map.x + 2} ${poi.map.y - 8} L ${poi.map.x - 1} ${poi.map.y - 2} L ${poi.map.x + 3} ${poi.map.y + 1} L ${poi.map.x} ${poi.map.y + 8}`"
+              />
+            </template>
+            <template v-else>
+              <circle class="plant-resource-ring" :cx="poi.map.x" :cy="poi.map.y" r="9" />
+              <circle class="plant-resource-core" :cx="poi.map.x" :cy="poi.map.y" r="5.5" />
+            </template>
           </g>
 
           <g
@@ -965,6 +1117,60 @@ defineExpose({
     stroke-width: 1.2;
 }
 
+:deep(.map-marker.poi .poi-hitbox) {
+    fill: transparent;
+    stroke: none;
+    pointer-events: all;
+}
+
+:deep(.map-marker.poi.abandoned_base .abandoned-base-shell) {
+    fill: #b9774c;
+    stroke: #ffe1b5;
+    stroke-width: 1.3;
+    stroke-linejoin: round;
+}
+
+:deep(.map-marker.poi.abandoned_base .abandoned-base-crack) {
+    fill: none;
+    stroke: #442418;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+:deep(.map-marker.poi.plant_resource .plant-resource-ring) {
+    fill: var(--poi-color);
+    fill-opacity: 0.18;
+    stroke: var(--poi-color);
+    stroke-width: 1.2;
+    stroke-opacity: 0.72;
+}
+
+:deep(.map-marker.poi.plant_resource .plant-resource-core) {
+    fill: var(--poi-color);
+    stroke: #f7fbff;
+    stroke-width: 1.2;
+}
+
+:deep(.map-marker.poi.plant_resource.depleted .plant-resource-ring) {
+    fill-opacity: 0;
+    stroke-opacity: 0.38;
+    stroke-dasharray: 2 2;
+}
+
+:deep(.map-marker.poi.plant_resource.depleted .plant-resource-core) {
+    fill-opacity: 0.12;
+    stroke: var(--poi-color);
+    stroke-width: 1.8;
+    stroke-opacity: 0.58;
+}
+
+:deep(.map-marker.poi.active .poi-hitbox),
+:deep(.map-marker.poi:focus-visible .poi-hitbox) {
+    stroke: none;
+    filter: none;
+}
+
 :deep(.map-marker.orphan rect),
 :deep(.map-marker.orphan polygon),
 :deep(.map-marker.orphan circle) {
@@ -980,6 +1186,8 @@ defineExpose({
 :deep(.map-marker.sender.active polygon)  { filter: drop-shadow(0 0 6px var(--sender)); }
 :deep(.map-marker.receiver.active circle) { filter: drop-shadow(0 0 6px var(--receiver)); }
 :deep(.map-marker.player.active path)     { filter: drop-shadow(0 0 6px var(--player)); }
+:deep(.map-marker.poi.abandoned_base.active .abandoned-base-shell) { filter: drop-shadow(0 0 7px #ffb36b); }
+:deep(.map-marker.poi.plant_resource.active .plant-resource-core)  { filter: drop-shadow(0 0 7px var(--poi-color)); }
 :deep(.map-marker.orphan rect),
 :deep(.map-marker.orphan polygon),
 :deep(.map-marker.orphan circle)          { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 3 2; }
