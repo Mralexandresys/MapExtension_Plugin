@@ -81,6 +81,18 @@ Server validation command: `./build_server.sh release --summary`.
 - `--summary` writes `build_client.log` or `build_server.log` and runs `summarize_build.sh` on it; `summarize_build.sh client|server` can be rerun on an existing log.
 - Keep shell scripts (`*.sh`) with LF line endings so they run correctly on Linux/WSL. Do not mass-normalize unrelated CRLF Visual Studio/project files unless that is the intended change.
 
+## SDK update analysis and migration
+
+- Treat the SDK version as a build input, not a source-level project constant. Local builds use the checkout selected by `--sdk-root` (or `./StarRupture-Plugin-SDK` by default), while the release workflow uses the requested `modloader_tag` or resolves the latest published SDK release.
+- Never infer the SDK baseline from a MapExtension Git tag, `PropertySheet.props`, a build-tag fallback, documentation example, or plugin version string. Those values identify builds/releases and do not prove which SDK source revision should be compared.
+- Before proposing an SDK migration, identify the exact baseline and target refs. Inspect `.github/workflows/release.yml` and the build helpers, resolve both SDK refs with `git rev-parse`, and use the nested SDK reflog when the question concerns a recently updated local checkout.
+- Compare resolved commits before reading changelogs. If two SDK tags resolve to the same commit, report that there is no SDK source delta and do not modify plugin source, configuration, or compatibility documentation solely because the tag name changed.
+- Separate the two SDK layers during comparison: diff `include/plugin_interface.h` and related public headers for plugin API changes, then compare the `StarRupture SDK` gitlink and relevant generated headers for game-layout changes. A large historical diff must not be attributed to the latest update without proving the selected baseline.
+- `plugin.cpp` publishes the SDK-provided `PLUGIN_INTERFACE_VERSION`, so a build naturally advertises the interface of the SDK selected for that build. A `PLUGIN_INTERFACE_VERSION_MIN/MAX` bump alone does not justify pinning an SDK version, adding a compile-time version guard, or declaring a new minimum ModLoader version in project docs.
+- Determine source impact by checking whether MapExtension actually calls a changed signature or reads a changed generated field/layout. Additive APIs that the plugin does not use are informational only and must not trigger unrelated adoption work.
+- Preserve the dynamic SDK selection in local and release builds unless the user explicitly requests pinning or a reproducibility policy change. Rebuilding for a new ModLoader release and changing MapExtension source are separate decisions.
+- Validate a real migration with the narrowest relevant diff first, then the required client/server builds. Do not make speculative migration edits merely to demonstrate use of a newly added SDK API.
+
 ## Source ownership and build split
 
 - Client builds define `MODLOADER_CLIENT_BUILD`; server builds define `MODLOADER_SERVER_BUILD`.
