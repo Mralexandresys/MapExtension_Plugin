@@ -270,6 +270,7 @@
     <ClInclude Include="plugin_helpers.h" />
     <ClInclude Include="third_party/nlohmann/json.hpp" />
     <ClInclude Include="shared\map_sync_protocol.h" />
+    <ClInclude Include="client\ingame_map_probe.h" />
     <ClInclude Include="client\map_sync_client.h" />
     <ClInclude Include="client\map_state_remote_cache.h" />
     <ClInclude Include="server\map_sync_server.h" />
@@ -309,6 +310,10 @@
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="plugin.cpp" />
     <ClCompile Include="plugin_config.cpp" />
+    <ClCompile Include="client\ingame_map_probe.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="client\map_sync_client.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>

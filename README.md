@@ -138,6 +138,9 @@ LogRuptureCycleEvents=0
 LogActorScanFallback=0
 LogRefreshTimings=0
 
+[Experimental]
+InGameMapProbe=0
+
 [Http]
 Port=9000
 
@@ -152,6 +155,7 @@ RefreshIntervalMs=2000
 - `LogRuptureCycleEvents`: logs rupture cycle state changes and rupture-related world/server events (`1` or `0`)
 - `LogActorScanFallback`: logs actor scan fallback (`1` or `0`)
 - `LogRefreshTimings`: logs per-phase refresh timings (`1` or `0`)
+- `InGameMapProbe`: enables the experimental client-only native map asset and one-segment ImGui probe (`1` or `0`, restart required). The probe may synchronously load the configured terrain asset on the game thread, causing a brief test-time stall. The browser viewer remains the primary UI.
 - `Port`: sets the local HTTP port used by the plugin
 - `RefreshIntervalMs`: sets the runtime refresh interval in milliseconds
 

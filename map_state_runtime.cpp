@@ -5,6 +5,7 @@
 
 #if defined(MODLOADER_CLIENT_BUILD)
 #include "map_state_http.h"
+#include "client/ingame_map_probe.h"
 #endif
 
 #if defined(MODLOADER_CLIENT_BUILD)
@@ -108,6 +109,10 @@ namespace MapStateRuntime
 		{
 			LOG_WARN("Client network sync initialization failed; dedicated snapshot sync disabled.");
 		}
+		if (!MapExtensionClient::InGameMapProbe::Initialize())
+		{
+			LOG_WARN("Experimental in-game map probe initialization failed; browser viewer remains available.");
+		}
 #endif
 
 #if defined(MODLOADER_SERVER_BUILD)
@@ -126,6 +131,11 @@ namespace MapStateRuntime
 
 	void UnregisterCallbacks()
 	{
+		// Remove callback-driven client UI before the shared runtime hooks.
+#if defined(MODLOADER_CLIENT_BUILD)
+		MapExtensionClient::InGameMapProbe::Shutdown();
+#endif
+
 		// Remove the rupture-cycle delegate splices first: they live in the
 		// engine's InvocationList and must be gone before the DLL is unloaded.
 		Detail::ShutdownRuptureCycleDelegateHooks();
@@ -171,7 +181,7 @@ namespace MapStateRuntime
 			}
 		}
 
-		// Shutdown network sync modules
+		// Shutdown network sync modules.
 #if defined(MODLOADER_CLIENT_BUILD)
 		MapExtensionClient::Sync::Shutdown();
 #endif

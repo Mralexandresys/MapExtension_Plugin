@@ -38,6 +38,9 @@
     <ClInclude Include="plugin_helpers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="client\ingame_map_probe.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="third_party/nlohmann/json.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -83,6 +86,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="plugin_config.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client\ingame_map_probe.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

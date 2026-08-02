@@ -56,6 +56,15 @@ namespace MapExtensionPluginConfig
 			"0",
 			"Log per-phase refresh timings to help diagnose remaining client-side frame cost"
 		},
+#if defined(MODLOADER_CLIENT_BUILD)
+		{
+			"Experimental",
+			"InGameMapProbe",
+			ConfigValueType::Boolean,
+			"0",
+			"Enable the client-only native map asset and one-segment ImGui probe (restart required)"
+		},
+#endif
 		{
 			"Http",
 			"Port",
@@ -129,6 +138,13 @@ namespace MapExtensionPluginConfig
 		{
 			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogRefreshTimings", false) : false;
 		}
+
+#if defined(MODLOADER_CLIENT_BUILD)
+		static bool InGameMapProbeEnabled()
+		{
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Experimental", "InGameMapProbe", false) : false;
+		}
+#endif
 
 		static int HttpPort()
 		{

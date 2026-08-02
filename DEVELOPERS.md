@@ -16,6 +16,7 @@
 - `map_state_types.h`: shared snapshot types and map projection constants
 - `client/map_sync_client.cpp` / `client/map_sync_client.h`: client-side snapshot requests and plugin-network handling
 - `client/map_state_remote_cache.cpp` / `client/map_state_remote_cache.h`: client cache for remote rupture/cargo snapshots
+- `client/ingame_map_probe.cpp` / `client/ingame_map_probe.h`: opt-in client-only UObject inventory and one-segment native texture probe
 - `server/map_sync_server.cpp` / `server/map_sync_server.h`: server-side snapshot capture and response streaming
 - `shared/map_sync_protocol.h`: shared packet definitions for client/server snapshot sync
 
@@ -101,6 +102,24 @@ To inspect the latest build logs manually:
 ./summarize_build.sh client
 ./summarize_build.sh server
 ```
+
+## Experimental native map probe
+
+The client-only migration probe is disabled by default. Set
+`[Experimental] InGameMapProbe=1` in
+`Plugins/config/MapExtension_Plugin.ini`, restart the game, and open the
+`Map probe` ModLoader panel. Run it before and after opening the native game
+map; all detailed observations use the `In-game map probe` log prefix.
+
+UObject discovery, the blocking resolution of the configured `TerrainData`
+soft-reference, and `LoadFromUTexture2D` run only from the game-thread tick.
+If D3D12 streaming is still in flight, the probe retries the GPU copy once
+after 500 ms. The ImGui callback only reads copied metadata and renders the
+ModLoader-owned texture handle; no `UObject*` is retained between probes or
+across worlds. Keep that ownership split intact when extending the probe.
+
+See `update/12_ingame_map_probe.md` for the runtime test matrix, expected
+evidence, and the next migration gate.
 
 ## Frontend build
 

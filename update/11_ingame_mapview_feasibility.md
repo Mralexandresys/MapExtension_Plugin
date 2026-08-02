@@ -882,4 +882,6 @@ La faisabilité est réelle et le SDK contient davantage d'éléments natifs ré
 
 La modification directe de la carte UMG ne doit pas être la première option. Le mauvais placement déjà observé montre que la projection et la hiérarchie de transformations natives ne sont pas encore comprises. Ajouter davantage de widgets ou corriger des offsets à la main risquerait de produire une solution spécifique à une résolution ou à une version du jeu.
 
-La prochaine action recommandée est un probe client-only, limité à l'observation et au rendu d'un segment. Ce probe doit résoudre la question des textures et de la projection avant tout engagement sur une réécriture complète de `mapview`.
+Le probe client-only recommandé a maintenant confirmé que les 36 segments normaux et les 36 variantes radiation sont des `UTexture2D` copiables. Il a aussi montré que `UCrMapMenuTerrainData` peut être collecté après son utilisation initiale : l'intégration doit donc résoudre sa soft-reference configurée à la demande plutôt que conserver un pointeur UObject brut.
+
+Le POC et ses premières observations sont décrits dans `update/12_ingame_map_probe.md`. Il implémente l'inventaire runtime, le rechargement contrôlé du data asset, l'inspection des données terrain et la copie/rendu d'un segment. La prochaine action recommandée est de revalider ce chargement après GC, puis de passer à la calibration de projection avant tout engagement sur une réécriture complète de `mapview`.

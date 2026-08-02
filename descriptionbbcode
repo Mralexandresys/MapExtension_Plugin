@@ -199,6 +199,9 @@ Main defaults:
 [code][General]
 Enabled=1
 
+[Experimental]
+InGameMapProbe=0
+
 [Http]
 Port=9000
 
@@ -208,6 +211,7 @@ RefreshIntervalMs=2000[/code]
 
 [list]
 [*][b]Enabled[/b]: turns the plugin on or off[/*]
+[*][b]InGameMapProbe[/b]: optional client-only developer probe for native map assets; leave it at 0 for normal use[/*]
 [*][b]Port[/b]: local port used by the viewer to read plugin data[/*]
 [*][b]RefreshIntervalMs[/b]: how often the runtime data is refreshed[/*]
 [/list]
