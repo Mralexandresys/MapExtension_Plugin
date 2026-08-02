@@ -10,9 +10,9 @@
 
 namespace
 {
-	constexpr const char* kCacheFileHeader = "# mapextension-poi-cache v1";
+	constexpr const char* kCacheFileHeader = "# mapextension-poi-cache v2";
 
-	std::string SanitizeStorageKey(const std::string& storageKey)
+	std::string SanitizeStorageKey(const std::string& storageKey, size_t maxLength)
 	{
 		std::string sanitized;
 		sanitized.reserve(storageKey.size());
@@ -31,11 +31,22 @@ namespace
 			sanitized = "default";
 		}
 		// Keep file names bounded even if a session name is unusually long.
-		if (sanitized.size() > 120)
+		if (sanitized.size() > maxLength)
 		{
-			sanitized.resize(120);
+			sanitized.resize(maxLength);
 		}
 		return sanitized;
+	}
+
+	uint64_t HashStorageKey(const std::string& storageKey)
+	{
+		uint64_t hash = 14695981039346656037ull;
+		for (const unsigned char character : storageKey)
+		{
+			hash ^= character;
+			hash *= 1099511628211ull;
+		}
+		return hash;
 	}
 
 	std::string GetCacheDirectory()
@@ -80,26 +91,74 @@ namespace
 		{
 			return {};
 		}
-		return directory + "\\" + SanitizeStorageKey(storageKey) + ".tsv";
+		char hashText[17] = {};
+		std::snprintf(
+			hashText,
+			sizeof(hashText),
+			"%016llx",
+			static_cast<unsigned long long>(HashStorageKey(storageKey)));
+		return directory + "\\" + SanitizeStorageKey(storageKey, 96)
+			+ "-" + hashText + ".tsv";
+	}
+
+	std::string BuildLegacyCacheFilePath(const std::string& storageKey)
+	{
+		const std::string directory = GetCacheDirectory();
+		if (directory.empty())
+		{
+			return {};
+		}
+		return directory + "\\" + SanitizeStorageKey(storageKey, 120) + ".tsv";
 	}
 }
 
 namespace MapStatePoiStore
 {
-	std::vector<PersistedPlant> LoadPlants(const std::string& storageKey)
+	LoadResult LoadPlants(const std::string& storageKey)
 	{
-		std::vector<PersistedPlant> plants;
-		const std::string filePath = BuildCacheFilePath(storageKey);
+		LoadResult result{};
+		std::string filePath = BuildCacheFilePath(storageKey);
 		if (filePath.empty())
 		{
-			return plants;
+			return result;
+		}
+
+		DWORD attributes = GetFileAttributesA(filePath.c_str());
+		if (attributes == INVALID_FILE_ATTRIBUTES)
+		{
+			const DWORD error = GetLastError();
+			if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+			{
+				return result;
+			}
+
+			// Version 1 used only the sanitized key. Read it once for backward
+			// compatibility; the next save writes the collision-resistant path.
+			filePath = BuildLegacyCacheFilePath(storageKey);
+			if (filePath.empty())
+			{
+				return result;
+			}
+			attributes = GetFileAttributesA(filePath.c_str());
+			if (attributes == INVALID_FILE_ATTRIBUTES)
+			{
+				const DWORD legacyError = GetLastError();
+				if (legacyError == ERROR_FILE_NOT_FOUND || legacyError == ERROR_PATH_NOT_FOUND)
+				{
+					result.Status = LoadStatus::Missing;
+				}
+				return result;
+			}
 		}
 
 		std::ifstream file(filePath);
 		if (!file.is_open())
 		{
-			return plants;
+			return result;
 		}
+
+		std::vector<PersistedPlant>& plants = result.Plants;
+		bool parseError = false;
 
 		std::string line;
 		while (std::getline(file, line))
@@ -116,6 +175,7 @@ namespace MapStatePoiStore
 			const size_t firstTab = line.find('\t');
 			if (firstTab == std::string::npos || firstTab == 0)
 			{
+				parseError = true;
 				continue;
 			}
 
@@ -126,23 +186,49 @@ namespace MapStatePoiStore
 			plant.X = std::strtod(cursor, &end);
 			if (end == cursor || *end != '\t')
 			{
+				parseError = true;
 				continue;
 			}
 			cursor = end + 1;
 			plant.Y = std::strtod(cursor, &end);
 			if (end == cursor || *end != '\t')
 			{
+				parseError = true;
 				continue;
 			}
 			cursor = end + 1;
 			plant.Z = std::strtod(cursor, &end);
 			if (end == cursor)
 			{
+				parseError = true;
+				continue;
+			}
+			// Version 1 rows end after Z. Version 2 appends a depleted flag.
+			if (*end == '\t')
+			{
+				cursor = end + 1;
+				const long depleted = std::strtol(cursor, &end, 10);
+				if (end == cursor || *end != '\0' || (depleted != 0 && depleted != 1))
+				{
+					parseError = true;
+					continue;
+				}
+				plant.Depleted = depleted != 0;
+			}
+			else if (*end != '\0')
+			{
+				parseError = true;
 				continue;
 			}
 			plants.push_back(std::move(plant));
 		}
-		return plants;
+		if (file.bad() || parseError)
+		{
+			result.Plants.clear();
+			return result;
+		}
+		result.Status = LoadStatus::Loaded;
+		return result;
 	}
 
 	bool SavePlants(const std::string& storageKey, const std::vector<PersistedPlant>& plants)
@@ -172,7 +258,8 @@ namespace MapStatePoiStore
 				oss << plant.ResourceName << '\t'
 					<< plant.X << '\t'
 					<< plant.Y << '\t'
-					<< plant.Z << '\n';
+					<< plant.Z << '\t'
+					<< (plant.Depleted ? 1 : 0) << '\n';
 				file << oss.str();
 			}
 			if (!file.good())

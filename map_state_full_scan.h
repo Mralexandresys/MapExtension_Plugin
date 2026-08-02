@@ -25,6 +25,7 @@ namespace MapStateFullScan
 		WaitingForStreaming,
 		SettlingPcg,
 		Capturing,
+		Restoring,
 		Completed,
 		CompletedPartial,
 		Cancelled,

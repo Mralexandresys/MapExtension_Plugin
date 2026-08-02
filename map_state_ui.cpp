@@ -56,6 +56,7 @@ namespace
 		case MapStateFullScan::Phase::WaitingForStreaming:
 		case MapStateFullScan::Phase::SettlingPcg:
 		case MapStateFullScan::Phase::Capturing:
+		case MapStateFullScan::Phase::Restoring:
 			return true;
 		default:
 			return false;
@@ -72,6 +73,7 @@ namespace
 		case MapStateFullScan::Phase::WaitingForStreaming: return "Chargement World Partition";
 		case MapStateFullScan::Phase::SettlingPcg: return "Generation PCG";
 		case MapStateFullScan::Phase::Capturing: return "Capture et sauvegarde";
+		case MapStateFullScan::Phase::Restoring: return "Restauration de la zone joueur";
 		case MapStateFullScan::Phase::Completed: return "Termine";
 		case MapStateFullScan::Phase::CompletedPartial: return "Termine partiellement";
 		case MapStateFullScan::Phase::Cancelled: return "Annule";

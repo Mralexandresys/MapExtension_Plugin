@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -15,11 +16,25 @@ namespace MapStatePoiStore
 		double X = 0.0;
 		double Y = 0.0;
 		double Z = 0.0;
+		bool Depleted = false;
 	};
 
-	// Loads the persisted plant list for a storage key. Returns an empty list
-	// when no cache file exists or the file cannot be parsed.
-	std::vector<PersistedPlant> LoadPlants(const std::string& storageKey);
+	enum class LoadStatus
+	{
+		Missing,
+		Loaded,
+		Error
+	};
+
+	struct LoadResult
+	{
+		LoadStatus Status = LoadStatus::Error;
+		std::vector<PersistedPlant> Plants;
+	};
+
+	// Distinguishes a missing cache (safe to create) from an I/O failure (must
+	// not be overwritten with a partial in-memory catalog).
+	LoadResult LoadPlants(const std::string& storageKey);
 
 	// Atomically replaces the persisted plant list for a storage key.
 	// Returns false when the cache directory or file cannot be written.

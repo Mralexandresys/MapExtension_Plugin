@@ -18,6 +18,10 @@ namespace MapStateRuntime
 		int PlantCount = 0;
 		int LastGatherableActorCount = 0;
 		int LastLiveTrackedPlantActorCount = 0;
+		int ObservedPlantCount = 0;
+		uint64_t ObservationRevision = 0;
+		uint64_t ObservationEventCount = 0;
+		int64_t LastPlantObservedAtUnixMs = 0;
 		int64_t LastScanAtUnixMs = 0;
 		bool ScanInProgress = false;
 	};

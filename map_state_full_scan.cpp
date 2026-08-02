@@ -40,8 +40,12 @@ namespace
 	// report the previous position as complete before new work is queued.
 	constexpr float kMinimumStreamingWaitSeconds = 1.0f;
 	constexpr float kStreamingTimeoutSeconds = 45.0f;
-	constexpr float kPcgSettleSeconds = 2.0f;
+	constexpr float kMinimumPcgWaitSeconds = 4.0f;
+	constexpr float kPcgObservationQuietSeconds = 3.0f;
+	constexpr float kPcgObservationTimeoutSeconds = 20.0f;
 	constexpr float kCaptureTimeoutSeconds = 15.0f;
+	constexpr float kRestorationMinimumWaitSeconds = 1.0f;
+	constexpr float kRestorationTimeoutSeconds = 45.0f;
 
 	struct RuntimeState
 	{
@@ -52,6 +56,7 @@ namespace
 		size_t GridIndex = 0;
 		size_t TimedOutZones = 0;
 		int StartingPlantCount = 0;
+		uint64_t StartingObservationEventCount = 0;
 		int LiveTrackedPlantObservations = 0;
 		Mode CurrentMode = Mode::MassSource;
 		SDK::UMassLODSubsystem* MassLodSubsystem = nullptr;
@@ -71,8 +76,16 @@ namespace
 		bool OriginalAutoSaveEnabled = true;
 		bool AutoSaveChanged = false;
 		float PhaseElapsedSeconds = 0.0f;
+		float ObservationQuietSeconds = 0.0f;
+		uint64_t ZoneObservationBaselineRevision = 0;
+		uint64_t ZoneObservationBaselineEventCount = 0;
+		uint64_t LastObservationEventCount = 0;
+		int ZoneObservedPlantBaselineCount = 0;
+		bool ZoneSawObservationEvent = false;
 		int64_t CaptureBaselineUnixMs = 0;
 		Phase CurrentPhase = Phase::Idle;
+		Phase PendingFinalPhase = Phase::Idle;
+		std::string PendingFinalMessage;
 		std::string Message;
 	};
 
@@ -91,6 +104,7 @@ namespace
 		case Phase::WaitingForStreaming:
 		case Phase::SettlingPcg:
 		case Phase::Capturing:
+		case Phase::Restoring:
 			return true;
 		default:
 			return false;
@@ -311,20 +325,46 @@ namespace
 			g_runtime.PhaseElapsedSeconds = 0.0f;
 			g_runtime.CurrentPhase = Phase::Moving;
 			g_runtime.Message =
-				"Fallback joueur actif : position originale sauvegardee";
+				"Parcours joueur actif : position originale sauvegardee";
 			LOG_WARN(
-				"Full-map plant scan Mass source saw no live plants; "
-				"starting player fallback");
+				"Full-map plant scan is using the local player as the "
+				"authoritative World Partition/Mass viewer");
 			PublishStatus();
 			return true;
 		}
-	void Finish(Phase phase, const char* message)
+	void CompleteFinish(Phase phase, const char* message)
 	{
 		DestroySource();
 		g_runtime.CurrentPhase = phase;
 		g_runtime.Message = message ? message : "";
 		g_runtime.PhaseElapsedSeconds = 0.0f;
 		PublishStatus();
+	}
+
+	void Finish(Phase phase, const char* message)
+	{
+		if (g_runtime.CurrentPhase == Phase::Restoring)
+		{
+			g_runtime.PendingFinalPhase = phase;
+			g_runtime.PendingFinalMessage = message ? message : "";
+			return;
+		}
+		if (g_runtime.PlayerStateCaptured && g_runtime.SourceActor)
+		{
+			g_runtime.PendingFinalPhase = phase;
+			g_runtime.PendingFinalMessage = message ? message : "";
+			g_runtime.SourceActor->K2_SetActorLocation(
+				g_runtime.OriginalPlayerLocation,
+				false,
+				nullptr,
+				true);
+			g_runtime.CurrentPhase = Phase::Restoring;
+			g_runtime.Message = "Rechargement de la zone d'origine du joueur";
+			g_runtime.PhaseElapsedSeconds = 0.0f;
+			PublishStatus();
+			return;
+		}
+		CompleteFinish(phase, message);
 	}
 
 	bool IsDedicatedSession(SDK::UWorld* world)
@@ -420,7 +460,9 @@ namespace
 		g_runtime = RuntimeState{};
 		g_runtime.World = world;
 		g_runtime.StartingPlantCount = poiInfo.PlantCount;
+		g_runtime.StartingObservationEventCount = poiInfo.ObservationEventCount;
 		g_runtime.Grid = BuildScanGrid(0.0f);
+		g_runtime.CurrentMode = Mode::PlayerFallback;
 		EnableMassLodSource(world);
 		g_runtime.CurrentPhase = Phase::CreatingSource;
 		g_runtime.Message = "Creation de la source World Partition";
@@ -433,21 +475,14 @@ namespace
 		g_runtime.PhaseElapsedSeconds = 0.0f;
 		if (g_runtime.GridIndex >= g_runtime.Grid.size())
 		{
-			if (g_runtime.LiveTrackedPlantObservations == 0
-				&& g_runtime.CurrentMode == Mode::MassSource)
-			{
-				if (!BeginPlayerFallback())
-				{
-					Finish(
-						Phase::Failed,
-						"Aucune plante Mass detectee et fallback joueur indisponible");
-				}
-			}
-			else if (g_runtime.LiveTrackedPlantObservations == 0)
+			const bool sawPlantBeginPlay =
+				MapStateRuntime::Detail::GetPoiScanInfo().ObservationEventCount
+					> g_runtime.StartingObservationEventCount;
+			if (!sawPlantBeginPlay)
 			{
 				Finish(
-					Phase::Failed,
-					"Aucun acteur plante vivant detecte dans les deux modes");
+					g_runtime.StartingPlantCount == 0 ? Phase::Failed : Phase::CompletedPartial,
+					"Scan termine sans nouvel evenement plante; couverture non prouvee");
 			}
 			else if (g_runtime.TimedOutZones == 0)
 			{
@@ -533,10 +568,10 @@ namespace MapStateFullScan
 				Finish(Phase::Failed, "Impossible de creer la source World Partition");
 				break;
 			}
-			g_runtime.CurrentPhase = Phase::Moving;
-			g_runtime.Message = "Source creee";
-			g_runtime.PhaseElapsedSeconds = 0.0f;
-			PublishStatus();
+			if (!BeginPlayerFallback())
+			{
+				Finish(Phase::Failed, "Le joueur local est indisponible pour le scan");
+			}
 			break;
 
 		case Phase::Moving:
@@ -544,6 +579,16 @@ namespace MapStateFullScan
 			{
 				Finish(Phase::Failed, "Etat de parcours invalide");
 				break;
+			}
+			{
+				const MapStateRuntime::Detail::PoiScanInfo poiInfo =
+					MapStateRuntime::Detail::GetPoiScanInfo();
+				g_runtime.ZoneObservationBaselineRevision = poiInfo.ObservationRevision;
+				g_runtime.ZoneObservationBaselineEventCount = poiInfo.ObservationEventCount;
+				g_runtime.LastObservationEventCount = poiInfo.ObservationEventCount;
+				g_runtime.ZoneObservedPlantBaselineCount = poiInfo.ObservedPlantCount;
+				g_runtime.ZoneSawObservationEvent = false;
+				g_runtime.ObservationQuietSeconds = 0.0f;
 			}
 			g_runtime.SourceActor->K2_SetActorLocation(
 				g_runtime.Grid[g_runtime.GridIndex],
@@ -594,15 +639,44 @@ namespace MapStateFullScan
 			break;
 
 		case Phase::SettlingPcg:
-			if (g_runtime.PhaseElapsedSeconds >= kPcgSettleSeconds)
 			{
-				g_runtime.CaptureBaselineUnixMs =
-					MapStateRuntime::Detail::GetPoiScanInfo().LastScanAtUnixMs;
-				MapStateRuntime::Detail::ForcePoiRescan();
-				g_runtime.CurrentPhase = Phase::Capturing;
-				g_runtime.Message = "Capture et sauvegarde des plantes";
-				g_runtime.PhaseElapsedSeconds = 0.0f;
-				PublishStatus();
+				const MapStateRuntime::Detail::PoiScanInfo poiInfo =
+					MapStateRuntime::Detail::GetPoiScanInfo();
+				if (poiInfo.ObservationEventCount != g_runtime.LastObservationEventCount)
+				{
+					g_runtime.LastObservationEventCount = poiInfo.ObservationEventCount;
+					g_runtime.ZoneSawObservationEvent =
+						poiInfo.ObservationEventCount > g_runtime.ZoneObservationBaselineEventCount;
+					g_runtime.ObservationQuietSeconds = 0.0f;
+				}
+				else
+				{
+					g_runtime.ObservationQuietSeconds += safeDelta;
+				}
+
+				const bool observationsSettled =
+					g_runtime.ZoneSawObservationEvent
+					&& g_runtime.PhaseElapsedSeconds >= kMinimumPcgWaitSeconds
+					&& g_runtime.ObservationQuietSeconds >= kPcgObservationQuietSeconds;
+				const bool observationTimedOut =
+					g_runtime.PhaseElapsedSeconds >= kPcgObservationTimeoutSeconds;
+				if (observationsSettled || observationTimedOut)
+				{
+					if (observationTimedOut)
+					{
+						++g_runtime.TimedOutZones;
+						LOG_WARN(
+							"Full-map plant scan PCG observation timeout at zone %zu/%zu",
+							g_runtime.GridIndex + 1,
+							g_runtime.Grid.size());
+					}
+					g_runtime.CaptureBaselineUnixMs = poiInfo.LastScanAtUnixMs;
+					MapStateRuntime::Detail::ForcePoiRescan();
+					g_runtime.CurrentPhase = Phase::Capturing;
+					g_runtime.Message = "Capture et sauvegarde des plantes";
+					g_runtime.PhaseElapsedSeconds = 0.0f;
+					PublishStatus();
+				}
 			}
 			break;
 
@@ -615,16 +689,30 @@ namespace MapStateFullScan
 			{
 				const MapStateRuntime::Detail::PoiScanInfo poiInfo =
 					MapStateRuntime::Detail::GetPoiScanInfo();
+				const uint64_t zoneBeginPlayEvents =
+					poiInfo.ObservationEventCount >= g_runtime.ZoneObservationBaselineEventCount
+						? poiInfo.ObservationEventCount - g_runtime.ZoneObservationBaselineEventCount
+						: 0;
+				const int zoneNewUniquePlants = std::max(
+					0,
+					poiInfo.ObservedPlantCount - g_runtime.ZoneObservedPlantBaselineCount);
 				g_runtime.LiveTrackedPlantObservations +=
-					poiInfo.LastLiveTrackedPlantActorCount;
+					static_cast<int>(zoneBeginPlayEvents);
+				const SDK::FVector& target = g_runtime.Grid[g_runtime.GridIndex];
 				LOG_INFO(
-					"Full-map plant scan zone %zu/%zu mode=%s "
+					"Full-map plant scan zone %zu/%zu mode=player "
+					"target=(%.0f,%.0f,%.0f) revision=%llu->%llu "
+					"begin_play_events=%llu new_unique_plants=%d "
 					"gatherables=%d live_tracked_plants=%d catalog=%d",
 					g_runtime.GridIndex + 1,
 					g_runtime.Grid.size(),
-					g_runtime.CurrentMode == Mode::MassSource
-						? "mass_source"
-						: "player_fallback",
+					static_cast<double>(target.X),
+					static_cast<double>(target.Y),
+					static_cast<double>(target.Z),
+					static_cast<unsigned long long>(g_runtime.ZoneObservationBaselineRevision),
+					static_cast<unsigned long long>(poiInfo.ObservationRevision),
+					static_cast<unsigned long long>(zoneBeginPlayEvents),
+					zoneNewUniquePlants,
 					poiInfo.LastGatherableActorCount,
 					poiInfo.LastLiveTrackedPlantActorCount,
 					poiInfo.PlantCount);
@@ -641,6 +729,22 @@ namespace MapStateFullScan
 			}
 			break;
 
+		case Phase::Restoring:
+			if ((g_runtime.PhaseElapsedSeconds >= kRestorationMinimumWaitSeconds
+					&& g_runtime.SourceComponent
+					&& g_runtime.SourceComponent->IsStreamingCompleted())
+				|| g_runtime.PhaseElapsedSeconds >= kRestorationTimeoutSeconds)
+			{
+				if (g_runtime.PhaseElapsedSeconds >= kRestorationTimeoutSeconds)
+				{
+					LOG_WARN("Full-map plant scan timed out reloading the player's original zone");
+				}
+				const Phase finalPhase = g_runtime.PendingFinalPhase;
+				const std::string finalMessage = g_runtime.PendingFinalMessage;
+				CompleteFinish(finalPhase, finalMessage.c_str());
+			}
+			break;
+
 		default:
 			break;
 		}
@@ -648,8 +752,10 @@ namespace MapStateFullScan
 
 	void Shutdown(SDK::UWorld* world)
 	{
-		if (g_runtime.SourceActor && (!world || world == g_runtime.World))
+		if (!world || world == g_runtime.World)
 		{
+			// Player/autosave/Mass restoration must not depend on the temporary
+			// streaming actor still existing.
 			DestroySource();
 		}
 		else

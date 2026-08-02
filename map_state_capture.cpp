@@ -70,14 +70,11 @@ namespace
 	constexpr int64_t kPoiScanMinIntervalMs = 5000;
 	// Replicated depleted-gatherable locations can differ slightly from the
 	// actor location observed while the plant was alive (serialization
-	// rounding, pivot differences). Removal therefore also matches catalog
-	// plants within this world-space radius instead of relying only on an
-	// exact rounded-coordinate key.
-	constexpr double kDepletedPlantRemovalRadius = 150.0;
-	// The save-session identity resolves through a ProcessEvent call, so
-	// failed attempts back off and eventually fall back to a world-only key.
-	constexpr int64_t kPoiStorageKeyRetryIntervalMs = 2000;
-	constexpr int kPoiStorageKeyMaxAttempts = 15;
+	// rounding, pivot differences). Match only the closest catalog plant in
+	// this radius so nearby resources are not all marked depleted together.
+	constexpr double kDepletedPlantMatchRadius = 150.0;
+	// A world-only persistence key is intentionally not used because it can
+	// mix independent save files that share the same map.
 	struct TrackedChimeraWorldState final
 	{
 		SDK::UWorld* World = nullptr;
@@ -86,6 +83,7 @@ namespace
 	};
 
 	void ClearChimeraWorldState(const char* reason);
+	void ResetObservedPlantCatalog();
 	int64_t GetCurrentUnixTimeMilliseconds();
 	void ApplyRuptureCycleObservationTimestamp(MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot);
 	void StorePersistentRuptureCycleSnapshot(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot);
@@ -111,9 +109,6 @@ namespace
 	{
 		SDK::UWorld* World = nullptr;
 		std::string StorageKey;
-		bool KeyResolved = false;
-		int KeyAttempts = 0;
-		int64_t NextKeyAttemptAtUnixMs = 0;
 		bool PersistedLoaded = false;
 		uint64_t LastSavedRevision = 0;
 	};
@@ -1275,6 +1270,7 @@ namespace
 		}
 
 		ResetPoiPersistenceState();
+		ResetObservedPlantCatalog();
 
 		if (!hadState)
 		{
@@ -2882,6 +2878,16 @@ namespace
 		{ "I_Sulheart_C", "Sulheart" }
 	};
 
+	constexpr TrackedPlantDefinition kTrackedPlantActorDefinitions[] =
+	{
+		{ "BP_Gatherable_GoldFruitTree_Large_A_C", "Gold Fruit" },
+		{ "BP_Gatherable_GoldFruitTree_Large_F_C", "Gold Fruit" },
+		{ "BP_SikkimRhubarb_Fruit_C", "Sikkim Rhubarb" },
+		{ "BP_Gatherable_Thornfruit_Fruit_C", "Thornfruit" },
+		{ "BP_Gatherable_NootkaLupine_Fruit_C", "Nootka Lupine" },
+		{ "BP_Gatherable_Plant_h_C", "Plant" }
+	};
+
 	bool TryGetTrackedPlantName(SDK::ACrGatherableBaseActor* actor, std::string& outName)
 	{
 		outName.clear();
@@ -2891,15 +2897,25 @@ namespace
 		}
 
 		SDK::UClass* rewardClass = actor->InteractionRewardResource.Get();
-		if (!rewardClass)
+		if (rewardClass)
 		{
-			return false;
+			const std::string rewardClassName = rewardClass->GetName();
+			for (const TrackedPlantDefinition& definition : kTrackedPlantDefinitions)
+			{
+				if (rewardClassName == definition.RewardClassName)
+				{
+					outName = definition.DisplayName;
+					return true;
+				}
+			}
 		}
 
-		const std::string rewardClassName = rewardClass->GetName();
-		for (const TrackedPlantDefinition& definition : kTrackedPlantDefinitions)
+		const std::string actorClassName = actor->Class
+			? actor->Class->GetName()
+			: std::string{};
+		for (const TrackedPlantDefinition& definition : kTrackedPlantActorDefinitions)
 		{
-			if (rewardClassName == definition.RewardClassName)
+			if (actorClassName == definition.RewardClassName)
 			{
 				outName = definition.DisplayName;
 				return true;
@@ -2917,10 +2933,46 @@ namespace
 				return true;
 			}
 		}
+		for (const TrackedPlantDefinition& definition : kTrackedPlantActorDefinitions)
+		{
+			if (resourceName == definition.DisplayName)
+			{
+				return true;
+			}
+		}
 		return false;
 	}
 
 	using PoiCatalog = std::unordered_map<std::string, PoiMarker>;
+
+	struct ObservedPlantCatalogState final
+	{
+		SDK::UWorld* World = nullptr;
+		PoiCatalog Plants;
+		uint64_t Revision = 0;
+		uint64_t EventCount = 0;
+		int64_t LastObservedAtUnixMs = 0;
+	};
+	std::mutex g_observedPlantCatalogMutex;
+	ObservedPlantCatalogState g_observedPlantCatalog{};
+
+	void ResetObservedPlantCatalog()
+	{
+		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+		g_observedPlantCatalog = ObservedPlantCatalogState{};
+	}
+
+	bool PoiMarkersHaveSameObservedState(const PoiMarker& left, const PoiMarker& right)
+	{
+		return left.Kind == right.Kind
+			&& left.Depleted == right.Depleted
+			&& left.WorldLocation.X == right.WorldLocation.X
+			&& left.WorldLocation.Y == right.WorldLocation.Y
+			&& left.WorldLocation.Z == right.WorldLocation.Z
+			&& left.DisplayName == right.DisplayName
+			&& left.ResourceName == right.ResourceName
+			&& left.PublicKey == right.PublicKey;
+	}
 
 	PoiMarker BuildPoiMarker(
 		PoiKind kind,
@@ -2949,57 +3001,204 @@ namespace
 		catalog.insert_or_assign(std::move(publicKey), std::move(marker));
 	}
 
-	void RemovePlantAtLocation(PoiCatalog& catalog, const SDK::FVector& worldLocation)
+	bool StoreObservedPlantMarker(SDK::UWorld* world, PoiMarker marker, bool countBeginPlayEvent)
 	{
-		const std::string internalKey = BuildLocationKey("poi.plant", worldLocation);
-		catalog.erase(MakeTaggedPublicKey("poi", internalKey));
+		if (!world || marker.Kind != PoiKind::PlantResource)
+		{
+			return false;
+		}
+
+		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+		if (g_observedPlantCatalog.World != world)
+		{
+			g_observedPlantCatalog = ObservedPlantCatalogState{};
+			g_observedPlantCatalog.World = world;
+		}
+
+		if (countBeginPlayEvent)
+		{
+			++g_observedPlantCatalog.EventCount;
+			g_observedPlantCatalog.LastObservedAtUnixMs = GetCurrentUnixTimeMilliseconds();
+		}
+		const auto existing = g_observedPlantCatalog.Plants.find(marker.PublicKey);
+		if (existing != g_observedPlantCatalog.Plants.end()
+			&& PoiMarkersHaveSameObservedState(existing->second, marker))
+		{
+			return false;
+		}
+
+		StorePoiMarker(g_observedPlantCatalog.Plants, std::move(marker));
+		++g_observedPlantCatalog.Revision;
+		if (!countBeginPlayEvent)
+		{
+			g_observedPlantCatalog.LastObservedAtUnixMs = GetCurrentUnixTimeMilliseconds();
+		}
+		return true;
 	}
 
-	// Removes catalog plants near a depleted location. The exact rounded key
-	// is tried first; the radius pass then covers replicated locations that
-	// do not byte-match the actor location observed while the plant was
-	// alive, which previously left harvested plants on the map forever.
-	void RemovePlantsNearLocation(PoiCatalog& catalog, const SDK::FVector& worldLocation)
+	bool ObserveTrackedPlantActor(
+		SDK::UWorld* world,
+		SDK::ACrGatherableBaseActor* actor,
+		bool countBeginPlayEvent)
 	{
-		RemovePlantAtLocation(catalog, worldLocation);
-
-		const double radiusSquared =
-			kDepletedPlantRemovalRadius * kDepletedPlantRemovalRadius;
-		for (auto it = catalog.begin(); it != catalog.end();)
+		std::string resourceName;
+		if (!world || !TryGetTrackedPlantName(actor, resourceName))
 		{
-			const PoiMarker& marker = it->second;
-			if (marker.Kind == PoiKind::PlantResource)
-			{
-				const double deltaX = static_cast<double>(marker.WorldLocation.X) - static_cast<double>(worldLocation.X);
-				const double deltaY = static_cast<double>(marker.WorldLocation.Y) - static_cast<double>(worldLocation.Y);
-				const double deltaZ = static_cast<double>(marker.WorldLocation.Z) - static_cast<double>(worldLocation.Z);
-				const double distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
-				if (distanceSquared <= radiusSquared)
-				{
-					it = catalog.erase(it);
-					continue;
-				}
-			}
-			++it;
+			return false;
+		}
+
+		PoiMarker marker = BuildPoiMarker(
+			PoiKind::PlantResource,
+			actor->K2_GetActorLocation(),
+			"poi.plant",
+			"actor_observation.gatherable",
+			resourceName,
+			resourceName);
+		marker.Depleted = actor->bIsDepleted || actor->bIsPermanentlyGathered;
+		StoreObservedPlantMarker(world, std::move(marker), countBeginPlayEvent);
+		return true;
+	}
+
+	void MergeObservedPlants(SDK::UWorld* world, PoiCatalog& catalog)
+	{
+		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+		if (!world || g_observedPlantCatalog.World != world)
+		{
+			return;
+		}
+		for (const auto& entry : g_observedPlantCatalog.Plants)
+		{
+			catalog.insert_or_assign(entry.first, entry.second);
 		}
 	}
 
+	bool MarkPlantDepletedNearLocation(
+		PoiCatalog& catalog,
+		const SDK::FVector& worldLocation,
+		bool& outChanged,
+		bool exactOnly)
+	{
+		outChanged = false;
+		const std::string internalKey = BuildLocationKey("poi.plant", worldLocation);
+		const std::string publicKey = MakeTaggedPublicKey("poi", internalKey);
+		auto exact = catalog.find(publicKey);
+		if (exact != catalog.end() && exact->second.Kind == PoiKind::PlantResource)
+		{
+			outChanged = !exact->second.Depleted;
+			exact->second.Depleted = true;
+			return true;
+		}
+		if (exactOnly)
+		{
+			return false;
+		}
+
+		const double radiusSquared =
+			kDepletedPlantMatchRadius * kDepletedPlantMatchRadius;
+		auto closest = catalog.end();
+		double closestDistanceSquared = radiusSquared;
+		for (auto it = catalog.begin(); it != catalog.end(); ++it)
+		{
+			const PoiMarker& marker = it->second;
+			if (marker.Kind != PoiKind::PlantResource || marker.Depleted)
+			{
+				continue;
+			}
+			const double deltaX = static_cast<double>(marker.WorldLocation.X) - static_cast<double>(worldLocation.X);
+			const double deltaY = static_cast<double>(marker.WorldLocation.Y) - static_cast<double>(worldLocation.Y);
+			const double deltaZ = static_cast<double>(marker.WorldLocation.Z) - static_cast<double>(worldLocation.Z);
+			const double distanceSquared = deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
+			if (distanceSquared <= closestDistanceSquared)
+			{
+				closest = it;
+				closestDistanceSquared = distanceSquared;
+			}
+		}
+		if (closest == catalog.end())
+		{
+			return false;
+		}
+
+		outChanged = !closest->second.Depleted;
+		closest->second.Depleted = true;
+		return true;
+	}
+
+	bool MarkObservedPlantDepletedNearLocation(
+		const SDK::FVector& worldLocation,
+		bool exactOnly)
+	{
+		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+		bool changed = false;
+		const bool matched = MarkPlantDepletedNearLocation(
+			g_observedPlantCatalog.Plants,
+			worldLocation,
+			changed,
+			exactOnly);
+		if (changed)
+		{
+			++g_observedPlantCatalog.Revision;
+			g_observedPlantCatalog.LastObservedAtUnixMs = GetCurrentUnixTimeMilliseconds();
+		}
+		return matched;
+	}
+
 	template <typename TDepletedEntry>
-	void RemoveDepletedPlantEntries(
+	void MarkDepletedPlantEntries(
 		PoiCatalog& catalog,
 		const SDK::TArray<TDepletedEntry>& entries)
 	{
 		for (int index = 0; index < entries.Num(); ++index)
 		{
 			const TDepletedEntry& entry = entries[index];
-			RemovePlantsNearLocation(catalog, entry.Location);
-			// Most gatherables use Location as their actor transform. Bounds.Origin
-			// covers assets whose visual pivot differs from that transform.
-			RemovePlantsNearLocation(catalog, entry.Bounds.Origin);
+			bool catalogChanged = false;
+			bool catalogMatched = MarkPlantDepletedNearLocation(
+				catalog,
+				entry.Location,
+				catalogChanged,
+				true);
+			if (!catalogMatched)
+			{
+				catalogMatched = MarkPlantDepletedNearLocation(
+					catalog,
+					entry.Bounds.Origin,
+					catalogChanged,
+					true);
+			}
+			if (!catalogMatched)
+			{
+				catalogMatched = MarkPlantDepletedNearLocation(
+					catalog,
+					entry.Location,
+					catalogChanged,
+					false);
+			}
+			if (!catalogMatched)
+			{
+				MarkPlantDepletedNearLocation(
+					catalog,
+					entry.Bounds.Origin,
+					catalogChanged,
+					false);
+			}
+
+			bool observedMatched = MarkObservedPlantDepletedNearLocation(entry.Location, true);
+			if (!observedMatched)
+			{
+				observedMatched = MarkObservedPlantDepletedNearLocation(entry.Bounds.Origin, true);
+			}
+			if (!observedMatched)
+			{
+				observedMatched = MarkObservedPlantDepletedNearLocation(entry.Location, false);
+			}
+			if (!observedMatched)
+			{
+				MarkObservedPlantDepletedNearLocation(entry.Bounds.Origin, false);
+			}
 		}
 	}
 
-	void RemoveReplicatedDepletedPlants(SDK::UWorld* world, PoiCatalog& catalog)
+	void MarkReplicatedDepletedPlants(SDK::UWorld* world, PoiCatalog& catalog)
 	{
 		SDK::TArray<SDK::AActor*> replicationActors;
 		SDK::UGameplayStatics::GetAllActorsOfClass(
@@ -3015,10 +3214,10 @@ namespace
 				continue;
 			}
 
-			RemoveDepletedPlantEntries(
+			MarkDepletedPlantEntries(
 				catalog,
 				replicationActor->RepDepletedGatherables.RepDepletedGatherables);
-			RemoveDepletedPlantEntries(
+			MarkDepletedPlantEntries(
 				catalog,
 				replicationActor->RepPermanentDepletedGatherables.RepPermanentDepletedGatherables);
 		}
@@ -3029,35 +3228,33 @@ namespace
 		return left.PublicKey < right.PublicKey;
 	}
 
-	std::string ResolvePoiStorageKey(
-		SDK::UWorld* world,
-		const std::string& worldName,
-		int64_t observedAtUnixMs)
+	struct PoiStorageResolution final
 	{
+		std::string StorageKey;
+		bool SessionChanged = false;
+	};
+
+	PoiStorageResolution ResolvePoiStorageKey(
+		SDK::UWorld* world,
+		const std::string& worldName)
+	{
+		PoiStorageResolution resolution{};
 		if (!world || worldName.empty())
 		{
-			return {};
+			return resolution;
 		}
 
-		std::lock_guard<std::mutex> lock(g_poiPersistenceMutex);
-		if (g_poiPersistence.World != world)
 		{
-			g_poiPersistence = PoiPersistenceState{};
-			g_poiPersistence.World = world;
-		}
-		if (g_poiPersistence.KeyResolved)
-		{
-			return g_poiPersistence.StorageKey;
-		}
-		if (observedAtUnixMs < g_poiPersistence.NextKeyAttemptAtUnixMs)
-		{
-			return {};
+			std::lock_guard<std::mutex> lock(g_poiPersistenceMutex);
+			if (g_poiPersistence.World != world)
+			{
+				g_poiPersistence = PoiPersistenceState{};
+				g_poiPersistence.World = world;
+			}
 		}
 
-		g_poiPersistence.NextKeyAttemptAtUnixMs =
-			observedAtUnixMs + kPoiStorageKeyRetryIntervalMs;
-		++g_poiPersistence.KeyAttempts;
-
+		// Do not hold the persistence mutex while resolving the subsystem because
+		// this path invokes Unreal reflection/ProcessEvent.
 		std::string sessionName;
 		auto* saveSubsystem = static_cast<SDK::UCrSaveSubsystem*>(
 			SDK::USubsystemBlueprintLibrary::GetGameInstanceSubsystem(
@@ -3067,38 +3264,54 @@ namespace
 		{
 			sessionName = saveSubsystem->SaveData.SessionName.ToString();
 		}
+		const std::string resolvedKey = sessionName.empty()
+			? std::string{}
+			: worldName + "_" + sessionName;
 
-		if (!sessionName.empty())
+		std::lock_guard<std::mutex> lock(g_poiPersistenceMutex);
+		if (g_poiPersistence.World != world)
 		{
-			g_poiPersistence.StorageKey = worldName + "_" + sessionName;
-			g_poiPersistence.KeyResolved = true;
+			return resolution;
 		}
-		else if (g_poiPersistence.KeyAttempts >= kPoiStorageKeyMaxAttempts)
+		if (g_poiPersistence.StorageKey != resolvedKey)
 		{
-			// No save-session identity is available (for example a brand-new
-			// unsaved game); fall back to a world-level cache rather than
-			// never persisting discovered plants.
-			g_poiPersistence.StorageKey = worldName;
-			g_poiPersistence.KeyResolved = true;
+			// An empty key means the save identity is not available yet. Keep
+			// observations in memory, but never persist them under the world name.
+			resolution.SessionChanged = !g_poiPersistence.StorageKey.empty();
+			g_poiPersistence.StorageKey = resolvedKey;
+			g_poiPersistence.PersistedLoaded = false;
+			g_poiPersistence.LastSavedRevision = 0;
 		}
-		return g_poiPersistence.KeyResolved ? g_poiPersistence.StorageKey : std::string{};
+		resolution.StorageKey = g_poiPersistence.StorageKey;
+		return resolution;
 	}
 
-	void MergePersistedPlants(PoiCatalog& catalog, const std::string& storageKey)
+	bool MergePersistedPlants(PoiCatalog& catalog, const std::string& storageKey)
 	{
 		{
 			std::lock_guard<std::mutex> lock(g_poiPersistenceMutex);
 			if (g_poiPersistence.PersistedLoaded)
 			{
-				return;
+				return true;
 			}
+		}
+
+		const MapStatePoiStore::LoadResult loadResult =
+			MapStatePoiStore::LoadPlants(storageKey);
+		if (loadResult.Status == MapStatePoiStore::LoadStatus::Error)
+		{
+			LOG_WARN(
+				"Failed to read POI cache '%s'; refusing to overwrite it with partial data",
+				storageKey.c_str());
+			return false;
+		}
+		{
+			std::lock_guard<std::mutex> lock(g_poiPersistenceMutex);
 			g_poiPersistence.PersistedLoaded = true;
 		}
 
-		const std::vector<MapStatePoiStore::PersistedPlant> persistedPlants =
-			MapStatePoiStore::LoadPlants(storageKey);
 		size_t mergedCount = 0;
-		for (const MapStatePoiStore::PersistedPlant& plant : persistedPlants)
+		for (const MapStatePoiStore::PersistedPlant& plant : loadResult.Plants)
 		{
 			if (!IsTrackedPlantName(plant.ResourceName))
 			{
@@ -3111,6 +3324,7 @@ namespace
 				"persisted_catalog",
 				plant.ResourceName,
 				plant.ResourceName);
+			marker.Depleted = plant.Depleted;
 			if (catalog.find(marker.PublicKey) == catalog.end())
 			{
 				StorePoiMarker(catalog, std::move(marker));
@@ -3125,6 +3339,7 @@ namespace
 				mergedCount,
 				storageKey.c_str());
 		}
+		return true;
 	}
 
 	void SavePersistedPlantsIfChanged(
@@ -3144,7 +3359,6 @@ namespace
 		for (const PoiMarker& marker : snapshot.Pois)
 		{
 			if (marker.Kind != PoiKind::PlantResource
-				|| marker.Depleted
 				|| !IsTrackedPlantName(marker.ResourceName))
 			{
 				continue;
@@ -3154,6 +3368,7 @@ namespace
 			plant.X = static_cast<double>(marker.WorldLocation.X);
 			plant.Y = static_cast<double>(marker.WorldLocation.Y);
 			plant.Z = static_cast<double>(marker.WorldLocation.Z);
+			plant.Depleted = marker.Depleted;
 			plants.push_back(std::move(plant));
 		}
 
@@ -3268,32 +3483,29 @@ namespace
 		const std::string worldName = !snapshot.WorldName.empty()
 			? snapshot.WorldName
 			: world->GetName();
+		const PoiStorageResolution storage =
+			ResolvePoiStorageKey(world, worldName);
+		if (storage.SessionChanged)
+		{
+			ResetObservedPlantCatalog();
+			LOG_INFO("POI save session changed; cleared the previous plant catalog");
+		}
+
 		bool scanIsFresh = false;
 		{
 			std::lock_guard<std::mutex> lock(g_poiScanMutex);
-			scanIsFresh =
-				g_poiScanInProgress
-				|| (g_lastPoiScanAtUnixMs != 0
-					&& observedAtUnixMs >= g_lastPoiScanAtUnixMs
-					&& observedAtUnixMs - g_lastPoiScanAtUnixMs < kPoiScanMinIntervalMs
-					&& g_lastPoiScanWorldName == worldName);
+			scanIsFresh = !storage.SessionChanged
+				&& (g_poiScanInProgress
+					|| (g_lastPoiScanAtUnixMs != 0
+						&& observedAtUnixMs >= g_lastPoiScanAtUnixMs
+						&& observedAtUnixMs - g_lastPoiScanAtUnixMs < kPoiScanMinIntervalMs
+						&& g_lastPoiScanWorldName == worldName));
 			if (!scanIsFresh)
 			{
 				g_poiScanInProgress = true;
 			}
 		}
 
-		if (scanIsFresh)
-		{
-			snapshot.Pois = previousSnapshot.Pois;
-			snapshot.PoiRevision = previousSnapshot.PoiRevision;
-			UpdatePoiCounts(snapshot);
-			return false;
-		}
-
-		// World Partition and PCG only materialize gatherable actors around loaded
-		// areas. Preserve available observations from prior scans so moving away
-		// from a cell does not make its plants disappear from the map.
 		PoiCatalog catalog;
 		if (previousSnapshot.WorldName == worldName)
 		{
@@ -3301,8 +3513,8 @@ namespace
 			for (const PoiMarker& marker : previousSnapshot.Pois)
 			{
 				const bool retainMarker = marker.Kind == PoiKind::AbandonedBase
-					|| (marker.Kind == PoiKind::PlantResource
-						&& !marker.Depleted
+					|| (!storage.SessionChanged
+						&& marker.Kind == PoiKind::PlantResource
 						&& IsTrackedPlantName(marker.ResourceName));
 				if (retainMarker)
 				{
@@ -3311,13 +3523,27 @@ namespace
 			}
 		}
 
-		const std::string poiStorageKey =
-			ResolvePoiStorageKey(world, worldName, observedAtUnixMs);
-		if (!poiStorageKey.empty())
+		bool persistenceReady = true;
+		if (!storage.StorageKey.empty())
 		{
-			// Merge before the live scans and depleted-location cleanup so
-			// stale persisted entries are corrected by current game state.
-			MergePersistedPlants(catalog, poiStorageKey);
+			persistenceReady = MergePersistedPlants(catalog, storage.StorageKey);
+		}
+		// ActorBeginPlay observations are merged even while the expensive actor
+		// scan is throttled, so short-lived Mass representations are not lost.
+		MergeObservedPlants(world, catalog);
+		// Depletion arrays are authoritative and cheap to locate compared with a
+		// full gatherable scan, so apply them on both fresh and throttled paths.
+		MarkReplicatedDepletedPlants(world, catalog);
+
+		if (scanIsFresh)
+		{
+			FinalizePoiCatalog(snapshot, catalog);
+			UpdatePoiCounts(snapshot);
+			if (persistenceReady && !storage.StorageKey.empty())
+			{
+				SavePersistedPlantsIfChanged(snapshot, storage.StorageKey);
+			}
+			return false;
 		}
 
 		SDK::TArray<SDK::AActor*> abandonedBases;
@@ -3360,33 +3586,28 @@ namespace
 				continue;
 			}
 
-			const SDK::FVector worldLocation = actor->K2_GetActorLocation();
-			if (actor->bIsDepleted || actor->bIsPermanentlyGathered)
-			{
-				RemovePlantsNearLocation(catalog, worldLocation);
-				continue;
-			}
-
 			++liveTrackedPlantActorCount;
-			StorePoiMarker(
-				catalog,
-				BuildPoiMarker(
-					PoiKind::PlantResource,
-					worldLocation,
-					"poi.plant",
-					"actor_scan.gatherable",
-					resourceName,
-					resourceName));
+			ObserveTrackedPlantActor(world, actor, false);
+			PoiMarker marker = BuildPoiMarker(
+				PoiKind::PlantResource,
+				actor->K2_GetActorLocation(),
+				"poi.plant",
+				"actor_observation.gatherable",
+				resourceName,
+				resourceName);
+			marker.Depleted = actor->bIsDepleted || actor->bIsPermanentlyGathered;
+			StorePoiMarker(catalog, std::move(marker));
 		}
 
 		// A gathered actor may already have been removed by PCG before this scan.
-		// The persistent replication actor still carries its depleted locations.
-		RemoveReplicatedDepletedPlants(world, catalog);
+		// Keep its known position and publish the depleted state instead of
+		// deleting the only positional record.
+		MarkReplicatedDepletedPlants(world, catalog);
 		FinalizePoiCatalog(snapshot, catalog);
 		UpdatePoiCounts(snapshot);
-		if (!poiStorageKey.empty())
+		if (persistenceReady && !storage.StorageKey.empty())
 		{
-			SavePersistedPlantsIfChanged(snapshot, poiStorageKey);
+			SavePersistedPlantsIfChanged(snapshot, storage.StorageKey);
 		}
 		{
 			// Commit the throttle window only after a completed scan so an
@@ -3734,6 +3955,13 @@ namespace MapStateRuntime
 			info.LastLiveTrackedPlantActorCount = g_lastLiveTrackedPlantActorCount;
 		}
 		{
+			std::lock_guard<std::mutex> observedLock(g_observedPlantCatalogMutex);
+			info.ObservedPlantCount = static_cast<int>(g_observedPlantCatalog.Plants.size());
+			info.ObservationRevision = g_observedPlantCatalog.Revision;
+			info.ObservationEventCount = g_observedPlantCatalog.EventCount;
+			info.LastPlantObservedAtUnixMs = g_observedPlantCatalog.LastObservedAtUnixMs;
+		}
+		{
 			std::lock_guard<std::mutex> snapLock(g_snapshotMutex);
 			info.PlantCount = g_snapshot.PlantResourceCount;
 		}
@@ -3786,6 +4014,8 @@ namespace MapStateRuntime
 			g_requestedCustomNameEntityIds.clear();
 			ResetPoiScanState();
 		}
+		ResetPoiPersistenceState();
+		ResetObservedPlantCatalog();
 		ClearPublishedSnapshot("EngineShutdown");
 		ResetRuptureCycleState();
 
@@ -3894,7 +4124,7 @@ namespace MapStateRuntime
 			|| !TryCopyValidatedTrackedChimeraWorldState(
 				trackedState,
 				"ActorBeginPlay",
-				true,
+				false,
 				invalidPointer))
 		{
 			if (invalidPointer)
@@ -3908,6 +4138,25 @@ namespace MapStateRuntime
 		if (!TryObjectHasOuterInChain(
 			static_cast<SDK::UObject*>(beginPlayActor),
 			static_cast<SDK::UObject*>(trackedState.World)))
+		{
+			return;
+		}
+
+	#if !defined(MODLOADER_SERVER_BUILD)
+		if (beginPlayActor->IsA(SDK::ACrGatherableBaseActor::StaticClass()))
+		{
+			auto* gatherable = static_cast<SDK::ACrGatherableBaseActor*>(beginPlayActor);
+			if (ObserveTrackedPlantActor(trackedState.World, gatherable, true))
+			{
+				// Coalesce spawn bursts into the normal engine-tick refresh path.
+				// CapturePois will merge this event catalog even while its expensive
+				// actor enumeration remains throttled.
+				Detail::RequestCargoSnapshotRefresh("ActorBeginPlay(Gatherable)");
+			}
+		}
+	#endif
+
+		if (!trackedState.Ready)
 		{
 			return;
 		}
@@ -4017,7 +4266,9 @@ namespace MapStateRuntime
 			}
 			if (worldChanged)
 			{
-#if !defined(MODLOADER_SERVER_BUILD)
+				ResetPoiPersistenceState();
+				ResetObservedPlantCatalog();
+	#if !defined(MODLOADER_SERVER_BUILD)
 				MapExtensionClient::Sync::ResetRuntimeState();
 #endif
 				ClearPublishedSnapshot("ChimeraMainWorldBeginPlay");
