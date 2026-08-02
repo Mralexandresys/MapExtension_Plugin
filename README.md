@@ -155,7 +155,7 @@ RefreshIntervalMs=2000
 - `LogRuptureCycleEvents`: logs rupture cycle state changes and rupture-related world/server events (`1` or `0`)
 - `LogActorScanFallback`: logs actor scan fallback (`1` or `0`)
 - `LogRefreshTimings`: logs per-phase refresh timings (`1` or `0`)
-- `InGameMapProbe`: enables the experimental client-only native map asset and one-segment ImGui probe (`1` or `0`, restart required). The probe may synchronously load the configured terrain asset on the game thread, causing a brief test-time stall. The browser viewer remains the primary UI.
+- `InGameMapProbe`: enables the experimental client-only native map asset probe, one-segment preview, and progressive full-grid ImGui canvas (`1` or `0`, restart required). The probe may synchronously load the configured terrain asset and copy GPU textures on the game thread, causing brief test-time stalls; full-grid loading is capped at an estimated 128 MiB RGBA. The browser viewer remains the primary UI.
 - `Port`: sets the local HTTP port used by the plugin
 - `RefreshIntervalMs`: sets the runtime refresh interval in milliseconds
 

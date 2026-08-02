@@ -151,8 +151,9 @@ que :
 - une sortie et une nouvelle entrée dans le monde restent stables ;
 - les assets ne dépendent pas en permanence d'une instance UMG fragile.
 
-Le prochain POC devra alors assembler une grille basse résolution et comparer
-au moins cinq landmarks entre :
+Le POC suivant, décrit dans `update/13_ingame_map_grid_poc.md`, assemble une
+grille basse résolution. Après sa validation visuelle, la calibration devra
+comparer au moins cinq landmarks entre :
 
 1. la projection actuelle de MapExtension ;
 2. une transformation affine générale ;
@@ -219,6 +220,7 @@ copies ayant réussi au premier essai.
 
 Le module et sa garde client-only sont validés par compilation client. Le
 chargement après GC, les copies GPU répétées et l'arrêt moteur sont maintenant
-validés en jeu avec Streamline actif. Le prochain jalon est l'assemblage d'une
-grille basse résolution et la calibration de projection ; le comportement du
-retry différé restera à confirmer lors d'une future occurrence de streaming.
+validés en jeu avec Streamline actif. L'assemblage progressif de la grille est
+implémenté dans `update/13_ingame_map_grid_poc.md` et attend sa validation
+runtime avant la calibration de projection. Le comportement du retry différé
+restera à confirmer lors d'une future occurrence de streaming.

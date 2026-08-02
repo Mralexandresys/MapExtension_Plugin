@@ -211,7 +211,7 @@ RefreshIntervalMs=2000[/code]
 
 [list]
 [*][b]Enabled[/b]: turns the plugin on or off[/*]
-[*][b]InGameMapProbe[/b]: optional client-only developer probe for native map assets; leave it at 0 for normal use[/*]
+[*][b]InGameMapProbe[/b]: optional client-only developer probe for native map assets, one-segment preview, and progressive full-grid canvas; leave it at 0 for normal use[/*]
 [*][b]Port[/b]: local port used by the viewer to read plugin data[/*]
 [*][b]RefreshIntervalMs[/b]: how often the runtime data is refreshed[/*]
 [/list]

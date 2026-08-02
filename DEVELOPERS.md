@@ -16,7 +16,7 @@
 - `map_state_types.h`: shared snapshot types and map projection constants
 - `client/map_sync_client.cpp` / `client/map_sync_client.h`: client-side snapshot requests and plugin-network handling
 - `client/map_state_remote_cache.cpp` / `client/map_state_remote_cache.h`: client cache for remote rupture/cargo snapshots
-- `client/ingame_map_probe.cpp` / `client/ingame_map_probe.h`: opt-in client-only UObject inventory and one-segment native texture probe
+- `client/ingame_map_probe.cpp` / `client/ingame_map_probe.h`: opt-in client-only UObject inventory, native texture probe, and progressive terrain-grid canvas
 - `server/map_sync_server.cpp` / `server/map_sync_server.h`: server-side snapshot capture and response streaming
 - `shared/map_sync_protocol.h`: shared packet definitions for client/server snapshot sync
 
@@ -108,18 +108,20 @@ To inspect the latest build logs manually:
 The client-only migration probe is disabled by default. Set
 `[Experimental] InGameMapProbe=1` in
 `Plugins/config/MapExtension_Plugin.ini`, restart the game, and open the
-`Map probe` ModLoader panel. Run it before and after opening the native game
-map; all detailed observations use the `In-game map probe` log prefix.
+`Map probe` ModLoader panel. Run the one-segment probe before and after opening
+the native game map, then use `Load and assemble native map` for the progressive
+terrain grid. Detailed grid logs use the `In-game map grid` prefix.
 
 UObject discovery, the blocking resolution of the configured `TerrainData`
 soft-reference, and `LoadFromUTexture2D` run only from the game-thread tick.
-If D3D12 streaming is still in flight, the probe retries the GPU copy once
-after 500 ms. The ImGui callback only reads copied metadata and renders the
-ModLoader-owned texture handle; no `UObject*` is retained between probes or
-across worlds. Keep that ownership split intact when extending the probe.
+The full grid resolves each source texture again and copies at most one tile
+per step; it never retains a raw `UObject*`. The ImGui callback only reads
+copied metadata and renders ModLoader-owned handles under the probe mutex.
+Keep that ownership split and the deferred handle release intact.
 
-See `update/12_ingame_map_probe.md` for the runtime test matrix, expected
-evidence, and the next migration gate.
+See `update/12_ingame_map_probe.md` for the one-segment evidence and
+`update/13_ingame_map_grid_poc.md` for the full-grid runtime test matrix and
+projection gate.
 
 ## Frontend build
 
