@@ -18,8 +18,10 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]Show [b]items currently moving[/b] through the cargo network[/*]
 [*]Show [b]teleporter positions[/b][/*]
 [*]Show [b]player positions[/b][/*]
-[*]Show [b]abandoned bases[/b] and [b]plant resources[/b][/*]
-[*]Distinguish [b]available[/b] and [b]depleted[/b] resources, with a stable color for each resource type[/*]
+[*]Show [b]abandoned bases[/b] and available Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart plants[/*]
+[*]Keep observed plant markers when their World Partition area leaves the current loading radius, and remember them on disk between game restarts[/*]
+[*]Manually scan the full map in solo/local play, one World Partition zone at a time, with progress and cancellation[/*]
+[*]Remove depleted or permanently gathered plants from the map[/*]
 [*]Show a [b]rupture-cycle timeline[/b] in detailed or compact mode[/*]
 [*]Filter the map to show [b]only your personal markers and zones[/b][/*]
 [*]Center the map on the player with the [b]Player[/b] control or the [b]P[/b] shortcut[/*]
@@ -30,13 +32,17 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 
 [size=4][b]Latest Changes[/b][/size]
 [list]
-[*]Added abandoned-base and plant-resource points of interest to the map[/*]
-[*]Available resources use solid markers; depleted or permanently gathered resources use faded outlined markers[/*]
+[*]Added a solo/local full-map plant scan from the in-game MapExtension panel, with progress, cancellation, per-zone timeouts, and incremental disk saves[/*]
+[*]Discovered plants are now saved to disk per save session, so accumulated plant coverage survives game restarts[/*]
+[*]Harvested plants are now removed reliably: depleted-location matching tolerates small coordinate differences instead of requiring an exact match[/*]
+[*]Plant POIs are now limited to the eight supported edible plant resources and only available plants are published[/*]
+[*]Observed plants accumulate across streamed areas instead of disappearing when the player moves outside the current loading radius[/*]
+[*]Gathered plants are removed using live actor state and the game's replicated depleted-location data[/*]
 [*]Plant-resource colors are assigned consistently from the resource name, so they stay stable between refreshes[/*]
 [*]Added separate abandoned-base and plant-resource filters[/*]
 [*]Added a compact Rupture view with phase, time remaining, legend, and timeline details on hover or keyboard focus[/*]
 [*]Added a filter that leaves only personal markers and zones, plus player centering from the Player control or the P shortcut[/*]
-[*][b]Dedicated-server sync now uses protocol v3. Update the client and dedicated-server builds together; mixed protocol versions ignore each other's packets.[/b][/*]
+[*][b]Dedicated-server sync now uses protocol v4 so pages from different POI revisions cannot be mixed. Update the client and dedicated-server builds together; mixed protocol versions ignore each other's packets.[/b][/*]
 [*]The Mod Loader still updates only the plugin DLL. Replace MapExtensionViewer.html and map-tiles manually to receive viewer changes[/*]
 [/list]
 
@@ -94,10 +100,12 @@ This is [b]not[/b] an online service and [b]not[/b] a separate game client. It i
 [*]Which items are travelling through those links[/*]
 [*]Where teleporters are placed[/*]
 [*]Where players are located[/*]
-[*]Where abandoned bases and plant resources are located[/*]
-[*]Which plant resources are available or depleted, with consistent colors by resource[/*]
+[*]Where abandoned bases and observed available plants are located[/*]
+[*]Consistent colors for Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart[/*]
 [*]The current rupture-cycle timeline in detailed or compact mode[/*]
 [/list]
+
+Plant coverage grows as players visit or otherwise load World Partition areas, and discovered plants are remembered on disk per save session so coverage survives game restarts. In solo/local play, the in-game MapExtension panel can also scan the calibrated map bounds progressively, one zone at a time. The operation is cancellable but may take several minutes and cause strong temporary slowdowns.
 
 This is especially useful when your base grows and you want a cleaner overview of your layout, logistics lines, and rupture activity.
 
@@ -114,7 +122,7 @@ The plugin works in both solo and multiplayer, but rupture data is not sourced t
 
 The map viewer runs on the client. In dedicated-server play, the client plugin communicates with the server plugin, and the server plugin sends map, POI, and rupture updates back to the client plugin.
 
-[b]Important:[/b] dedicated-server synchronization uses protocol v3 and requires matching protocol versions. Update the client and dedicated-server builds together; a mixed-version pair ignores incompatible packets and cannot synchronize a remote snapshot.
+[b]Important:[/b] dedicated-server synchronization uses protocol v4 and requires matching protocol versions. Update the client and dedicated-server builds together; a mixed-version pair ignores incompatible packets and cannot synchronize a remote snapshot.
 
 [line]
 
@@ -167,7 +175,7 @@ When that happens:
 Always keep the [b]map-tiles[/b] folder next to [b]MapExtensionViewer.html[/b], otherwise the map background will not load.
 
 [list]
-[*]On a dedicated server, the server build is [b]not[/b] updated automatically: protocol v3 requires you to replace the server [b]MapExtension_Plugin.dll[/b] by hand and update it together with the client build[/*]
+[*]On a dedicated server, the server build is [b]not[/b] updated automatically: protocol v4 requires you to replace the server [b]MapExtension_Plugin.dll[/b] by hand and update it together with the client build[/*]
 [*]Automatic updates can be turned off in the Mod Loader by setting [code]Enabled=0[/code] under the [code][AutoUpdate][/code] section of [b]modloader.ini[/b][/*]
 [/list]
 

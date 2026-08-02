@@ -13,8 +13,10 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local,
 - Voir les objets actuellement transportes dans le reseau
 - Afficher la position des `teleporteurs`
 - Afficher la position des `joueurs`, avec son propre joueur mis en avant dans une couleur distincte
-- Afficher les bases abandonnees et les ressources vegetales comme points d'interet (POI)
-- Distinguer les ressources vegetales disponibles et `depleted`, avec une couleur stable attribuee par ressource
+- Afficher les bases abandonnees et les plantes disponibles Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb et Sulheart comme points d'interet (POI)
+- Cumuler les plantes observees dans les zones chargees au lieu de retirer leurs marqueurs quand le joueur quitte le rayon de chargement courant
+- Scanner manuellement toute la carte en solo/local depuis le panneau MapExtension en jeu, avec progression et annulation
+- Retirer de la carte publiee les plantes epuisees ou recoltees de facon permanente
 - Utiliser une vue compacte du cycle de rupture avec phase, temps restant, legende et details de timeline
 - Filtrer la carte pour ne garder que les marqueurs et zones personnels
 - Centrer la carte sur son propre joueur avec le controle `Joueur` ou le raccourci `P`
@@ -30,9 +32,21 @@ Une fois packagee, il faut garder le dossier genere `map-tiles/` a cote de `MapE
 
 Il consomme a la fois les donnees de carte/cargo et l'endpoint de cycle de rupture pour afficher la timeline de l'interface.
 
-Les bases abandonnees utilisent leur propre icone sur la carte. Les ressources vegetales utilisent une couleur de palette stable derivee du nom de la ressource, afin qu'une meme ressource garde la meme couleur apres les refreshs ; les ressources disponibles ont un marqueur plein, tandis que les ressources `depleted` ont un marqueur attenue et en contour. Des filtres separes controlent les bases abandonnees et les ressources vegetales.
+Les bases abandonnees utilisent leur propre icone sur la carte. Les plantes disponibles utilisent une couleur de palette stable derivee du nom de la ressource, afin qu'une meme ressource garde la meme couleur apres les refreshs. L'interface reste compatible avec les anciens payloads contenant des ressources `depleted` et les affiche avec un marqueur attenue et en contour. Des filtres separes controlent les bases abandonnees et les ressources vegetales.
 
 L'interface peut reduire la timeline de rupture en barre compacte ; son survol ou son focus clavier affiche la phase courante, le temps restant, la legende et les reperes de timeline. Les filtres peuvent masquer toutes les entites du jeu pour ne laisser que les marqueurs et zones personnels, et le controle `Joueur` ou le raccourci `P` centre la carte sur la premiere position de joueur recue.
+
+## Couverture des plantes
+
+StarRupture materialise les gatherables PCG/Mass uniquement dans les zones World Partition qui ont ete chargees. Le plugin conserve donc un catalogue par monde des plantes disponibles observees pendant le chargement progressif des zones : une plante deja observee reste sur la carte lorsque le joueur s'eloigne. Les emplacements recoltes sont retires grace a l'etat des acteurs vivants et aux donnees repliquees des emplacements epuises du jeu ; la correspondance des emplacements epuises tolere de petits ecarts de coordonnees afin que les plantes recoltees disparaissent de facon fiable.
+
+Les plantes decouvertes sont aussi persistees sur disque par session de sauvegarde (sous `Plugins/MapExtension_Plugin/poi_cache/`), pour que la couverture accumulee survive aux redemarrages du jeu. Les entrees restaurees portent la source `persisted_catalog` et sont revalidees a chaque scan avec l'etat des acteurs vivants et les donnees d'emplacements epuises du jeu.
+
+Le SDK actuel n'expose pas de registre des plantes intactes pour les cellules qui n'ont jamais ete generees. Le fonctionnement normal reste donc passif et la couverture s'etend quand les joueurs visitent ou chargent des zones.
+
+En solo/local, le panneau ModLoader du plugin propose aussi **Scanner toute la carte**. Cette operation manuelle explicite deplace un viewer World Partition/Mass temporaire et invisible sur une grille chevauchante couvrant les limites calibrees de la carte. Elle charge une seule zone a la fois, attend le streaming et la generation PCG, capture et persiste les plantes, puis decharge la zone en avancant. Si Mass ignore encore le viewer non-joueur, le scanner recommence automatiquement la grille en deplacant temporairement le joueur local, puis restaure exactement sa position, sa rotation, sa collision, ses entrees et son mode de mouvement d'origine. Le panneau affiche la progression, les acteurs plantes vivants et les zones expirees et permet l'annulation ; les zones deja terminees restent sauvegardees. L'operation peut durer plusieurs minutes et provoquer de forts ralentissements temporaires. Elle est indisponible en session serveur dediee.
+
+Seules ces classes de recompense sont publiees comme POI de plante : Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb et Sulheart.
 
 ## Donnees POI de `/cargo`
 
@@ -48,8 +62,8 @@ L'interface peut reduire la timeline de rupture en barre compacte ; son survol o
   "pois": [
     {
       "kind": "plant_resource",
-      "label": "Example Plant",
-      "resource": "Example Resource",
+      "label": "Hydrobulb",
+      "resource": "Hydrobulb",
       "depleted": false,
       "source": "actor_scan.gatherable",
       "unique_key": "example-plant-key",
@@ -62,13 +76,13 @@ L'interface peut reduire la timeline de rupture en barre compacte ; son survol o
 
 - `kind` vaut `abandoned_base` ou `plant_resource`.
 - `label` est le libelle affiche ; `resource` est le nom de ressource detecte et peut etre vide pour une base abandonnee.
-- `depleted` represente l'etat de la ressource : `false` signifie disponible (`available`), tandis que `true` signifie epuisee (`depleted`) ou recoltee de facon permanente. Il n'existe pas de champ `available` separe.
+- `depleted` reste present pour conserver la compatibilite du payload. Le catalogue courant publie uniquement les plantes disponibles : les entrees actuelles utilisent donc `false`, et les plantes epuisees ou recoltees de facon permanente sont omises.
 - `source` identifie le chemin de capture, `unique_key` identifie le POI pour l'interface, `world` contient les coordonnees Unreal `x`/`y`/`z` et `map` contient les coordonnees projetees `x`/`y`.
 - `counts.pois` est le nombre total de POI ; `counts.abandoned_bases` et `counts.plant_resources` contiennent les totaux par kind.
 
 ## Compatibilite de la synchronisation serveur dedie
 
-Les snapshots de serveur dedie utilisent le protocole de synchronisation v3, qui transporte les POI par pages de 64 entrees maximum par requete, marque le marqueur joueur propre a chaque client, et valide les identifiants de snapshot, generations, nombres d'elements, nombres de chunks et la disposition des pages avant de publier un snapshot distant. Les versions de protocole doivent correspondre exactement : un client ou serveur v3 ignore les paquets d'une autre version de protocole au lieu de tenter un downgrade.
+Les snapshots de serveur dedie utilisent le protocole de synchronisation v4, qui transporte les POI par pages de 64 entrees maximum par requete, associe chaque page a une revision stable du contenu, marque le marqueur joueur propre a chaque client, et valide les identifiants de snapshot, generations, revisions, nombres d'elements, nombres de chunks, totaux et disposition des pages avant de publier un snapshot distant. Les pages de revisions POI differentes ne sont jamais fusionnees. Les versions de protocole doivent correspondre exactement : un client ou serveur v4 ignore les paquets d'une autre version de protocole au lieu de tenter un downgrade.
 
 **Mettre a jour les builds client et serveur dedie ensemble.** La mise a jour automatique du modloader ne remplace que la DLL client ; la DLL du serveur dedie doit etre remplacee manuellement pendant la meme mise a jour. Ne pas laisser les deux cotes sur des releases differentes.
 
@@ -88,7 +102,7 @@ Copier le contenu de `Plugins/` dans `StarRupture/Binaries/Win64/Plugins/`, puis
 Deux limites a connaitre :
 
 - La mise a jour automatique ne remplace que la DLL. `MapExtensionViewer.html` et `map-tiles/` ne sont jamais touches, puisqu'ils vivent hors du dossier du jeu. L'interface detecte les contrats de payload incompatibles : quand le plugin annonce un contrat plus recent que celui avec lequel l'interface locale a ete construite, une fenetre propose le telechargement direct de l'asset `MapExtension_Plugin-<tag>-viewer.zip` correspondant, avec les liens vers la release GitHub et la page du mod. Les ameliorations retrocompatibles du viewer peuvent ne pas declencher cette fenetre ; installer donc manuellement l'archive viewer correspondante pour profiter des nouvelles fonctions d'interface. Remplacer `MapExtensionViewer.html` et `map-tiles/` ensemble, puis recharger la page.
-- Le build serveur n'est pas couvert par le sidecar. Le protocole de synchronisation v3 exige des builds client et serveur correspondants : mettre a jour les deux DLL ensemble et remplacer manuellement celle du serveur dedie.
+- Le build serveur n'est pas couvert par le sidecar. Le protocole de synchronisation v4 exige des builds client et serveur correspondants : mettre a jour les deux DLL ensemble et remplacer manuellement celle du serveur dedie.
 
 Les mises a jour automatiques peuvent etre desactivees globalement dans le modloader avec `[AutoUpdate] Enabled=0` dans `modloader.ini`.
 

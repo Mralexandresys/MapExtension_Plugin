@@ -28,6 +28,7 @@ namespace
 	{
 		uint64_t SnapshotId = 0;
 		uint64_t Generation = 0;
+		uint64_t PoiRevision = 0;
 		uint32_t ContentFlags = 0;
 		uint16_t ExpectedPlayersChunkCount = 0;
 		uint16_t ExpectedTeleportersChunkCount = 0;
@@ -60,11 +61,14 @@ namespace
 	bool g_hasCargoSnapshot = false;
 	CargoSnapshot g_activeCargoSnapshot{};
 
-	// Protocol v3 POI pagination: pages already fetched are retained here and
+	// Protocol v4 POI pagination: pages already fetched are retained here and
 	// merged into every finalized snapshot, keyed by page index. The store is
-	// invalidated when the world or the server-reported page count changes.
+	// tied to one exact catalog revision so removed or changed POIs cannot leak
+	// in from pages fetched before the catalog changed.
 	std::map<uint16_t, std::vector<PoiMarker>> g_poiPages;
+	uint64_t g_poiRevision = 0;
 	uint16_t g_poiPageCount = 1;
+	uint16_t g_poiTotalCount = 0;
 	std::string g_poiPagesWorldName;
 	uint16_t g_nextPoiPageToRequest = 0;
 
@@ -148,7 +152,7 @@ namespace
 
 	bool IsValidSnapshotBegin(const MapSyncProtocol::ServerSnapshotBeginPacket& packet)
 	{
-		if (packet.snapshot_id == 0 || packet.generation == 0)
+		if (packet.snapshot_id == 0 || packet.generation == 0 || packet.poi_revision == 0)
 		{
 			return false;
 		}
@@ -176,7 +180,7 @@ namespace
 			return false;
 		}
 
-		// Protocol v3 POI pagination coherence: the advertised page must exist,
+		// Protocol v4 POI pagination coherence: the advertised page must exist,
 		// and the page item count must match the slice of the advertised total.
 		const uint32_t expectedPoiPageCount = packet.pois_total_count == 0
 			? 1u
@@ -307,7 +311,9 @@ namespace
 			&& packet.cargo_connections_count == assembly.ExpectedCargoConnectionsCount
 			&& packet.pois_count == assembly.ExpectedPoisCount
 			&& packet.poi_page == assembly.PoiPage
-			&& packet.poi_page_count == assembly.PoiPageCount;
+			&& packet.poi_page_count == assembly.PoiPageCount
+			&& packet.pois_total_count == assembly.PoisTotalCount
+			&& packet.poi_revision == assembly.PoiRevision;
 	}
 }
 
@@ -325,7 +331,9 @@ namespace MapExtensionClient
 			g_hasCargoSnapshot = false;
 			g_activeCargoSnapshot = {};
 			g_poiPages.clear();
+			g_poiRevision = 0;
 			g_poiPageCount = 1;
+			g_poiTotalCount = 0;
 			g_poiPagesWorldName.clear();
 			g_nextPoiPageToRequest = 0;
 		}
@@ -370,6 +378,7 @@ namespace MapExtensionClient
 			g_snapshotAssembly.Reset();
 			g_snapshotAssembly.SnapshotId = packet.snapshot_id;
 			g_snapshotAssembly.Generation = packet.generation;
+			g_snapshotAssembly.PoiRevision = packet.poi_revision;
 			g_snapshotAssembly.ContentFlags = packet.content_flags;
 			g_snapshotAssembly.ExpectedPlayersChunkCount = packet.players_chunk_count;
 			g_snapshotAssembly.ExpectedTeleportersChunkCount = packet.teleporters_chunk_count;
@@ -389,6 +398,7 @@ namespace MapExtensionClient
 				g_snapshotAssembly.Snapshot,
 				packet.generation,
 				g_snapshotAssembly.WorldName);
+			g_snapshotAssembly.Snapshot.PoiRevision = packet.poi_revision;
 		}
 
 		void StorePlayersChunk(const MapSyncProtocol::ServerPlayersChunkPacket& packet)
@@ -571,15 +581,19 @@ namespace MapExtensionClient
 				snapshot.RuptureCycle = g_ruptureCycleSnapshot;
 			}
 
-			// Merge protocol v3 POI pages: keep previously fetched pages and
-			// replace only the page carried by this snapshot. Invalidate the
-			// retained pages when the world or the page layout changes.
+			// Merge only pages sliced from the exact same canonical POI catalog.
+			// A count-only check is insufficient: a removal and an insertion can
+			// preserve both total and page count while changing every later slice.
 			if (g_poiPagesWorldName != g_snapshotAssembly.WorldName
-				|| g_poiPageCount != g_snapshotAssembly.PoiPageCount)
+				|| g_poiRevision != g_snapshotAssembly.PoiRevision
+				|| g_poiPageCount != g_snapshotAssembly.PoiPageCount
+				|| g_poiTotalCount != g_snapshotAssembly.PoisTotalCount)
 			{
 				g_poiPages.clear();
 				g_poiPagesWorldName = g_snapshotAssembly.WorldName;
+				g_poiRevision = g_snapshotAssembly.PoiRevision;
 				g_poiPageCount = g_snapshotAssembly.PoiPageCount;
+				g_poiTotalCount = g_snapshotAssembly.PoisTotalCount;
 			}
 			g_poiPages[g_snapshotAssembly.PoiPage] = std::move(snapshot.Pois);
 			snapshot.Pois.clear();
@@ -590,6 +604,27 @@ namespace MapExtensionClient
 					pageEntry.second.begin(),
 					pageEntry.second.end());
 			}
+
+			std::unordered_set<std::string> mergedPoiKeys;
+			bool mergedPoisAreValid = snapshot.Pois.size() <= g_poiTotalCount;
+			for (const PoiMarker& marker : snapshot.Pois)
+			{
+				if (marker.PublicKey.empty() || !mergedPoiKeys.emplace(marker.PublicKey).second)
+				{
+					mergedPoisAreValid = false;
+					break;
+				}
+			}
+			const bool hasEveryPoiPage = g_poiPages.size() == g_poiPageCount;
+			if (!mergedPoisAreValid
+				|| (hasEveryPoiPage && snapshot.Pois.size() != g_poiTotalCount))
+			{
+				g_poiPages.clear();
+				g_nextPoiPageToRequest = 0;
+				g_snapshotAssembly.Reset();
+				return;
+			}
+
 			g_nextPoiPageToRequest = static_cast<uint16_t>(
 				(g_snapshotAssembly.PoiPage + 1) % g_snapshotAssembly.PoiPageCount);
 

@@ -663,14 +663,20 @@ namespace
 
 		MapStateRuntime::Detail::RefreshCargoSnapshot(g_trackedWorld, reason ? reason : "ServerSnapshotRequest");
 		CargoSnapshot snapshot = MapStateRuntime::Detail::CopySnapshot();
+		if (snapshot.PoiRevision == 0)
+		{
+			LOG_WARN("Cannot send protocol v4 snapshot: POI catalog has no content revision");
+			return;
+		}
 
-		// Protocol v3 paginates POIs: each snapshot carries a single POI page of
-		// at most kPoiPageCapacity items, selected by the client request.
+		// Protocol v4 paginates POIs: each snapshot carries a single POI page of
+		// at most kPoiPageCapacity items, selected by the client request. Every
+		// page also carries the stable revision of the canonical POI catalog.
 		uint16_t poiTotalCount = 0;
 		if (!TryConvertToUint16(snapshot.Pois.size(), poiTotalCount))
 		{
 			LOG_WARN(
-				"Cannot send protocol v3 snapshot: POI total exceeds uint16 limits (pois=%llu)",
+				"Cannot send protocol v4 snapshot: POI total exceeds uint16 limits (pois=%llu)",
 				static_cast<unsigned long long>(snapshot.Pois.size()));
 			return;
 		}
@@ -692,7 +698,7 @@ namespace
 		if (!TryBuildSnapshotWireCounts(snapshot, poiPageItems.size(), wireCounts))
 		{
 			LOG_WARN(
-				"Cannot send protocol v3 snapshot: a collection exceeds uint16 limits "
+				"Cannot send protocol v4 snapshot: a collection exceeds uint16 limits "
 				"(players=%llu, teleporters=%llu, cargo_markers=%llu, cargo_connections=%llu, pois=%llu)",
 				static_cast<unsigned long long>(snapshot.Players.size()),
 				static_cast<unsigned long long>(snapshot.Teleporters.size()),
@@ -716,6 +722,7 @@ namespace
 		beginPacket.content_flags = MapSyncProtocol::kSnapshotHasRupture;
 		beginPacket.snapshot_id = snapshotId;
 		beginPacket.generation = snapshot.Generation != 0 ? snapshot.Generation : snapshotId;
+		beginPacket.poi_revision = snapshot.PoiRevision;
 		beginPacket.players_count = wireCounts.Players.ItemCount;
 		beginPacket.teleporters_count = wireCounts.Teleporters.ItemCount;
 		beginPacket.cargo_markers_count = wireCounts.CargoMarkers.ItemCount;
@@ -801,7 +808,7 @@ namespace
 		if (!chunksSent)
 		{
 			LOG_WARN(
-				"Protocol v3 snapshot %llu could not dispatch every chunk; sending an unsuccessful end packet",
+				"Protocol v4 snapshot %llu could not dispatch every chunk; sending an unsuccessful end packet",
 				static_cast<unsigned long long>(snapshotId));
 		}
 
@@ -810,6 +817,7 @@ namespace
 		endPacket.success = chunksSent ? 1u : 0u;
 		endPacket.snapshot_id = snapshotId;
 		endPacket.generation = beginPacket.generation;
+		endPacket.poi_revision = beginPacket.poi_revision;
 		endPacket.players_count = beginPacket.players_count;
 		endPacket.teleporters_count = beginPacket.teleporters_count;
 		endPacket.cargo_markers_count = beginPacket.cargo_markers_count;
@@ -817,6 +825,7 @@ namespace
 		endPacket.pois_count = beginPacket.pois_count;
 		endPacket.poi_page = poiPage;
 		endPacket.poi_page_count = poiPageCount;
+		endPacket.pois_total_count = poiTotalCount;
 		Network::SendPacketToPlayer(hooks, self, senderPlayerController, endPacket);
 	}
 
@@ -831,7 +840,7 @@ namespace
 			return;
 		}
 
-		// request_flags are reserved in protocol v3. Selective responses would
+		// request_flags are reserved in protocol v4. Selective responses would
 		// replace omitted collections with empty data in current clients, so the
 		// server deliberately sends the complete snapshot for every request.
 		(void)packet.request_flags;

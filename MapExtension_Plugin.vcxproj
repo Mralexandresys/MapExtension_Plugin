@@ -261,8 +261,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="map_state_capture.h" />
+    <ClInclude Include="map_state_full_scan.h" />
     <ClInclude Include="map_state_http.h" />
     <ClInclude Include="map_state_json.h" />
+    <ClInclude Include="map_state_poi_store.h" />
+    <ClInclude Include="map_state_ui.h" />
     <ClInclude Include="map_state_runtime.h" />
     <ClInclude Include="map_state_types.h" />
     <ClInclude Include="plugin.h" />
@@ -297,11 +300,20 @@
       <Visible>false</Visible>
     </ClCompile>
     <ClCompile Include="map_state_capture.cpp" />
+    <ClCompile Include="map_state_full_scan.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="map_state_http.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="map_state_json.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="map_state_poi_store.cpp" />
+    <ClCompile Include="map_state_ui.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>

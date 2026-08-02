@@ -123,6 +123,7 @@ namespace Detail
 	struct CargoSnapshot
 	{
 		uint64_t Generation = 0;
+		uint64_t PoiRevision = 0;
 		std::string Reason;
 		std::string WorldName;
 		bool UsedReplicator = false;

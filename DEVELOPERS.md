@@ -11,8 +11,10 @@
 - `plugin.cpp`: plugin metadata, startup, shutdown, and hook registration
 - `map_state_runtime.cpp`: public runtime facade used by the plugin entrypoints
 - `map_state_capture.cpp` / `map_state_capture.h`: world scanning, snapshot refresh, and gameplay callbacks
+- `map_state_full_scan.cpp` / `map_state_full_scan.h`: client-only progressive full-map World Partition scan controller
 - `map_state_http.cpp` / `map_state_http.h`: local HTTP server and endpoint routing
 - `map_state_json.cpp` / `map_state_json.h`: JSON serialization for `/health`, `/cargo`, and `/rupture-cycle`
+- `map_state_poi_store.cpp` / `map_state_poi_store.h`: per-save-session disk persistence for discovered plant POIs
 - `map_state_types.h`: shared snapshot types and map projection constants
 - `client/map_sync_client.cpp` / `client/map_sync_client.h`: client-side snapshot requests and plugin-network handling
 - `client/map_state_remote_cache.cpp` / `client/map_state_remote_cache.h`: client cache for remote rupture/cargo snapshots
@@ -165,24 +167,39 @@ The workflow:
 
 The modloader auto-updater replaces `MapExtension_Plugin.dll` only. `MapExtensionViewer.html` and `map-tiles/` live outside the game folder and are never updated, so any change to the `/cargo`, `/health`, or `/rupture-cycle` payload shape must stay backward compatible with an older viewer, or bump the viewer contract version described below so the viewer prompts the user to download the viewer zip.
 
-The server build ships no sidecar and is not auto-updated. Sync protocol v3 requires an exact protocol-version match, so releases using it must tell server admins to update the client and dedicated-server DLLs together. A mixed-version pair ignores incompatible packets and cannot publish a remote snapshot.
+The server build ships no sidecar and is not auto-updated. Sync protocol v4 requires an exact protocol-version match, so releases using it must tell server admins to update the client and dedicated-server DLLs together. A mixed-version pair ignores incompatible packets and cannot publish a remote snapshot.
 
 `interface_version_min`/`interface_version_max` in the manifest are read from `PLUGIN_INTERFACE_VERSION_MIN`/`PLUGIN_INTERFACE_VERSION_MAX` in the SDK header, matching the SDK's reference workflow. The loader only checks that this range overlaps its own, so the published range is wider than the single `PLUGIN_INTERFACE_VERSION` the DLL actually declares.
 
-## Dedicated-server sync protocol v3
+## Plant POI capture
 
-`shared/map_sync_protocol.h` defines strict protocol version `3` for authoritative dedicated-server snapshots. The client and server both reject packets whose `protocol_version` does not equal `kProtocolVersion`; there is no fallback or partial downgrade path to older versions.
+Plant POIs are deliberately limited by the reward class in `ACrGatherableBaseActor::InteractionRewardResource`, not by localized display text. The accepted classes are `I_Hydrobulb_C`, `I_Polifruit_C`, `I_Oxallop_C`, `I_Purplant_C`, `I_SerpentRoot_C`, `I_Prickler_C`, `I_PrismHerb_C`, and `I_Sulheart_C`.
 
-Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker, and cargo-connection stream; protocol v3 adds POI pagination and a per-recipient "self" player flag:
+World Partition and PCG/Mass only materialize gatherable actors in loaded areas. `CapturePois` therefore merges available observations into a per-world cumulative catalog. A cell unloading does not remove its markers. Live `bIsDepleted`/`bIsPermanentlyGathered` state and `ACrGatherableSpawnersRepActor` depleted-location arrays remove gathered markers even when PCG has already removed the visual actor; removal matches the exact rounded-coordinate key first and then any catalog plant within a small world-space radius (`kDepletedPlantRemovalRadius`), because replicated depleted locations can differ slightly from the observed actor location. The catalog is cleared on world transitions and engine shutdown.
+
+Discovered plants are persisted through `map_state_poi_store.cpp` as a per-save-session TSV cache under `Plugins/MapExtension_Plugin/poi_cache/`. The storage key combines the world name and the `UCrSaveSubsystem` save-session name (resolved with backoff, falling back to the world name alone if no session identity appears). Persisted entries are merged into the catalog on the first scan with source `persisted_catalog`, before depleted-location cleanup so stale entries are corrected by current game state; the cache file is rewritten whenever the POI revision changes.
+
+The SDK has no intact-plant registry containing type and position for the entire procedural world. Normal capture is passive progressive coverage. The explicit solo/local full-map action in `map_state_full_scan.cpp` is the only exception: it creates a transient `ATargetPoint` with a `UWorldPartitionStreamingSourceComponent`, traverses an overlapping serpentine grid over the calibrated map bounds, waits for streaming and PCG, then requests the existing POI capture/persistence path. It never moves the player and never loads all zones simultaneously.
+
+The controller is a game-thread state machine. ImGui only sets atomic start/cancel requests. During its first pass it temporarily enables `UMassLODSubsystem::bGatherStreamingSources` and `bAllowNonPlayerViwerActors`, restoring both original bits on cleanup. Capture reports live tracked actors separately from persisted markers. If the whole source-only pass sees no live tracked actor, the scanner repeats in player-fallback mode: it freezes the local character, disables collision, moves it with the source, and restores its immutable original transform and movement/input state before cleanup. Every zone has streaming and capture timeouts; timeout zones produce a partial result rather than a false complete result. Cancellation, world end, engine shutdown, and plugin shutdown must restore player/Mass state, disable the component, and destroy its owner exactly once. Keep this feature client-only and reject `bIsDedicatedServer` sessions.
+
+The catalog is sorted by public key and assigned a stable 64-bit FNV-1a content revision over the fields sent on the wire. Identical content keeps the same revision across refreshes/processes; any addition, removal, state, coordinate, label, resource, source, or key change invalidates retained dedicated-server pages.
+
+## Dedicated-server sync protocol v4
+
+`shared/map_sync_protocol.h` defines the POD request, begin, chunk, rupture, and end packets shared by client and server builds. The protocol version is intentionally exact-match only; there is no downgrade path.
+
+Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker, and cargo-connection stream; protocol v3 added POI pagination and a per-recipient "self" player flag; protocol v4 adds exact POI-catalog revision tracking:
 
 - `kRequestFlagPois` and `kSnapshotHasPois` identify POI content. All request flags are reserved; the server intentionally ignores `request_flags` and returns a complete snapshot.
-- POIs are paginated: each `ClientSnapshotRequestPacket` carries a `poi_page`, and the server responds with at most `kPoiPageCapacity` POIs (currently 64, i.e. `kPoiChunksPerPage` = 16 chunks) for that page. `ServerSnapshotBeginPacket` declares the page slice via `pois_count`/`pois_chunk_count` plus `poi_page`, `poi_page_count`, and `pois_total_count`; `ServerSnapshotEndPacket` repeats `pois_count`, `poi_page`, and `poi_page_count`. The client retains previously fetched pages per world and merges them into every published snapshot, and it keeps requesting the next page at the minimum request interval until all pages have been fetched.
+- POIs are paginated: each `ClientSnapshotRequestPacket` carries a `poi_page`, and the server responds with at most `kPoiPageCapacity` POIs (currently 64, i.e. `kPoiChunksPerPage` = 16 chunks) for that page. `ServerSnapshotBeginPacket` declares the page slice via `pois_count`/`pois_chunk_count` plus `poi_page`, `poi_page_count`, `pois_total_count`, and `poi_revision`; `ServerSnapshotEndPacket` repeats the page counters, total, and revision.
+- The client retains pages only for the exact `(world, poi_revision, poi_page_count, pois_total_count)` tuple. A changed revision clears every retained page before the new page is published, preventing removals or index shifts from leaving stale or duplicate markers. The client rejects duplicate/empty public keys and validates the fully assembled total.
 - `ServerPlayerEntry` carries a `flags` byte; `kPlayerEntrySelf` marks the marker that belongs to the requesting player. The server matches the requesting player controller against the captured player keys, so each connected client sees its own marker flagged.
 - `ServerPoiEntry` carries world coordinates, `kind`, the `kPoiEntryDepleted` flag, label, resource, source, and unique key.
 - `ServerPoisChunkPacket` carries at most `kPoiChunkCapacity` entries (currently four). The packet remains trivially copyable and is statically limited to the recommended 1 KiB payload size.
-- The server rejects collections that cannot be represented by the `uint16_t` wire counters. The client validates the snapshot ID, generation, begin/end counts, chunk counts, chunk indexes, per-chunk item counts, and the POI page layout before publishing the assembled snapshot.
+- The server rejects collections that cannot be represented by the `uint16_t` wire counters. The client validates the snapshot ID, generation, POI revision, begin/end counts and totals, chunk counts, chunk indexes, per-chunk item counts, page layout, and merged public-key uniqueness before publishing the assembled snapshot.
 
-**Always update the client and dedicated-server builds together when deploying protocol v3.** The client sidecar updates only `MapExtension_Plugin.dll` on player machines; it does not update the dedicated-server DLL. A mismatched pair will ignore each other's packets, so the server DLL must be replaced manually during the same rollout.
+**Always update the client and dedicated-server builds together when deploying protocol v4.** The client sidecar updates only `MapExtension_Plugin.dll` on player machines; it does not update the dedicated-server DLL. A mismatched pair will ignore each other's packets, so the server DLL must be replaced manually during the same rollout.
 
 ## Runtime contract
 
@@ -220,9 +237,9 @@ The payload includes `counts.pois`, `counts.abandoned_bases`, and `counts.plant_
     },
     {
       "kind": "plant_resource",
-      "label": "Example Plant",
-      "resource": "Example Resource",
-      "depleted": true,
+      "label": "Hydrobulb",
+      "resource": "Hydrobulb",
+      "depleted": false,
       "source": "actor_scan.gatherable",
       "unique_key": "example-plant-key",
       "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
@@ -235,9 +252,9 @@ The payload includes `counts.pois`, `counts.abandoned_bases`, and `counts.plant_
 | Field | Contract |
 | --- | --- |
 | `kind` | `abandoned_base` or `plant_resource`. |
-| `label` | Display label captured for the actor. |
-| `resource` | Detected plant resource name; empty when no resource applies, including abandoned bases. |
-| `depleted` | Boolean state. For plant resources, `false` means available and `true` means `bIsDepleted` or `bIsPermanentlyGathered` was set. Abandoned bases currently emit `false`; there is no separate JSON `available` field. |
+| `label` | Canonical display label for tracked plants, or the fixed abandoned-base label. |
+| `resource` | Canonical tracked plant name; empty when no resource applies, including abandoned bases. |
+| `depleted` | Backward-compatible boolean field. The current catalog emits only available plants (`false`) and omits `bIsDepleted`/`bIsPermanentlyGathered` actors. Abandoned bases also emit `false`. |
 | `source` | Capture-path identifier such as `actor_scan.abandoned_base` or `actor_scan.gatherable`. |
 | `unique_key` | Public identity used by the viewer for selection and rendering. |
 | `world` | Unreal coordinates as numeric `x`, `y`, and `z`. |
@@ -245,7 +262,7 @@ The payload includes `counts.pois`, `counts.abandoned_bases`, and `counts.plant_
 
 `counts.pois` equals the length of `pois`; `counts.abandoned_bases` and `counts.plant_resources` are the per-kind totals and add up to that total.
 
-The viewer renders abandoned bases with a dedicated fixed-color icon. Plant resources use a stable FNV-1a hash of `resource || label || unique_key`, after trimming and lowercasing, to derive an HSL color (hue from the full hash range, saturation 62–82%, lightness 60–72%). The mapping is independent of payload order, and distinct resource names rarely share the same hue. Available resources use a solid core; depleted resources use a faded core and dashed/outlined ring.
+The viewer renders abandoned bases with a dedicated fixed-color icon. Plant resources use a stable FNV-1a hash of `resource || label || unique_key`, after trimming and lowercasing, to derive an HSL color (hue from the full hash range, saturation 62–82%, lightness 60–72%). The mapping is independent of payload order, and distinct resource names rarely share the same hue. Current plugin payloads contain only available plants and use a solid core; the viewer keeps the faded dashed/outlined rendering for backward compatibility with older payloads that contain `depleted: true`.
 
 Player entries in `/cargo` carry an optional boolean `self`, set to `true` on the marker representing the local viewer's own player (the primary local player in solo sessions, or the marker flagged by the dedicated server for this client). The viewer renders the `self` player with a distinct color and prefers it when centering on the player. Older plugins omit the field.
 

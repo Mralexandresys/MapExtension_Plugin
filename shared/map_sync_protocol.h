@@ -6,7 +6,7 @@
 
 namespace MapSyncProtocol
 {
-	constexpr uint32_t kProtocolVersion = 3;
+	constexpr uint32_t kProtocolVersion = 4;
 
 	// Reserved for future selective snapshots. The server intentionally
 	// ignores request_flags and always returns a full snapshot.
@@ -36,10 +36,11 @@ namespace MapSyncProtocol
 	constexpr size_t kCargoConnectionChunkCapacity = 4;
 	constexpr size_t kPoiChunkCapacity = 4;
 	constexpr size_t kPreferredPoiPacketSizeLimit = 1024;
-	// POIs are paginated in protocol v3: each snapshot response carries at most
+	// POIs are paginated in protocol v4: each snapshot response carries at most
 	// one page of POIs and the client requests the remaining pages across
-	// subsequent snapshot requests. This bounds the packet burst emitted for a
-	// single request on worlds with thousands of gatherable actors.
+	// subsequent snapshot requests. A stable POI revision prevents pages from
+	// different catalog contents from being merged. This bounds the packet burst
+	// emitted for a single request on worlds with thousands of gatherable actors.
 	constexpr size_t kPoiChunksPerPage = 16;
 	constexpr size_t kPoiPageCapacity = kPoiChunkCapacity * kPoiChunksPerPage;
 
@@ -97,7 +98,7 @@ namespace MapSyncProtocol
 		uint32_t protocol_version = kProtocolVersion;
 		uint32_t request_flags = kRequestFlagAll;
 		uint64_t request_sequence = 0;
-		// POI page requested for this snapshot (protocol v3 pagination).
+		// POI page requested for this snapshot (protocol v4 pagination).
 		uint16_t poi_page = 0;
 		uint8_t reserved[14] = {};
 	};
@@ -108,6 +109,7 @@ namespace MapSyncProtocol
 		uint32_t content_flags = 0;
 		uint64_t snapshot_id = 0;
 		uint64_t generation = 0;
+		uint64_t poi_revision = 0;
 		uint16_t players_count = 0;
 		uint16_t teleporters_count = 0;
 		uint16_t cargo_markers_count = 0;
@@ -116,9 +118,10 @@ namespace MapSyncProtocol
 		uint16_t teleporters_chunk_count = 0;
 		uint16_t cargo_markers_chunk_count = 0;
 		uint16_t cargo_connections_chunk_count = 0;
-		// POI pagination (protocol v3): pois_count/pois_chunk_count describe the
+		// POI pagination (protocol v4): pois_count/pois_chunk_count describe the
 		// page carried by this snapshot; pois_total_count is the full POI count
-		// across all poi_page_count pages.
+		// across all poi_page_count pages. poi_revision identifies the exact
+		// canonical catalog from which the page was sliced.
 		uint16_t pois_count = 0;
 		uint16_t pois_chunk_count = 0;
 		uint16_t poi_page = 0;
@@ -134,6 +137,7 @@ namespace MapSyncProtocol
 		uint32_t success = 0;
 		uint64_t snapshot_id = 0;
 		uint64_t generation = 0;
+		uint64_t poi_revision = 0;
 		uint16_t players_count = 0;
 		uint16_t teleporters_count = 0;
 		uint16_t cargo_markers_count = 0;
@@ -141,7 +145,8 @@ namespace MapSyncProtocol
 		uint16_t pois_count = 0;
 		uint16_t poi_page = 0;
 		uint16_t poi_page_count = 0;
-		uint8_t reserved[10] = {};
+		uint16_t pois_total_count = 0;
+		uint8_t reserved[8] = {};
 	};
 
 	struct ServerRuptureStatePacket

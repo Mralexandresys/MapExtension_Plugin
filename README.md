@@ -13,8 +13,10 @@ The plugin works in both single-player and multiplayer. For solo/local sessions,
 - See the items currently travelling through the network
 - Display the positions of `teleporters`
 - Display the positions of `players`, with your own player highlighted in a distinct color
-- Display abandoned bases and plant resources as points of interest (POIs)
-- Distinguish available and depleted plant resources, with a stable color assigned per resource
+- Display abandoned bases and the available Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart plants as points of interest (POIs)
+- Accumulate plant observations across streamed areas instead of dropping markers when the player leaves the current loading radius
+- Manually scan the full map in solo/local play from the in-game MapExtension panel, with progress and cancellation
+- Remove depleted or permanently gathered plants from the published map
 - Use a compact rupture-cycle view with phase, remaining-time, legend, and timeline details
 - Filter the map down to personal markers and zones only
 - Center the map on your own player with the `Player` control or the `P` shortcut
@@ -30,9 +32,21 @@ When packaged, keep the generated `map-tiles/` folder next to `MapExtensionViewe
 
 It consumes both cargo/map data and the rupture cycle endpoint to render the timeline shown in the HUD replacement UI.
 
-Abandoned bases use their own map icon. Plant resources use a stable palette color derived from the resource name, so the same resource keeps the same color after refreshes; available resources use a solid marker, while depleted resources use a faded outlined marker. Separate filters control abandoned bases and plant resources.
+Abandoned bases use their own map icon. Available plant resources use a stable palette color derived from the resource name, so the same resource keeps the same color after refreshes. The viewer remains backward-compatible with older payloads that include depleted resources and renders those as faded outlined markers. Separate filters control abandoned bases and plant resources.
 
 The viewer can reduce the rupture timeline to a compact bar; hover it or focus it with the keyboard to show the current phase, remaining time, legend, and timeline ticks. The filters can hide every game entity and leave only personal markers and zones, and the `Player` control or `P` shortcut centers the map on the first reported player position.
+
+## Plant coverage
+
+StarRupture materializes PCG/Mass gatherables only in World Partition areas that have been loaded. The plugin therefore keeps a per-world catalog of available plants observed while areas stream in, so already observed plants remain on the map after the player moves away. Gathered locations are removed from the catalog using both live actor state and the game's replicated depleted-location data; depleted-location matching tolerates small coordinate differences so harvested plants disappear reliably.
+
+Discovered plants are also persisted to disk per save session (under `Plugins/MapExtension_Plugin/poi_cache/`), so accumulated coverage survives game restarts. Restored entries are marked with source `persisted_catalog` and are re-validated against live actor state and the game's depleted-location data on every scan.
+
+The current SDK does not expose an intact-plant registry for cells that have never been generated. Normal operation therefore remains passive and coverage grows as players visit or otherwise load areas.
+
+In solo/local play, the in-game ModLoader panel also provides **Scan the entire map**. This explicit manual operation moves a temporary invisible World Partition/Mass viewer across an overlapping grid covering the calibrated map bounds. It loads one zone at a time, waits for streaming and PCG generation, captures and persists the plants, then unloads the zone as it advances. If Mass still ignores the non-player viewer, the scanner automatically repeats the grid by temporarily moving the local player, then restores the exact original position, rotation, collision, input, and movement mode. The panel reports progress, live plant actors, and timed-out zones and allows cancellation; already completed zones remain saved. This operation can take several minutes and cause significant temporary slowdowns. It is unavailable in dedicated-server sessions.
+
+Only these reward classes are published as plant POIs: Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart.
 
 ## `/cargo` POI data
 
@@ -48,8 +62,8 @@ The viewer can reduce the rupture timeline to a compact bar; hover it or focus i
   "pois": [
     {
       "kind": "plant_resource",
-      "label": "Example Plant",
-      "resource": "Example Resource",
+      "label": "Hydrobulb",
+      "resource": "Hydrobulb",
       "depleted": false,
       "source": "actor_scan.gatherable",
       "unique_key": "example-plant-key",
@@ -62,13 +76,13 @@ The viewer can reduce the rupture timeline to a compact bar; hover it or focus i
 
 - `kind` is `abandoned_base` or `plant_resource`.
 - `label` is the display label; `resource` is the detected resource name and can be empty for an abandoned base.
-- `depleted` is the resource state: `false` means available, while `true` means depleted or permanently gathered. There is no separate `available` field.
+- `depleted` remains in the backward-compatible payload shape. The current catalog publishes only available plants, so current plant entries use `false`; depleted or permanently gathered plants are omitted.
 - `source` identifies the capture path, `unique_key` identifies the POI to the viewer, `world` contains Unreal `x`/`y`/`z` coordinates, and `map` contains projected `x`/`y` coordinates.
 - `counts.pois` is the total POI count; `counts.abandoned_bases` and `counts.plant_resources` contain the per-kind totals.
 
 ## Dedicated-server sync compatibility
 
-Dedicated-server snapshots use sync protocol v3, which carries POIs in pages of up to 64 entries per request, flags each client's own player marker, and validates snapshot IDs, generations, item counts, chunk counts, and page layout before publishing a remote snapshot. Protocol versions must match exactly: a v3 client or server ignores packets from a different protocol version rather than attempting a downgrade.
+Dedicated-server snapshots use sync protocol v4, which carries POIs in pages of up to 64 entries per request, associates every page with a stable content revision, flags each client's own player marker, and validates snapshot IDs, generations, revisions, item counts, chunk counts, totals, and page layout before publishing a remote snapshot. Pages from different POI revisions are never merged. Protocol versions must match exactly: a v4 client or server ignores packets from a different protocol version rather than attempting a downgrade.
 
 **Update the client and dedicated-server builds together.** The modloader auto-updater replaces only the client DLL; the dedicated-server DLL must be replaced manually during the same update. Do not leave the two sides on different releases.
 
@@ -88,7 +102,7 @@ Copy the `Plugins/` content into `StarRupture/Binaries/Win64/Plugins/`, then kee
 Two limits are worth knowing:
 
 - The auto-updater replaces the DLL only. `MapExtensionViewer.html` and `map-tiles/` are never touched, since they live outside the game folder. The viewer detects incompatible payload contracts: when the plugin reports a contract newer than the one the local viewer was built with, a dialog offers a direct download of the matching `MapExtension_Plugin-<tag>-viewer.zip` asset, along with links to the GitHub release and the mod page. Backward-compatible viewer improvements may not trigger that dialog, so install the matching viewer archive manually to receive new UI features. Replace `MapExtensionViewer.html` and `map-tiles/` together, then reload the page.
-- The server build is not covered by the sidecar. Sync protocol v3 requires matching client and server builds, so update both DLLs together and replace the dedicated-server DLL by hand.
+- The server build is not covered by the sidecar. Sync protocol v4 requires matching client and server builds, so update both DLLs together and replace the dedicated-server DLL by hand.
 
 Automatic updates can be disabled modloader-wide with `[AutoUpdate] Enabled=0` in `modloader.ini`.
 

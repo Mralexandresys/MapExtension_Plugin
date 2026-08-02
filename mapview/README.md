@@ -65,19 +65,21 @@ Le tableau optionnel `pois` de `GET /cargo` alimente deux familles de points
 d'interet :
 
 - les bases abandonnees utilisent une icone de batiment fissure distincte ;
-- les ressources vegetales utilisent des points dont la couleur HSL est derivee d'un
-  hachage stable du nom de la ressource, puis du label ou de la cle unique, ce qui
-  limite fortement les collisions de teinte entre ressources differentes ;
-- une ressource `available` utilise un remplissage plein ; une ressource avec
-  `depleted: true` est attenuee, avec un anneau pointille et un centre presque vide ;
+- le plugin courant publie les plantes disponibles Hydrobulb, Polifruit, Oxallop,
+  Purplant, Serpent Root, Prickler, Prism Herb et Sulheart ; leur couleur HSL est
+  derivee d'un hachage stable du nom de la ressource, puis du label ou de la cle
+  unique, ce qui limite fortement les collisions de teinte entre ressources differentes ;
+- une ressource `available` utilise un remplissage plein. Pour rester compatible avec
+  les anciens payloads, une ressource recue avec `depleted: true` reste attenuee,
+  avec un anneau pointille et un centre presque vide ;
 - le survol ou le focus clavier affiche le type, le nom, la ressource et l'etat. Un POI
   peut etre selectionne a la souris ou avec `Entree`/`Espace`.
 
 Le volet `Filtres` propose des boutons de visibilite separes pour les bases abandonnees
 et les ressources vegetales. Le mode `Reseau` peut afficher les deux familles, le mode
 `Ressources` affiche uniquement les ressources vegetales, et les modes `Teleporteurs`
-et `Joueurs` masquent les POI. `available` et `depleted` sont des etats visuels, pas des
-filtres separes.
+et `Joueurs` masquent les POI. `available` et `depleted` restent des etats visuels,
+pas des filtres separes ; le plugin courant omet les plantes epuisees.
 
 L'option `Afficher uniquement mes marqueurs et zones` masque toutes les donnees issues
 du plugin (cargo, connexions, teleporteurs, joueurs et POI) pour ne conserver que les

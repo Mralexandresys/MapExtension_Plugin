@@ -8,6 +8,8 @@
 #endif
 
 #if defined(MODLOADER_CLIENT_BUILD)
+#include "map_state_ui.h"
+#include "map_state_full_scan.h"
 #include "client/map_sync_client.h"
 #endif
 
@@ -40,6 +42,7 @@ namespace MapStateRuntime
 		{
 			return false;
 		}
+		MapStateUI::Register(hooks);
 #endif
 
 		if (hooks->Engine && hooks->Engine->RegisterOnInit)
@@ -126,6 +129,9 @@ namespace MapStateRuntime
 
 	void UnregisterCallbacks()
 	{
+#if defined(MODLOADER_CLIENT_BUILD)
+		MapStateFullScan::Shutdown(nullptr);
+#endif
 		// Remove the rupture-cycle delegate splices first: they live in the
 		// engine's InvocationList and must be gone before the DLL is unloaded.
 		Detail::ShutdownRuptureCycleDelegateHooks();
@@ -174,6 +180,7 @@ namespace MapStateRuntime
 		// Shutdown network sync modules
 #if defined(MODLOADER_CLIENT_BUILD)
 		MapExtensionClient::Sync::Shutdown();
+		MapStateUI::Unregister(hooks);
 #endif
 
 #if defined(MODLOADER_SERVER_BUILD)
