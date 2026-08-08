@@ -22,6 +22,11 @@ on:
         required: false
         default: ""
         type: string
+      changelog:
+        description: Optional changelog to publish on Nexus Mods
+        required: false
+        default: ""
+        type: string
 
 jobs:
   release:
@@ -290,6 +295,71 @@ jobs:
           "CLIENT_DLL_PATH=$clientDllAssetPath" >> $env:GITHUB_OUTPUT
           "CLIENT_MANIFEST_PATH=$manifestPath" >> $env:GITHUB_OUTPUT
 
+      - name: Validate Nexus Mods configuration
+        if: ${{ inputs.draft == false }}
+        shell: pwsh
+        env:
+          NEXUSMODS_API_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
+          NEXUSMODS_CLIENT_FILE_ID: ${{ secrets.NEXUSMODS_CLIENT_FILE_ID }}
+          NEXUSMODS_SERVER_FILE_ID: ${{ secrets.NEXUSMODS_SERVER_FILE_ID }}
+          NEXUSMODS_MOD_ID: ${{ vars.NEXUSMODS_MOD_ID }}
+          NEXUSMODS_CHANGELOG: ${{ inputs.changelog }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NEXUSMODS_API_KEY)) {
+            throw 'Missing the NEXUSMODS_API_KEY GitHub Actions secret.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:NEXUSMODS_CLIENT_FILE_ID)) {
+            throw 'Missing the NEXUSMODS_CLIENT_FILE_ID GitHub Actions variable.'
+          }
+          if (-not [string]::IsNullOrWhiteSpace($env:NEXUSMODS_CHANGELOG) -and
+              [string]::IsNullOrWhiteSpace($env:NEXUSMODS_MOD_ID)) {
+            throw 'NEXUSMODS_MOD_ID is required when the changelog input is set.'
+          }
+
+          Write-Host 'Nexus Mods client upload is enabled.'
+          if (-not [string]::IsNullOrWhiteSpace($env:NEXUSMODS_SERVER_FILE_ID)) {
+            Write-Host 'Nexus Mods server upload is enabled.'
+          } else {
+            Write-Host 'Nexus Mods server upload is disabled (NEXUSMODS_SERVER_FILE_ID is not set).'
+          }
+
+      - name: Upload client package to Nexus Mods
+        id: nexus_client
+        if: ${{ inputs.draft == false }}
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.10
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_id: ${{ secrets.NEXUSMODS_CLIENT_FILE_ID }}
+          filename: ${{ steps.package.outputs.CLIENT_ZIP_PATH }}
+          version: ${{ steps.meta.outputs.PLUGIN_TAG }}
+          display_name: MapExtension_Plugin ${{ steps.meta.outputs.PLUGIN_TAG }} - Client
+          description: Client package for MapExtension_Plugin ${{ steps.meta.outputs.PLUGIN_TAG }}
+          category: main
+          archive_existing_version: true
+          primary_mod_manager_download: true
+          allow_mod_manager_download: true
+          show_requirements_pop_up:  true
+          update_mod_version: true
+          mod_id: ${{ vars.NEXUSMODS_MOD_ID }}
+          changelog: ${{ inputs.changelog }}
+
+      - name: Upload server package to Nexus Mods
+        id: nexus_server
+        if: ${{ inputs.draft == false }}
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.10
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_id: ${{ secrets.NEXUSMODS_SERVER_FILE_ID }}
+          filename: ${{ steps.package.outputs.SERVER_ZIP_PATH }}
+          version: ${{ steps.meta.outputs.PLUGIN_TAG }}
+          display_name: MapExtension_Plugin ${{ steps.meta.outputs.PLUGIN_TAG }} - Server
+          description: Dedicated server package for MapExtension_Plugin ${{ steps.meta.outputs.PLUGIN_TAG }}
+          category: optional
+          archive_existing_version: true
+          primary_mod_manager_download: false
+          allow_mod_manager_download: false
+          show_requirements_pop_up:  true
+
       - name: Create GitHub release
         if: ${{ success() }}
         shell: pwsh
@@ -339,3 +409,9 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Viewer zip: `{0}`' -f '${{ steps.package.outputs.VIEWER_ZIP_PATH }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Client DLL auto-update asset: `{0}`' -f '${{ steps.package.outputs.CLIENT_DLL_PATH }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Client manifest asset: `{0}`' -f '${{ steps.package.outputs.CLIENT_MANIFEST_PATH }}')
+          if ('${{ inputs.draft }}' -eq 'false') {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Nexus client version ID: `{0}`' -f '${{ steps.nexus_client.outputs.version_id }}')
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Nexus server version ID: `{0}`' -f '${{ steps.nexus_server.outputs.version_id }}')
+          } else {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value '- Nexus Mods upload: skipped because this GitHub release is a draft.'
+          }
