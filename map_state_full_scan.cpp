@@ -31,21 +31,23 @@ namespace
 	using MapStateFullScan::Mode;
 	using MapStateFullScan::Status;
 
-	// With a 25,000-unit circular source, a 35,000-unit square-grid step
-	// overlaps at the corners (35,000 / sqrt(2) < 25,000).
+	// Keep player/Mass observation centers close enough that their high-detail
+	// ranges overlap as well as the 25,000-unit World Partition source. Extend
+	// one full step beyond the calibrated map bounds so edge cells are covered.
 	constexpr float kStreamingRadius = 25000.0f;
-	constexpr float kGridStep = 35000.0f;
-	// Give World Partition enough game-thread ticks to register the source's
-	// new position before trusting IsStreamingCompleted(). Otherwise it may
-	// report the previous position as complete before new work is queued.
-	constexpr float kMinimumStreamingWaitSeconds = 1.0f;
-	constexpr float kStreamingTimeoutSeconds = 45.0f;
-	constexpr float kMinimumPcgWaitSeconds = 4.0f;
-	constexpr float kPcgObservationQuietSeconds = 3.0f;
-	constexpr float kPcgObservationTimeoutSeconds = 20.0f;
-	constexpr float kCaptureTimeoutSeconds = 15.0f;
-	constexpr float kRestorationMinimumWaitSeconds = 1.0f;
-	constexpr float kRestorationTimeoutSeconds = 45.0f;
+	constexpr float kGridStep = 20000.0f;
+	constexpr float kGridBoundaryPadding = 20000.0f;
+	// Give World Partition and PCG several game-thread ticks after each move.
+	// IsStreamingCompleted() can briefly report the previous source position.
+	constexpr float kMinimumStreamingWaitSeconds = 2.0f;
+	constexpr float kStreamingTimeoutSeconds = 60.0f;
+	constexpr float kMinimumPcgWaitSeconds = 6.0f;
+	constexpr float kPcgObservationQuietSeconds = 4.0f;
+	constexpr float kPcgObservationTimeoutSeconds = 30.0f;
+	constexpr float kCaptureTimeoutSeconds = 20.0f;
+	constexpr float kRestorationMinimumWaitSeconds = 3.0f;
+	constexpr float kRestorationTimeoutSeconds = 60.0f;
+	constexpr size_t kWaveTimerStopWavesOffset = 0x83;
 
 	struct RuntimeState
 	{
@@ -75,6 +77,12 @@ namespace
 		SDK::UCrSettingsShared* SharedSettings = nullptr;
 		bool OriginalAutoSaveEnabled = true;
 		bool AutoSaveChanged = false;
+		SDK::UCrEnviroWaveSubsystem* WaveSubsystem = nullptr;
+		SDK::UCrEnviroWaveTimerSubsystem* WaveTimerSubsystem = nullptr;
+		bool ActiveWavePausedForScan = false;
+		bool WaveTimerDisabledForScan = false;
+		float OriginalWaveTimerRemainingSeconds = 0.0f;
+		int OriginalWaveTimerPhase = 0;
 		float PhaseElapsedSeconds = 0.0f;
 		float ObservationQuietSeconds = 0.0f;
 		uint64_t ZoneObservationBaselineRevision = 0;
@@ -145,10 +153,10 @@ namespace
 	{
 		using namespace MapStateRuntime::Detail;
 
-		const float minX = std::min(kMapSrcX1, kMapSrcX2);
-		const float maxX = std::max(kMapSrcX1, kMapSrcX2);
-		const float minY = std::min(kMapSrcY1, kMapSrcY2);
-		const float maxY = std::max(kMapSrcY1, kMapSrcY2);
+		const float minX = std::min(kMapSrcX1, kMapSrcX2) - kGridBoundaryPadding;
+		const float maxX = std::max(kMapSrcX1, kMapSrcX2) + kGridBoundaryPadding;
+		const float minY = std::min(kMapSrcY1, kMapSrcY2) - kGridBoundaryPadding;
+		const float maxY = std::max(kMapSrcY1, kMapSrcY2) + kGridBoundaryPadding;
 		const int columns = std::max(2, static_cast<int>(std::ceil((maxX - minX) / kGridStep)) + 1);
 		const int rows = std::max(2, static_cast<int>(std::ceil((maxY - minY) / kGridStep)) + 1);
 
@@ -169,7 +177,134 @@ namespace
 				grid.push_back(location);
 			}
 		}
+		LOG_INFO(
+			"Full-map plant scan grid bounds x=[%.0f,%.0f] y=[%.0f,%.0f] "
+			"step<=%.0f zones=%zu",
+			static_cast<double>(minX),
+			static_cast<double>(maxX),
+			static_cast<double>(minY),
+			static_cast<double>(maxY),
+			static_cast<double>(kGridStep),
+			grid.size());
 		return grid;
+	}
+
+	template <typename TSubsystem>
+	TSubsystem* ResolveWorldSubsystem(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return nullptr;
+		}
+		SDK::USubsystem* subsystem = SDK::USubsystemBlueprintLibrary::GetWorldSubsystem(
+			world,
+			TSubsystem::StaticClass());
+		if (!subsystem || !subsystem->IsA(TSubsystem::StaticClass()))
+		{
+			return nullptr;
+		}
+		return static_cast<TSubsystem*>(subsystem);
+	}
+
+	bool IsWaveTimerStopped(const SDK::UCrEnviroWaveTimerSubsystem* subsystem)
+	{
+		static_assert(sizeof(SDK::UCrEnviroWaveTimerSubsystem) > kWaveTimerStopWavesOffset);
+		if (!subsystem)
+		{
+			return true;
+		}
+		// bStopWaves is not reflected in the generated SDK, but its offset is
+		// validated against the current class size and documented by the game dump.
+		const auto* bytes = reinterpret_cast<const uint8_t*>(subsystem);
+		return bytes[kWaveTimerStopWavesOffset] != 0;
+	}
+
+	bool LockRuptureCycle(SDK::UWorld* world)
+	{
+		g_runtime.WaveSubsystem = ResolveWorldSubsystem<SDK::UCrEnviroWaveSubsystem>(world);
+		if (g_runtime.WaveSubsystem && g_runtime.WaveSubsystem->IsWaveInProgress())
+		{
+			if (g_runtime.WaveSubsystem->IsWavePaused())
+			{
+				LOG_INFO("Full-map plant scan found an already paused rupture wave");
+				return true;
+			}
+			g_runtime.WaveSubsystem->PauseCurrentWave();
+			if (!g_runtime.WaveSubsystem->IsWavePaused())
+			{
+				LOG_WARN("Full-map plant scan could not pause the active rupture wave");
+				return false;
+			}
+			g_runtime.ActiveWavePausedForScan = true;
+			LOG_INFO("Full-map plant scan paused the active rupture wave");
+			return true;
+		}
+
+		g_runtime.WaveTimerSubsystem =
+			ResolveWorldSubsystem<SDK::UCrEnviroWaveTimerSubsystem>(world);
+		if (!g_runtime.WaveTimerSubsystem)
+		{
+			LOG_WARN("Full-map plant scan could not resolve the rupture timer subsystem");
+			return false;
+		}
+		if (IsWaveTimerStopped(g_runtime.WaveTimerSubsystem))
+		{
+			LOG_INFO("Full-map plant scan found an already disabled rupture timer");
+			return true;
+		}
+
+		if (SDK::ACrWaveTimerActor* timerActor = g_runtime.WaveTimerSubsystem->TimerActor)
+		{
+			const double nowSeconds = SDK::UGameplayStatics::GetTimeSeconds(world);
+			g_runtime.OriginalWaveTimerRemainingSeconds = static_cast<float>(
+				std::max(0.0, static_cast<double>(timerActor->NextTime) - nowSeconds));
+			g_runtime.OriginalWaveTimerPhase = timerActor->NextPhase;
+		}
+		g_runtime.WaveTimerSubsystem->WavesActive(false);
+		g_runtime.WaveTimerDisabledForScan = true;
+		if (!IsWaveTimerStopped(g_runtime.WaveTimerSubsystem))
+		{
+			LOG_WARN("Full-map plant scan could not disable the rupture timer");
+			return false;
+		}
+		LOG_INFO(
+			"Full-map plant scan locked the rupture timer with %.1f second(s) remaining",
+			static_cast<double>(g_runtime.OriginalWaveTimerRemainingSeconds));
+		return true;
+	}
+
+	void RestoreRuptureCycle()
+	{
+		if (g_runtime.ActiveWavePausedForScan && g_runtime.WaveSubsystem)
+		{
+			if (g_runtime.WaveSubsystem->IsWavePaused())
+			{
+				g_runtime.WaveSubsystem->ResumeCurrentWave();
+			}
+			LOG_INFO("Full-map plant scan resumed the rupture wave");
+		}
+		g_runtime.ActiveWavePausedForScan = false;
+		g_runtime.WaveSubsystem = nullptr;
+
+		if (g_runtime.WaveTimerDisabledForScan && g_runtime.WaveTimerSubsystem)
+		{
+			g_runtime.WaveTimerSubsystem->WavesActive(true);
+			SDK::ACrWaveTimerActor* timerActor = g_runtime.WaveTimerSubsystem->TimerActor;
+			if (timerActor && !timerActor->IsActorBeingDestroyed())
+			{
+				const double nowSeconds = SDK::UGameplayStatics::GetTimeSeconds(g_runtime.World);
+				timerActor->NextPhase = g_runtime.OriginalWaveTimerPhase;
+				timerActor->NextTime = static_cast<float>(
+					nowSeconds + g_runtime.OriginalWaveTimerRemainingSeconds);
+				timerActor->OnRep_Phase();
+				timerActor->OnRep_Time();
+			}
+			LOG_INFO(
+				"Full-map plant scan restored the rupture timer with %.1f second(s) remaining",
+				static_cast<double>(g_runtime.OriginalWaveTimerRemainingSeconds));
+		}
+		g_runtime.WaveTimerDisabledForScan = false;
+		g_runtime.WaveTimerSubsystem = nullptr;
 	}
 
 	void RestorePlayer()
@@ -229,6 +364,7 @@ namespace
 
 	void DestroySource()
 	{
+		RestoreRuptureCycle();
 		RestorePlayer();
 		RestoreMassLodSettings();
 		if (g_runtime.SourceComponent)
@@ -463,6 +599,11 @@ namespace
 		g_runtime.StartingObservationEventCount = poiInfo.ObservationEventCount;
 		g_runtime.Grid = BuildScanGrid(0.0f);
 		g_runtime.CurrentMode = Mode::PlayerFallback;
+		if (!LockRuptureCycle(world))
+		{
+			Finish(Phase::Failed, "Impossible de verrouiller le timer de rupture");
+			return;
+		}
 		EnableMassLodSource(world);
 		g_runtime.CurrentPhase = Phase::CreatingSource;
 		g_runtime.Message = "Creation de la source World Partition";

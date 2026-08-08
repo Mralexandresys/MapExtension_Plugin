@@ -171,9 +171,10 @@ namespace
 
 		imgui->SeparatorText("Scan complet de la carte");
 		imgui->TextWrapped(
-			"Attention : cette operation charge et genere progressivement les "
-			"cellules World Partition. Elle peut durer plusieurs minutes et "
-			"provoquer de forts ralentissements. Disponible uniquement en solo/local.");
+			"Attention : cette operation charge et genere progressivement une grille "
+			"World Partition dense. Elle peut durer plusieurs dizaines de minutes et "
+			"provoquer de forts ralentissements. Le cycle de rupture est suspendu puis "
+			"restaure automatiquement. Disponible uniquement en solo/local.");
 		imgui->Spacing();
 
 		{
@@ -185,7 +186,7 @@ namespace
 				FullScanPhaseLabel(fullScan.CurrentPhase),
 				fullScan.CurrentMode == MapStateFullScan::Mode::MassSource
 					? "Source Mass"
-					: "Fallback joueur");
+					: "Parcours joueur");
 			imgui->Text(phaseBuf);
 		}
 
