@@ -71,14 +71,10 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         ruptureHasLiveData,
     } = options;
 
+    // Bare value: this feeds a stat card that already carries its own "last
+    // update" label, so the prefixed variant would repeat it.
     const liveAgeValue = computed(() =>
-        formatRelativeAge(
-            lastUpdatedAt.value,
-            now.value,
-            ui.value.locale,
-            "",
-            ui.value.status.lastUpdatedMissing,
-        ),
+        formatRelativeAge(lastUpdatedAt.value, now.value, ui.value.locale, "", "--"),
     );
 
     const isCargoViewMode = computed(

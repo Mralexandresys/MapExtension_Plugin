@@ -882,10 +882,16 @@ defineExpose({
       aria-hidden="true"
     >
       <g :transform="transform">
+        <!-- preserveAspectRatio="none" is required: the projection makes each
+             tile slot non-square (ratio ~1.10) while the tile images are square,
+             so the default "xMidYMid meet" shrank every tile to fit its slot
+             height and left a black gap at each seam. x/y/width/height already
+             place each tile exactly, so filling the slot is the correct mapping. -->
         <image
           v-for="tile in visibleBaseMapTiles"
           :key="tile.key"
           class="base-map"
+          preserveAspectRatio="none"
           :href="tile.href"
           :x="tile.x"
           :y="tile.y"
@@ -1246,7 +1252,12 @@ defineExpose({
       <span>{{ ui.map.emptyBody }}</span>
     </div>
 
-    <div v-if="loading" class="map-loading-bar" role="progressbar" aria-label="Chargement…" />
+    <div
+      v-if="loading"
+      class="map-loading-bar"
+      role="progressbar"
+      :aria-label="ui.map.loading"
+    />
 
     <div
       v-if="tooltip.visible"
@@ -1324,21 +1335,28 @@ defineExpose({
     pointer-events: none;
 }
 
+/* The cargo network is the headline feature but used to render as faint cyan
+   scratches over the green terrain. Thicker, more opaque, and outlined with a
+   dark halo so it reads at any zoom. */
 :deep(.connection-line) {
     stroke: var(--line);
-    stroke-width: 1px;
-    stroke-opacity: 0.35;
+    stroke-width: 1.6px;
+    stroke-opacity: 0.62;
     stroke-dasharray: 6 3;
+    filter: drop-shadow(0 0 1.5px rgba(2, 8, 18, 0.95));
 }
 
 :deep(.connection-line.active) {
-    stroke-opacity: 0.85;
-    stroke-width: 1.5px;
+    stroke-opacity: 1;
+    stroke-width: 2.2px;
     stroke-dasharray: none;
-    filter: drop-shadow(0 0 3px var(--line));
+    filter: drop-shadow(0 0 4px var(--line));
 }
 
-:deep(.connection-line.muted) { stroke-opacity: 0.08; }
+:deep(.connection-line.muted) {
+    stroke-opacity: 0.1;
+    filter: none;
+}
 
 :deep(.map-marker) {
     cursor: pointer;
@@ -1630,11 +1648,18 @@ defineExpose({
     pointer-events: none;
 }
 
+/* Centred rather than bottom-left: that corner is occupied by the filters
+   sidebar and the map toolbar, which clipped this message exactly when it
+   mattered most. */
 .map-empty-state {
-    inset: auto 20px 20px 20px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     display: grid;
     gap: 6px;
-    max-width: 420px;
+    width: min(420px, calc(100% - 40px));
+    text-align: center;
+    justify-items: center;
 }
 
 .map-empty-state strong {

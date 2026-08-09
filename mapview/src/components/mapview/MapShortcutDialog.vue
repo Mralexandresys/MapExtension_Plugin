@@ -122,6 +122,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* Without the scroll, a viewport shorter than the dialog pushed its top edge
+   off-screen with no way to reach it: the page itself is locked to 100vh. */
 .shortcut-backdrop {
     position: fixed;
     inset: 0;
@@ -129,12 +131,15 @@ onBeforeUnmount(() => {
     display: grid;
     place-items: center;
     padding: 20px;
+    overflow: auto;
     background: rgba(2, 4, 12, 0.82);
     backdrop-filter: blur(6px);
 }
 
 .shortcut-dialog {
     width: min(760px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
     box-sizing: border-box;
     padding: 20px;
     background: var(--panel-strong);

@@ -49,6 +49,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         viewMode,
         entityVisibility,
         ruptureCompact,
+        filtersPanelCollapsed,
         status,
         ui,
         languageOptions,
@@ -77,7 +78,6 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     const controlSettingsOpen = ref(false);
     const rupturePanelCollapsed = ref(false);
     const detailsPanelExpanded = ref(false);
-    const filtersPanelCollapsed = ref(true);
     const shortcutsOpen = ref(false);
 
     const entityToggleOptions = computed<
@@ -125,11 +125,6 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
             description: ui.value.shortcuts.items.filters.description,
         },
         {
-            keys: ["S"],
-            label: ui.value.selection.observabilityTitle,
-            description: ui.value.selection.observabilityHelp,
-        },
-        {
             keys: ["C"],
             label: ui.value.shortcuts.items.center.label,
             description: ui.value.shortcuts.items.center.description,
@@ -167,10 +162,13 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         return cargo.value ? "stale" : "offline";
     });
 
+    // Short form on purpose: the freshness value is already shown by the header
+    // meta line and by the "last update" stat card. Repeating it here made the
+    // pill read "OK - Derniere mise a jour : 1,8s" next to the title.
     const statusBadgeLabel = computed(() => {
         if (status.loading) return ui.value.status.sync;
-        if (status.online) return ui.value.format.liveAge(liveAgeLabel.value);
-        if (cargo.value) return ui.value.format.cacheAge(liveAgeLabel.value);
+        if (status.online) return ui.value.status.ok;
+        if (cargo.value) return ui.value.status.cache;
         return ui.value.status.offline;
     });
 
@@ -346,6 +344,10 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
             return;
         }
 
+        // Letter shortcuts used to keep firing behind an open modal, refreshing
+        // or opening panels the user could not see.
+        if (shortcutsOpen.value || viewerUpdateOpen.value) return;
+
         switch (event.key) {
             case "0":
                 event.preventDefault();
@@ -374,11 +376,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
                 return;
             case "f":
                 event.preventDefault();
-                filtersPanelCollapsed.value = false;
-                return;
-            case "s":
-                event.preventDefault();
-                openPanel();
+                // Toggle, to match the FILTERS button in the map toolbar.
+                toggleFiltersPanel();
                 return;
             case "c":
                 event.preventDefault();

@@ -1,5 +1,6 @@
-import { computed, ref } from "vue";
+import { computed, ref, type ComputedRef } from "vue";
 
+import type { Messages } from "../lang";
 import type {
     Point2D,
     Rect2D,
@@ -74,7 +75,7 @@ function load(): { markers: UserMarker[]; zones: UserZone[] } {
     }
 }
 
-export function useUserAnnotations() {
+export function useUserAnnotations(ui: ComputedRef<Messages>) {
     const stored = load();
     const markers = ref<UserMarker[]>(stored.markers);
     const zones = ref<UserZone[]>(stored.zones);
@@ -173,7 +174,7 @@ export function useUserAnnotations() {
         const n = markers.value.length + 1;
         const marker: UserMarker = {
             id,
-            label: `Marker ${n}`,
+            label: ui.value.notes.markerDefaultLabel(n),
             description: "",
             color: DEFAULT_MARKER_COLOR,
             map: { x: point.x, y: point.y },
@@ -191,7 +192,7 @@ export function useUserAnnotations() {
         const n = zones.value.length + 1;
         const zone: UserZone = {
             id,
-            label: `Zone ${n}`,
+            label: ui.value.notes.zoneDefaultLabel(n),
             description: "",
             color: DEFAULT_ZONE_COLOR,
             locked: false,
@@ -291,8 +292,15 @@ export function useUserAnnotations() {
         const a = document.createElement("a");
         a.href = url;
         a.download = `starrupture-annotations-${Date.now()}.json`;
+        // Firefox ignores clicks on a detached anchor, and revoking the URL in
+        // the same tick can cancel the download before it starts.
+        a.style.display = "none";
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 0);
     }
 
     async function importAnnotations(file: File): Promise<void> {
@@ -312,9 +320,7 @@ export function useUserAnnotations() {
             }
             const incoming = parsed as UserAnnotationExport;
             if (hasAnnotations.value) {
-                const ok = window.confirm(
-                    "Importing will replace all current annotations. Continue?",
-                );
+                const ok = window.confirm(ui.value.notes.importReplaceConfirm);
                 if (!ok) return;
             }
             markers.value = incoming.markers;

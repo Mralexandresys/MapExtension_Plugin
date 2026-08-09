@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 
 import droneProhibitedSvg from "../../assets/drone-prohibited-1-svgrepo-com.svg?raw";
 import type { MapRupturePanelModel } from "../../lib/types";
@@ -19,6 +19,19 @@ const emit = defineEmits<{
 
 const compactHovered = ref(false);
 const compactFocused = ref(false);
+
+// The tick scale used to reserve a fixed 86px whatever the graduations needed.
+// Derive it from the deepest stack level actually rendered instead.
+const tickStackLevels = computed(() =>
+    props.panel.timelineTicks.reduce(
+        (deepest, tick) => Math.max(deepest, tick.stackLevel),
+        0,
+    ),
+);
+
+const tickScaleStyle = computed(() => ({
+    "--rupture-tick-levels": String(tickStackLevels.value),
+}));
 
 function resetCompactInteractionState() {
     compactHovered.value = false;
@@ -68,7 +81,10 @@ watch(
             @focusout="handleCompactFocusOut"
         >
             <div class="compact-track-row">
-                <div class="rupture-track rupture-track-compact">
+                <div
+                    v-if="panel.hasLiveData"
+                    class="rupture-track rupture-track-compact"
+                >
                     <div
                         v-for="phase in panel.phases"
                         :key="phase.key"
@@ -84,6 +100,9 @@ watch(
                         <span>{{ panel.markerLabel }}</span>
                     </div>
                 </div>
+                <p v-else class="rupture-compact-nodata">
+                    {{ panel.ui.rupture.noData }}
+                </p>
                 <div class="compact-actions">
                     <button
                         class="compact-action-button"
@@ -107,7 +126,7 @@ watch(
             </div>
 
             <div
-                v-if="compactHovered || compactFocused"
+                v-if="(compactHovered || compactFocused) && panel.hasLiveData"
                 class="compact-hover-details"
             >
                 <div class="rupture-focus-inline">
@@ -128,7 +147,7 @@ watch(
                         }}</strong>
                     </span>
                 </div>
-                <div class="rupture-track-scale">
+                <div class="rupture-track-scale" :style="tickScaleStyle">
                     <span
                         v-for="tick in panel.timelineTicks"
                         :key="tick.key"
@@ -168,12 +187,6 @@ watch(
                         <strong>{{ phase.label }}</strong>
                     </span>
                 </div>
-                <div
-                    v-if="!panel.hasLiveData"
-                    class="empty-state compact-empty rupture-empty-state"
-                >
-                    {{ panel.ui.rupture.noData }}
-                </div>
             </div>
         </section>
         <section
@@ -209,7 +222,7 @@ watch(
             </div>
 
             <div class="drawer-body timeline-body">
-                <section class="rupture-panel">
+                <section v-if="panel.hasLiveData" class="rupture-panel">
                     <div class="rupture-focus-inline">
                         <span class="rupture-focus-pill">
                             <span class="rupture-focus-label">{{
@@ -249,7 +262,7 @@ watch(
                                 <span>{{ panel.markerLabel }}</span>
                             </div>
                         </div>
-                        <div class="rupture-track-scale">
+                        <div class="rupture-track-scale" :style="tickScaleStyle">
                             <span
                                 v-for="tick in panel.timelineTicks"
                                 :key="tick.key"
@@ -291,14 +304,14 @@ watch(
                             <strong>{{ phase.label }}</strong>
                         </span>
                     </div>
-
-                    <div
-                        v-if="!panel.hasLiveData"
-                        class="empty-state compact-empty rupture-empty-state"
-                    >
-                        {{ panel.ui.rupture.noData }}
-                    </div>
                 </section>
+
+                <div
+                    v-else
+                    class="empty-state compact-empty rupture-empty-state"
+                >
+                    {{ panel.ui.rupture.noData }}
+                </div>
             </div>
         </section>
     </div>
@@ -453,7 +466,9 @@ watch(
 
 .rupture-track-scale {
     position: relative;
-    height: 86px;
+    /* Ticks sit at top 10 / 32 / 54 depending on their stack level; reserve only
+       the depth actually used instead of a fixed 86px. */
+    height: calc(30px + var(--rupture-tick-levels, 2) * 22px);
     padding-top: 10px;
 }
 
@@ -535,7 +550,7 @@ watch(
 .rupture-track-tick.stack-2::before { height: 62px; }
 
 @media (max-width: 1100px) {
-    .rupture-track-scale { height: 96px; }
+    .rupture-track-scale { height: calc(34px + var(--rupture-tick-levels, 2) * 26px); }
     .rupture-track-tick  { font-size: 0.72rem; }
     .rupture-track-tick.stack-1 { top: 36px; }
     .rupture-track-tick.stack-2 { top: 62px; }
@@ -584,7 +599,10 @@ watch(
 
 .timeline-panel-compact {
     position: relative;
-    padding: 30px 12px 10px;
+    padding: 26px 12px 10px;
+    /* Inherits `width: calc(100% - 32px)` from .timeline-panel, which stretched
+       the compact bar edge to edge. Keep it to a readable strip. */
+    width: min(720px, calc(100% - 32px));
     min-width: 320px;
 }
 
@@ -597,6 +615,16 @@ watch(
 .rupture-track-compact {
     flex: 1;
     height: 14px;
+}
+
+.rupture-compact-nodata {
+    flex: 1;
+    margin: 0;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
 }
 
 .rupture-marker-compact {

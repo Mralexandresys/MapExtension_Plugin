@@ -161,7 +161,7 @@ const {
     deleteSelectedAnnotation,
     exportAnnotations,
     importAnnotations,
-} = useUserAnnotations();
+} = useUserAnnotations(ui);
 
 function handleAnnotationSelect(sel: UserAnnotationSelection): void {
     if (!sel) {
@@ -185,19 +185,13 @@ function clearAllSelection(): void {
     clearStaticSelection();
 }
 
-function centerSelectedAnnotation(): void {
-    const sel = selectedAnnotation.value;
-    if (!sel) return;
-    if (sel.type === "marker") {
-        const m = userMarkers.value.find((x) => x.id === sel.id);
-        if (m) mapCanvasRef.value?.focusPoint(m.map.x, m.map.y);
-    } else {
-        const z = userZones.value.find((x) => x.id === sel.id);
-        if (z) mapCanvasRef.value?.focusPoint(
-            z.rect.x + z.rect.width / 2,
-            z.rect.y + z.rect.height / 2,
-        );
-    }
+// The notes panel and the selection panel share the top-right overlay slot.
+// Entering an annotation mode while an entity was selected mounted both, the
+// notes panel silently covering the selection.
+function handleAnnotationModeToggle(mode: "marker" | "zone"): void {
+    clearSelection();
+    clearStaticSelection();
+    setAnnotationMode(mode);
 }
 
 function handleCreateMarker(point: { x: number; y: number }): void {
@@ -619,12 +613,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
 
             <MapCanvasToolbar
                 :panel="canvasToolbarPanel"
-                @reset="
-                    () => {
-                        clearFilters();
-                        resetMapView();
-                    }
-                "
+                @reset="resetMapView"
                 @center="centerCurrentSelection"
                 @center-player="centerOnPlayer"
                 @toggle-focus="toggleFocusMode"
@@ -640,18 +629,19 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
             <MapNotesPanel
                 v-if="notesPanel.selectedAnnotation || annotationMode !== 'idle' || notesPanel.importError"
                 :panel="notesPanel"
-                @toggle-mode="setAnnotationMode"
+                @toggle-mode="handleAnnotationModeToggle"
                 @select-annotation="handleAnnotationSelect"
                 @update:draft="handleDraftUpdate"
                 @clear-selection="clearAnnotationSelection"
                 @delete-selected="deleteSelectedAnnotation"
-                @center-selected="startSelectedAnnotationEdit"
+                @edit-selected="startSelectedAnnotationEdit"
                 @toggle-zone-lock="toggleSelectedZoneLock"
             />
 
             <MapAnnotationFab
                 :annotation-mode="annotationMode"
-                @toggle-mode="setAnnotationMode"
+                :ui="ui"
+                @toggle-mode="handleAnnotationModeToggle"
             />
 
             <MapSelectionPanel

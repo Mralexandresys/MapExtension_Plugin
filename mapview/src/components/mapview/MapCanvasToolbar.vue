@@ -16,9 +16,11 @@ const emit = defineEmits<{
 
 <template>
     <div class="overlay-layer overlay-bottom-center">
-        <section class="floating-panel map-toolbar" aria-label="Map actions">
+        <section class="floating-panel map-toolbar" :aria-label="panel.ui.map.actionsLabel">
+            <!-- Resets the map view only. Clearing filters stays in the filters
+                 panel, where it is contextual: the two used to share a label. -->
             <button class="toolbar-button" type="button" @click="emit('reset')">
-                {{ panel.ui.buttons.reset }}
+                {{ panel.ui.buttons.recenter }}
             </button>
             <button
                 class="toolbar-button"

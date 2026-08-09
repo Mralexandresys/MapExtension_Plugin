@@ -62,6 +62,7 @@ interface PersistedPreferences {
     lang?: Language;
     entityVisibility?: Partial<EntityVisibility>;
     ruptureCompact?: boolean;
+    filtersPanelCollapsed?: boolean;
 }
 
 export function useMapViewDataSource() {
@@ -79,7 +80,14 @@ export function useMapViewDataSource() {
     const lastUpdatedAt = ref(0);
     const now = ref(Date.now());
     const viewMode = ref<ViewMode>("network");
-    const ruptureCompact = ref(false);
+    // Compact by default: the expanded timeline claims ~45% of the viewport
+    // height in a map-first layout. Users can still expand it, and the choice
+    // is persisted.
+    const ruptureCompact = ref(true);
+    // Open on first run: the world catalog (241 POI and ~80k elements) was only
+    // reachable through a 46px vertical rail, so most of the product was
+    // invisible by default. The user's choice is persisted from then on.
+    const filtersPanelCollapsed = ref(false);
 
     const entityVisibility = reactive<EntityVisibility>({
         sender: true,
@@ -154,7 +162,8 @@ export function useMapViewDataSource() {
             showAllLinks.value = saved.showAllLinks ?? true;
             highlightOrphans.value = saved.highlightOrphans ?? false;
             viewMode.value = saved.viewMode || "network";
-            ruptureCompact.value = saved.ruptureCompact ?? false;
+            ruptureCompact.value = saved.ruptureCompact ?? true;
+            filtersPanelCollapsed.value = saved.filtersPanelCollapsed ?? false;
             if (saved.lang && LANGUAGE_OPTIONS.includes(saved.lang as Language)) {
                 lang.value = saved.lang as Language;
             }
@@ -192,6 +201,7 @@ export function useMapViewDataSource() {
                 lang: lang.value,
                 entityVisibility: { ...entityVisibility },
                 ruptureCompact: ruptureCompact.value,
+                filtersPanelCollapsed: filtersPanelCollapsed.value,
             }),
         );
     }
@@ -303,6 +313,7 @@ export function useMapViewDataSource() {
             lang: lang.value,
             entityVisibility: { ...entityVisibility },
             ruptureCompact: ruptureCompact.value,
+            filtersPanelCollapsed: filtersPanelCollapsed.value,
         }),
         savePreferences,
         { deep: true },
@@ -351,6 +362,7 @@ export function useMapViewDataSource() {
         now,
         viewMode,
         ruptureCompact,
+        filtersPanelCollapsed,
         entityVisibility,
         status,
         ui,

@@ -359,5 +359,10 @@ defineExpose({ redraw: schedule });
   width: 100%;
   height: 100%;
   pointer-events: none;
+  /* Pre-generated catalog: tens of thousands of points that otherwise carry the
+     same visual weight as the handful of live plugin entities drawn above. Held
+     back so the live layer reads first; the points stay perfectly legible and
+     hoverable. */
+  opacity: 0.72;
 }
 </style>

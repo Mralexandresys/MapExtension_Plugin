@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useTemplateRef } from "vue";
+import { computed, useTemplateRef } from "vue";
 
 import type { Language } from "../../lang";
 import type { MapControlDockModel } from "../../lib/types";
@@ -28,6 +28,23 @@ const ICON_SCALE_MIN = 0.75;
 const ICON_SCALE_MAX = 2;
 const ICON_SCALE_STEP = 0.25;
 const fileInput = useTemplateRef<HTMLInputElement>("fileInput");
+
+// Announced text derived from the connection tone only. The status pill itself
+// cannot host the live region: its label carries an age that ticks every
+// second, which would make a screen reader talk continuously.
+const statusAnnouncement = computed(() => {
+    const messages = props.panel.ui.status;
+    switch (props.panel.statusTone) {
+        case "loading":
+            return messages.sync;
+        case "online":
+            return messages.ok;
+        case "stale":
+            return messages.cache;
+        default:
+            return messages.offline;
+    }
+});
 
 
 function handleEndpointInput(event: Event): void {
@@ -81,6 +98,9 @@ function handleFileChange(event: Event): void {
                         <span class="status-footer-dot" aria-hidden="true"></span>
                         <span>{{ panel.liveAgeLabel }}</span>
                     </div>
+                    <p class="sr-only" role="status" aria-live="polite">
+                        {{ statusAnnouncement }}
+                    </p>
                 </div>
 
                 <div class="command-header-actions">
@@ -172,6 +192,30 @@ function handleFileChange(event: Event): void {
                         <span>{{ panel.ui.buttons.settings }}</span>
                     </button>
                 </div>
+            </div>
+
+            <!-- The recovery path has to stay visible: this message used to live
+                 only inside the settings popover, which is closed by default. -->
+            <div
+                v-if="panel.statusError"
+                class="command-header-alert"
+                role="alert"
+            >
+                <div class="command-header-alert-copy">
+                    <strong>{{ panel.statusText }}</strong>
+                    <span>{{ panel.statusError }}</span>
+                    <span class="command-header-alert-hint">
+                        {{ panel.ui.status.offlineBannerHelp }}
+                    </span>
+                </div>
+                <button
+                    v-if="!panel.settingsOpen"
+                    class="button primary small"
+                    type="button"
+                    @click="emit('toggle-settings')"
+                >
+                    {{ panel.ui.buttons.configure }}
+                </button>
             </div>
 
             <div v-if="panel.settingsOpen" class="command-settings-popover">
@@ -366,6 +410,39 @@ function handleFileChange(event: Event): void {
     font: inherit;
 }
 
+.command-header-alert {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 14px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(248, 113, 113, 0.45);
+    border-left: 3px solid var(--bad);
+    background: rgba(248, 113, 113, 0.1);
+}
+
+.command-header-alert-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.command-header-alert-copy strong {
+    color: #ffe3e3;
+    font-size: 0.86rem;
+}
+
+.command-header-alert-copy span {
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.command-header-alert-hint {
+    color: var(--dim) !important;
+}
+
 .command-settings-popover {
     position: absolute;
     top: calc(100% + 10px);
@@ -391,7 +468,8 @@ function handleFileChange(event: Event): void {
 
 .command-header h1 {
     margin: 0;
-    font-size: 0.85rem;
+    /* Was 0.85rem, i.e. smaller than every h2 on screen. */
+    font-size: 1.05rem;
     line-height: 1.1;
     white-space: nowrap;
     font-family: var(--font-display);
@@ -429,9 +507,9 @@ function handleFileChange(event: Event): void {
 }
 
 .command-stat span {
-    font-size: 0.62rem;
+    font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     color: var(--muted);
     font-family: var(--font-mono);
 }
@@ -449,13 +527,13 @@ function handleFileChange(event: Event): void {
     border-top: 1px solid var(--border-strong);
     background: rgba(14, 22, 42, 0.96);
     font-family: var(--font-mono);
-    font-size: 0.62rem;
+    font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
 }
 
 .command-stat-label { color: var(--muted); display: block; margin-bottom: 1px; }
-.command-stat-value { color: var(--text); font-weight: 700; display: block; font-size: 0.76rem; }
+.command-stat-value { color: var(--text); font-weight: 700; display: block; font-size: 0.84rem; }
 .command-stat.good .command-stat-value { color: var(--good); }
 .command-stat.warn .command-stat-value { color: var(--warn); }
 .command-stat.bad  .command-stat-value { color: var(--bad); }
@@ -534,18 +612,6 @@ function handleFileChange(event: Event): void {
     background: rgba(34, 211, 238, 0.1);
     border-color: var(--border-strong);
     color: var(--text);
-}
-
-.sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
 }
 
 .settings-trigger.active {

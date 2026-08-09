@@ -52,13 +52,18 @@ function handleSearch(event: Event): void {
 
         <template v-if="model.available">
             <div class="static-filters-toolbar">
-                <input
-                    class="static-search"
-                    type="search"
-                    :value="model.search"
-                    :placeholder="model.ui.staticFilters.searchPlaceholder"
-                    @input="handleSearch"
-                />
+                <label class="static-search-field">
+                    <span class="sr-only">
+                        {{ model.ui.staticFilters.searchLabel }}
+                    </span>
+                    <input
+                        class="static-search"
+                        type="search"
+                        :value="model.search"
+                        :placeholder="model.ui.staticFilters.searchPlaceholder"
+                        @input="handleSearch"
+                    />
+                </label>
                 <div class="static-bulk-actions">
                     <button class="button subtle small" type="button" @click="emit('show-all')">
                         {{ model.ui.staticFilters.showAll }}
@@ -157,9 +162,16 @@ function handleSearch(event: Event): void {
                             class="button subtle small static-expand"
                             type="button"
                             :aria-expanded="isExpanded(category.key)"
+                            :aria-label="`${category.label} - ${
+                                isExpanded(category.key)
+                                    ? model.ui.staticFilters.hideAll
+                                    : model.ui.staticFilters.showAll
+                            }`"
                             @click="toggleExpanded(category.key)"
                         >
-                            {{ isExpanded(category.key) ? "-" : "+" }}
+                            <span aria-hidden="true">
+                                {{ isExpanded(category.key) ? "-" : "+" }}
+                            </span>
                         </button>
                     </div>
 
@@ -230,6 +242,11 @@ function handleSearch(event: Event): void {
     gap: 8px;
 }
 
+.static-search-field {
+    display: block;
+    min-width: 0;
+}
+
 .static-search {
     width: 100%;
     padding: 7px 10px;
@@ -239,6 +256,7 @@ function handleSearch(event: Event): void {
     color: inherit;
     font: inherit;
 }
+
 
 .static-bulk-actions {
     display: grid;

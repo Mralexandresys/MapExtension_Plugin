@@ -1,10 +1,10 @@
 {
-    "generation": 118,
+    "generation": 650,
     "ok": true,
     "rupture_cycle": {
         "available": true,
-        "elapsed_seconds": 1684.554,
-        "observed_at_unix_ms": 1775428420574,
+        "elapsed_seconds": 1536.222,
+        "observed_at_unix_ms": 1786295617865,
         "stage": "None",
         "step": "None",
         "wave": "None"

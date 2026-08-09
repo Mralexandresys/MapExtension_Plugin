@@ -87,7 +87,6 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
 
             <div class="panel-top-row compact filters-sidebar-head">
                 <div>
-                    <span class="panel-kicker">{{ panel.ui.handles.filters }}</span>
                     <h2>{{ panel.ui.handles.filters }}</h2>
                     <p>
                         {{
@@ -100,25 +99,18 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
             </div>
 
             <div class="drawer-body filters-sidebar-body">
-                <div class="panel-section">
+                <!-- Shown only when there is something to show: the empty case is
+                     already stated once by the panel header above. -->
+                <div v-if="panel.activeFilterChips.length" class="panel-section">
                     <div>
                         <h3>{{ panel.ui.filters.activeTitle }}</h3>
-                        <p>
-                            {{
-                                panel.activeFilterChips.length
-                                    ? panel.ui.filters.summaryHelp
-                                    : panel.ui.filters.noneActive
-                            }}
-                        </p>
+                        <p>{{ panel.ui.filters.summaryHelp }}</p>
                     </div>
 
-                    <div class="active-filters" :class="{ empty: panel.activeFilterChips.length === 0 }">
-                        <template v-if="panel.activeFilterChips.length">
-                            <span v-for="chip in panel.activeFilterChips" :key="chip" class="filter-chip">
-                                {{ chip }}
-                            </span>
-                        </template>
-                        <span v-else>{{ panel.ui.filters.noneActive }}</span>
+                    <div class="active-filters">
+                        <span v-for="chip in panel.activeFilterChips" :key="chip" class="filter-chip">
+                            {{ chip }}
+                        </span>
                     </div>
 
                     <div class="floating-actions footer-actions filters-sidebar-actions">
@@ -142,6 +134,7 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
                             :class="{
                                 active: panel.entityVisibility[option.key],
                                 muted: !panel.entityVisibility[option.key],
+                                empty: option.count === 0,
                             }"
                             type="button"
                             :aria-pressed="panel.entityVisibility[option.key]"
@@ -437,6 +430,17 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
 
 .filters-sidebar-chips .chip-button.active .filter-option-count {
     background: rgba(34, 211, 238, 0.18);
+}
+
+/* "Enabled but nothing to show" used to look exactly like "enabled with
+   results", so a filter listing 0 elements read as active content. */
+.filters-sidebar-chips .chip-button.empty .filter-option-label {
+    opacity: 0.5;
+}
+
+.filters-sidebar-chips .chip-button.empty .filter-option-count {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--dim);
 }
 
 .filters-sidebar-toggles {
