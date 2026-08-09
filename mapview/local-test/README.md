@@ -7,7 +7,7 @@ Mock API locale pour `mapview`.
 Depuis `MapExtension_Plugin/mapview` :
 
 ```bash
-npm run mock-api
+pnpm run mock-api
 ```
 
 Le serveur ecoute par defaut sur `http://127.0.0.1:9000`. Utiliser l'endpoint suivant
@@ -66,7 +66,7 @@ fichiers JSON non vides :
 Chaque fichier remplace entierement le payload interne de l'endpoint correspondant ;
 il n'est pas fusionne avec les valeurs par defaut. Un fichier absent ou vide laisse le
 mock utiliser son payload interne. Les fichiers sont relus a chaque requete : apres une
-modification, utiliser le refresh du viewer suffit. Relancer `npm run mock-api` permet
+modification, utiliser le refresh du viewer suffit. Relancer `pnpm run mock-api` permet
 aussi de voir dans le terminal quels overrides sont detectes au demarrage.
 
 Ce mecanisme permet notamment de tester d'autres positions ou ressources, un cycle de

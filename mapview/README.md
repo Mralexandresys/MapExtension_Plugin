@@ -13,11 +13,11 @@ Frontend Vue 3 + Vite de l'interface web locale de `MapExtension_Plugin`.
 ## Commandes
 
 ```bash
-npm install
-npm run dev
-npm run mock-api
-npm run check
-npm run build
+pnpm install
+pnpm run dev
+pnpm run mock-api
+pnpm run check
+pnpm run build
 ```
 
 ## Sortie de build
@@ -162,7 +162,7 @@ les autres raccourcis, `P` est actif en dehors des champs de saisie.
 
 ## Test local des POI et de la retrocompatibilite
 
-Le payload `/cargo` interne de `npm run mock-api` contient une base abandonnee, une
+Le payload `/cargo` interne de `pnpm run mock-api` contient une base abandonnee, une
 ressource `Gold Fruit` disponible, la meme ressource en etat `depleted` et une ressource
 `Plant Fiber` disponible. Il permet de verifier les icones, les deux etats, la stabilite
 de couleur pour un meme nom de ressource, la palette entre ressources et les filtres.
@@ -180,7 +180,7 @@ POI interne.
 
 ## Test local de la pop-up de mise a jour
 
-Le serveur mock (`npm run mock-api`, code dans `local-test/mock_server.py`) sert les
+Le serveur mock (`pnpm run mock-api`, code dans `local-test/mock_server.py`) sert les
 fichiers de fixtures deposes dans `local-test/data/` : `health.json`, `cargo.json` et
 `rupture-cycle.json` (ou `rupture_cycle.json`). Si le fichier existe et n'est pas vide,
 il est renvoye tel quel ; sinon le mock repond avec son payload interne par defaut.
@@ -209,7 +209,7 @@ Pour la declencher, creer `local-test/data/health.json` avec une valeur superieu
 }
 ```
 
-Puis relancer `npm run mock-api` et recharger l'interface.
+Puis relancer `pnpm run mock-api` et recharger l'interface.
 
 Pour rejouer le cas "build local de developpement", retirer `download_url` et
 `release_url` de `viewer_update` : les liens correspondants ne sont plus rendus.

@@ -95,10 +95,18 @@ jobs:
           path: sdk
           submodules: recursive
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+          run_install: false
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: pnpm
+          cache-dependency-path: plugin/mapview/pnpm-lock.yaml
 
       - name: Build plugin DLLs
         shell: pwsh
@@ -178,10 +186,9 @@ jobs:
         shell: pwsh
         working-directory: plugin/mapview
         run: |
-          npm ci
-          npm run check
-          npx vite build
-          Move-Item -Path "dist/index.html" -Destination "dist/MapExtensionViewer.html" -Force
+          pnpm install --frozen-lockfile
+          pnpm run check
+          pnpm run build
 
       - name: Package release assets
         id: package

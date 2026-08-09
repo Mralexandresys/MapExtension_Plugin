@@ -33,7 +33,7 @@ Keep the runtime split along these boundaries. Do not move HTTP or JSON formatti
 
 - Visual Studio 2022 (17.8 or newer) with the Desktop development with C++ workload and the Windows 10 SDK.
 - SDK layout: `StarRupture-Plugin-SDK` with `include/`, `Shared.props`, and `StarRupture SDK/`
-- Node.js 20.19.0 or newer, or Node.js 22.12.0 or newer, and npm for the `mapview` build; run `node --version` before working to ensure you are not on an unsupported runtime.
+- Node.js 20.19.0 or newer, or Node.js 22.12.0 or newer, and pnpm 10.14.0 for the `mapview` build; run `node --version` before working to ensure you are not on an unsupported runtime.
 
 ## Plugin build
 
@@ -108,9 +108,9 @@ To inspect the latest build logs manually:
 From `MapExtension_Plugin/mapview/`:
 
 ```bash
-npm install
-npm run check
-npm run build
+pnpm install
+pnpm run check
+pnpm run build
 ```
 
 The production build entry point is:
@@ -150,7 +150,7 @@ The viewer loads parts lazily by enabled layer. `StaticMapCanvas.vue` renders la
    - `build/Client Release/Plugins/MapExtension_Plugin.dll`
    - `build/Server Release/Plugins/MapExtension_Plugin.dll`
    - Build the client DLL with `./build_client.sh release` and the server DLL with `./build_server.sh release`.
-2. Move to `mapview/`, ensure Node.js 20.19.0+ or 22.12.0+ is active, then run `npm install && npm run check && npm run build`. The bundle lands in `mapview/dist/MapExtensionViewer.html`.
+2. Move to `mapview/`, ensure Node.js 20.19.0+ or 22.12.0+ is active, then run `pnpm install && pnpm run check && pnpm run build`. The bundle lands in `mapview/dist/MapExtensionViewer.html`.
 3. Create a client archive containing:
    - `build/Client Release/Plugins/MapExtension_Plugin.dll`
    - `Plugins/MapExtension_Plugin.json`, the update sidecar whose only field is `manifest_url` (see the GitHub Actions release section below); omit it only if the archive is not meant to receive automatic updates

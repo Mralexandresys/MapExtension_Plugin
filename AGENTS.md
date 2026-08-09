@@ -67,7 +67,7 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
   - `analyse_map/map_v2_catalog.json` — map metadata, data layers, and rupture rules.
 - Run `python3 tools/build_map_data.py` from the repository root. It regenerates the versioned build inputs in `mapview/public/map-data/`: `manifest.js`, `resources-*.js`, `placements-*.js`, and `pois.js`.
 - Coordinates are compacted to world decimetres, with altitudes in metres, then grouped and delta-encoded. Keep projection assumptions synchronized with `map_state_types.h` and `mapview`.
-- After regenerating data, validate/package the viewer with `cd mapview && npm run check && npm run build`.
+- After regenerating data, validate/package the viewer with `cd mapview && pnpm run check && pnpm run build`.
 
 ## Exact commands
 
@@ -78,7 +78,7 @@ Run these from the repository root unless stated otherwise.
 | Docs only | No build required |
 | Client-only C++ | `./build_client.sh debug --summary` or `./build_client.sh release --summary`, then `./summarize_build.sh client` |
 | Shared C++, config, protocol, or server-side C++ | Run a client build as above, then `./build_server.sh release --summary` and `./summarize_build.sh server` |
-| `mapview/` only | `cd mapview && npm run check && npm run build` |
+| `mapview/` only | `cd mapview && pnpm run check && pnpm run build` |
 
 Server validation command: `./build_server.sh release --summary`.
 

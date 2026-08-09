@@ -30,20 +30,20 @@ It is intended to be opened locally as `MapExtensionViewer.html` while the game/
 
 Run these from `mapview/`.
 
-- Install dependencies: `npm install`
-- Start dev server: `npm run dev`
-- Mock local API: `npm run mock-api`
-- Type check: `npm run check`
-- Production build: `npm run build`
+- Install dependencies: `pnpm install`
+- Start dev server: `pnpm run dev`
+- Mock local API: `pnpm run mock-api`
+- Type check: `pnpm run check`
+- Production build: `pnpm run build`
 
-For frontend-only changes, run `npm run check` and `npm run build`. Do not rebuild the C++ plugin for mapview-only changes.
+For frontend-only changes, run `pnpm run check` and `pnpm run build`. Do not rebuild the C++ plugin for mapview-only changes.
 
 ## Static map catalog
 
 - The source `.jsonl`, `.json`, and GeoJSON exports are intentionally local and very large: `../analyse_map/map_v2_resources.jsonl`, `../analyse_map/map_v2_placements.jsonl`, `../analyse_map/map_v2_pois.geojson`, and `../analyse_map/map_v2_catalog.json`. Do not commit, load, or regenerate them unnecessarily.
 - From the repository root, run `python3 tools/build_map_data.py` to regenerate `public/map-data/manifest.js`, `resources-*.js`, `placements-*.js`, and `pois.js`.
 - The viewer loads catalog parts lazily by layer. Keep generated file names, their JSONP wrapper, and the `map-data/` directory layout compatible with the catalog loader.
-- After regeneration, run `npm run check && npm run build` from `mapview/`; the build copies the catalog to `dist/map-data/` beside `MapExtensionViewer.html`.
+- After regeneration, run `pnpm run check && pnpm run build` from `mapview/`; the build copies the catalog to `dist/map-data/` beside `MapExtensionViewer.html`.
 
 ## Project-specific rules
 
