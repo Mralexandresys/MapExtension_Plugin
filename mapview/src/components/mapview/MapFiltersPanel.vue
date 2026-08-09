@@ -3,6 +3,7 @@ import { computed } from "vue";
 
 import teleporterSvg from "../../assets/teleporter.svg?raw";
 import type {
+    ActiveFilterClear,
     EntityToggleKey,
     FilterSectionKey,
     MapFiltersPanelModel,
@@ -31,6 +32,7 @@ const emit = defineEmits<{
     "toggle-collapse": [];
     "toggle-section": [key: FilterSectionKey];
     "clear": [];
+    "clear-chip": [value: ActiveFilterClear];
     "toggle-entity": [key: EntityToggleKey];
     "update:view-mode": [value: ViewMode];
     "update:show-all-links": [value: boolean];
@@ -116,40 +118,50 @@ const catalogSummary = computed(() => {
                 <span class="collapse-arrow left" aria-hidden="true"></span>
             </button>
 
-            <div class="panel-top-row compact filters-sidebar-head">
-                <div>
-                    <h2>{{ panel.ui.handles.filters }}</h2>
-                    <p>
-                        {{
-                            panel.activeFilterChips.length
-                                ? panel.ui.format.activeFilterCount(panel.activeFilterChips.length)
-                                : panel.ui.filters.noneActive
-                        }}
-                    </p>
+            <!-- Kept out of the scrolling body: the active filters used to be
+                 inserted above the current scroll position, which shifted every
+                 section down the moment a filter was toggled. -->
+            <div class="filters-sidebar-top">
+                <div class="panel-top-row compact filters-sidebar-head">
+                    <div>
+                        <h2>{{ panel.ui.handles.filters }}</h2>
+                        <p>
+                            {{
+                                panel.activeFilterChips.length
+                                    ? panel.ui.format.activeFilterCount(panel.activeFilterChips.length)
+                                    : panel.ui.filters.noneActive
+                            }}
+                        </p>
+                    </div>
+                </div>
+
+                <div v-if="panel.activeFilterChips.length" class="filters-active-block">
+                    <div class="active-filters">
+                        <button
+                            v-for="chip in panel.activeFilterChips"
+                            :key="chip.id"
+                            class="filter-chip"
+                            type="button"
+                            :title="panel.ui.filters.removeFilter"
+                            :aria-label="`${chip.label} - ${panel.ui.filters.removeFilter}`"
+                            @click="emit('clear-chip', chip.clear)"
+                        >
+                            <span class="filter-chip-label">{{ chip.label }}</span>
+                            <span class="filter-chip-remove" aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+
+                    <button
+                        class="button subtle small filters-reset-button"
+                        type="button"
+                        @click="emit('clear')"
+                    >
+                        {{ panel.ui.buttons.reset }}
+                    </button>
                 </div>
             </div>
 
             <div class="drawer-body filters-sidebar-body">
-                <!-- Shown only when there is something to show: the empty case is
-                     already stated once by the panel header above. -->
-                <div v-if="panel.activeFilterChips.length" class="panel-section">
-                    <div>
-                        <h3>{{ panel.ui.filters.activeTitle }}</h3>
-                        <p>{{ panel.ui.filters.summaryHelp }}</p>
-                    </div>
-
-                    <div class="active-filters">
-                        <span v-for="chip in panel.activeFilterChips" :key="chip" class="filter-chip">
-                            {{ chip }}
-                        </span>
-                    </div>
-
-                    <div class="floating-actions footer-actions filters-sidebar-actions">
-                        <button class="button subtle small" type="button" @click="emit('clear')">
-                            {{ panel.ui.buttons.reset }}
-                        </button>
-                    </div>
-                </div>
 
                 <section class="filter-section">
                     <button
@@ -362,10 +374,24 @@ const catalogSummary = computed(() => {
     transform: translateX(calc(-100% + 46px));
 }
 
-.filters-sidebar-head {
-    padding-right: 54px;
+.filters-sidebar-top {
+    display: grid;
+    gap: 10px;
     padding-bottom: 10px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.filters-sidebar-head {
+    padding-right: 54px;
+}
+
+.filters-active-block {
+    display: grid;
+    gap: 8px;
+}
+
+.filters-reset-button {
+    justify-self: start;
 }
 
 /* filters-panel .panel-top-row contextual */
@@ -625,31 +651,57 @@ const catalogSummary = computed(() => {
     flex-wrap: wrap;
     gap: 6px;
     align-items: center;
-    padding: 10px 12px;
-    border-radius: 14px;
-    border: 1px solid var(--border);
-    background: rgba(14, 22, 40, 0.75);
-    max-height: 104px;
-    overflow: auto;
+    max-height: 132px;
+    overflow-y: auto;
 }
 
-.active-filters.empty {
-    border-style: dashed;
-}
-
+/* One removable chip per active filter. */
 .filter-chip {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    min-height: 30px;
-    padding: 5px 10px;
+    min-height: 28px;
+    padding: 4px 6px 4px 10px;
     border-radius: 999px;
-    border: 1px solid rgba(34, 211, 238, 0.22);
+    border: 1px solid rgba(34, 211, 238, 0.3);
     background: var(--accent-soft);
     color: #deebff;
+    font: inherit;
+    font-size: 0.78rem;
     max-width: 100%;
-    white-space: normal;
-    word-break: break-word;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.filter-chip:hover {
+    background: rgba(34, 211, 238, 0.2);
+    border-color: var(--border-strong);
+}
+
+.filter-chip-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.filter-chip-remove {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #eaf3ff;
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+.filter-chip:hover .filter-chip-remove {
+    background: rgba(248, 113, 113, 0.34);
 }
 
 .inline-legend {

@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 
 import droneProhibitedSvg from "../../assets/drone-prohibited-1-svgrepo-com.svg?raw";
-import type { MapRupturePanelModel } from "../../lib/types";
+import { formatClockSeconds } from "../../lib/formatters";
+import type { MapRupturePanelModel, RupturePhaseView } from "../../lib/types";
 
 const incomingDroneIconMarkup = droneProhibitedSvg
     .replace("fill:#000000;", "fill:currentColor;")
@@ -23,18 +24,9 @@ const activeToneClass = computed(
     () => props.panel.phases.find((phase) => phase.active)?.toneClass ?? "",
 );
 
-// The tick scale used to reserve a fixed height whatever the graduations
-// needed. Derive it from the deepest stack level actually rendered instead.
-const tickStackLevels = computed(() =>
-    props.panel.timelineTicks.reduce(
-        (deepest, tick) => Math.max(deepest, tick.stackLevel),
-        0,
-    ),
-);
-
-const tickScaleStyle = computed(() => ({
-    "--rupture-tick-levels": String(tickStackLevels.value),
-}));
+function phaseRange(phase: RupturePhaseView): string {
+    return `${formatClockSeconds(phase.startSeconds)} - ${formatClockSeconds(phase.endSeconds)}`;
+}
 
 function handleDocumentPointerDown(event: PointerEvent): void {
     const target = event.target as Node | null;
@@ -147,6 +139,16 @@ onBeforeUnmount(() => {
                             {{ panel.currentPhaseRemainingLabel }}
                         </strong>
                     </span>
+                    <!-- Position in the cycle. Previously a floating bubble above
+                         the track, which overlapped this very row. -->
+                    <span class="rupture-focus-pill">
+                        <span class="rupture-focus-label">
+                            {{ panel.ui.rupture.elapsed }}
+                        </span>
+                        <strong class="rupture-focus-value">
+                            {{ panel.markerLabel }}
+                        </strong>
+                    </span>
                 </div>
 
                 <div class="rupture-timeline">
@@ -162,49 +164,42 @@ onBeforeUnmount(() => {
                             v-if="panel.markerPercent !== null"
                             class="rupture-marker"
                             :style="{ left: `${panel.markerPercent}%` }"
-                        >
-                            <span>{{ panel.markerLabel }}</span>
-                        </div>
-                    </div>
-                    <div class="rupture-track-scale" :style="tickScaleStyle">
-                        <span
-                            v-for="tick in panel.timelineTicks"
-                            :key="tick.key"
-                            class="rupture-track-tick"
-                            :class="[tick.align, `stack-${tick.stackLevel}`]"
-                            :style="tick.align === 'right'
-                                ? {}
-                                : { left: `${tick.leftPercent}%` }"
-                        >
-                            {{ tick.label }}
-                        </span>
+                        ></div>
                     </div>
                 </div>
 
-                <div
-                    class="rupture-legend-row"
-                    :aria-label="panel.ui.handles.legend"
-                >
-                    <span
+                <!-- Replaces the absolutely-positioned tick scale: phase
+                     durations are wildly unequal, so the boundary labels piled
+                     up at both ends of the track and left the middle empty.
+                     A row per phase carries the same numbers, legibly, and
+                     doubles as the legend. -->
+                <ul class="rupture-phase-list" :aria-label="panel.ui.handles.legend">
+                    <li
                         v-for="phase in panel.phases"
                         :key="phase.key"
-                        class="rupture-legend-item"
+                        class="rupture-phase-row"
                         :class="{ active: phase.active }"
                     >
                         <span
                             class="rupture-track-swatch"
                             :class="phase.toneClass"
+                            aria-hidden="true"
                         ></span>
-                        <span
-                            v-if="phase.key === 'incoming'"
-                            class="rupture-legend-icon incoming"
-                            :title="panel.ui.rupture.incomingDroneDisabledTooltip"
-                            :aria-label="panel.ui.rupture.incomingDroneDisabledTooltip"
-                            v-html="incomingDroneIconMarkup"
-                        ></span>
-                        <strong>{{ phase.label }}</strong>
-                    </span>
-                </div>
+                        <span class="rupture-phase-name">
+                            {{ phase.label }}
+                            <span
+                                v-if="phase.key === 'incoming'"
+                                class="rupture-legend-icon incoming"
+                                :title="panel.ui.rupture.incomingDroneDisabledTooltip"
+                                :aria-label="panel.ui.rupture.incomingDroneDisabledTooltip"
+                                v-html="incomingDroneIconMarkup"
+                            ></span>
+                        </span>
+                        <span class="rupture-phase-range">{{ phaseRange(phase) }}</span>
+                        <span class="rupture-phase-duration">{{ phase.durationLabel }}</span>
+                        <span class="rupture-phase-status">{{ phase.statusLabel }}</span>
+                    </li>
+                </ul>
             </template>
 
             <div v-else class="empty-state rupture-empty-state">
@@ -426,8 +421,8 @@ onBeforeUnmount(() => {
 
 .rupture-marker {
     position: absolute;
-    top: -34px;
-    bottom: -10px;
+    top: -6px;
+    bottom: -6px;
     transform: translateX(-50%);
     display: inline-flex;
     flex-direction: column;
@@ -450,141 +445,81 @@ onBeforeUnmount(() => {
     border-top: 8px solid var(--amber);
 }
 
-.rupture-marker span {
-    position: absolute;
-    top: 0;
-    left: 4px;
-    transform: translateY(-100%);
-    padding: 3px 8px;
-    background: rgba(232, 184, 75, 0.18);
-    color: var(--amber);
-    font-size: 0.78rem;
-    font-weight: 700;
-    font-family: var(--font-mono);
-    border: 1px solid var(--border-amber);
-    white-space: nowrap;
-}
-
 @keyframes marker-pulse {
     0%, 100% { filter: drop-shadow(0 0 8px var(--amber)); }
     50%      { filter: drop-shadow(0 0 20px var(--amber)); }
 }
 
-.rupture-track-scale {
-    position: relative;
-    /* Ticks sit at top 10 / 32 / 54 depending on their stack level; reserve only
-       the depth actually used. */
-    height: calc(30px + var(--rupture-tick-levels, 2) * 22px);
-    padding-top: 10px;
+.rupture-phase-list {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
-.rupture-track-swatch {
-    width: 12px;
-    height: 12px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-.rupture-track-swatch.burning    { background: rgba(248, 113, 113, 0.88); }
-.rupture-track-swatch.cooling    { background: rgba(245, 158, 11, 0.88); }
-.rupture-track-swatch.stabilizing{ background: rgba(229, 231, 235, 0.72); }
-.rupture-track-swatch.stable     { background: rgba(49, 196, 141, 0.84); }
-.rupture-track-swatch.incoming   { background: rgba(168, 85, 247, 0.88); }
-
-.rupture-legend-icon {
-    display: inline-flex;
+.rupture-phase-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    gap: 10px 14px;
     align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    color: var(--muted);
-}
-
-.rupture-legend-item.active .rupture-legend-icon,
-.rupture-legend-icon.incoming {
-    color: rgba(196, 141, 255, 0.95);
-}
-
-.rupture-legend-icon :deep(.rupture-legend-icon-svg) {
-    display: block;
-    width: 100%;
-    height: 100%;
-}
-
-.rupture-track-tick {
-    position: absolute;
-    top: 10px;
-    font-size: 0.74rem;
-    color: var(--muted);
-    white-space: nowrap;
-    line-height: 1;
-}
-
-.rupture-track-tick.left   { transform: translateX(0); }
-.rupture-track-tick.center { transform: translateX(-50%); }
-.rupture-track-tick.right  { left: auto; right: 0; transform: none; text-align: right; }
-
-.rupture-track-tick.right::before { left: auto; right: 0; transform: none; }
-
-.rupture-track-tick.stack-1 { top: 32px; }
-.rupture-track-tick.stack-2 { top: 54px; }
-
-.rupture-track-tick.right.stack-1,
-.rupture-track-tick.right.stack-2 {
-    left: auto;
-    right: 0;
-    transform: none;
-}
-
-.rupture-track-tick.center.stack-1,
-.rupture-track-tick.center.stack-2 {
-    transform: translateX(-50%);
-}
-
-.rupture-track-tick::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 6px);
-    transform: translateX(-50%);
-    width: 1px;
-    height: 18px;
-    background: rgba(255, 255, 255, 0.24);
-}
-
-.rupture-track-tick.stack-1::before { height: 40px; }
-.rupture-track-tick.stack-2::before { height: 62px; }
-
-.rupture-legend-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 12px;
-    align-items: center;
-}
-
-.rupture-legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 30px;
-    padding: 5px 10px;
-    border: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.04);
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-left: 2px solid transparent;
+    background: rgba(255, 255, 255, 0.03);
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    font-size: 0.76rem;
 }
 
-.rupture-legend-item.active {
+.rupture-phase-row.active {
     color: var(--text);
     border-color: var(--border-strong);
+    border-left-color: var(--amber);
     background: var(--amber-soft);
 }
 
-.rupture-legend-item strong {
-    font-size: 0.8rem;
+.rupture-phase-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rupture-phase-row.active .rupture-phase-name {
+    font-weight: 700;
+}
+
+.rupture-phase-range,
+.rupture-phase-duration,
+.rupture-phase-status {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.rupture-phase-range {
+    color: var(--dim);
+}
+
+.rupture-phase-duration {
+    min-width: 3.5rem;
+    text-align: right;
+    color: var(--muted);
+}
+
+.rupture-phase-status {
+    min-width: 9rem;
+    text-align: right;
+}
+
+.rupture-phase-row.active .rupture-phase-status {
+    color: var(--amber);
+    font-weight: 700;
 }
 
 .rupture-empty-state {
@@ -592,6 +527,16 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 980px) {
+    .rupture-phase-row {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .rupture-phase-status {
+        grid-column: 2 / -1;
+        min-width: 0;
+        text-align: left;
+    }
+
     .rupture-strip-kicker,
     .rupture-track-strip {
         display: none;

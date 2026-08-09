@@ -157,6 +157,7 @@ export const en = {
         advancedTitle: "Advanced",
         none: "No filters.",
         noneActive: "No active filters.",
+        removeFilter: "Remove this filter",
         summaryHelp: "Summary of filters currently applied to the map.",
         visibilityTitle: "Visibility",
         visibilityHelp: "Choose which elements to show on the map.",

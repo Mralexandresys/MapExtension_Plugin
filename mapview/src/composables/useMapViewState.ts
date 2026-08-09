@@ -9,6 +9,7 @@ import {
 
 import { formatRelativeAge } from "../lib/formatters";
 import type {
+    ActiveFilterClear,
     EntityToggleKey,
     FilterSectionKey,
     MapCanvasHandle,
@@ -182,7 +183,6 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         rupturePhases,
         ruptureMarkerPercent,
         ruptureHasLiveData,
-        ruptureTimelineTicks,
         ruptureMarkerLabel,
     } = useRuptureTimeline(ruptureCycle, now, ui);
 
@@ -261,6 +261,30 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
 
     function toggleEntity(key: EntityToggleKey): void {
         entityVisibility[key] = !entityVisibility[key];
+    }
+
+    /** Undoes a single active filter from its chip, without touching the rest. */
+    function clearFilterChip(clear: ActiveFilterClear): void {
+        switch (clear.kind) {
+            case "viewMode":
+                viewMode.value = "network";
+                return;
+            case "showAllLinks":
+                showAllLinks.value = true;
+                return;
+            case "highlightOrphans":
+                highlightOrphans.value = false;
+                return;
+            case "userAnnotationsOnly":
+                userAnnotationsOnly.value = false;
+                return;
+            case "focusMode":
+                focusMode.value = false;
+                return;
+            case "entity":
+                entityVisibility[clear.key] = true;
+                return;
+        }
     }
 
     function selectEntity(key: string): void {
@@ -502,7 +526,6 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         rupturePhases,
         ruptureMarkerPercent,
         ruptureHasLiveData,
-        ruptureTimelineTicks,
         ruptureMarkerLabel,
         handleEndpointKeydown,
         updateRefreshInterval,
@@ -520,6 +543,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         centerOnPlayer,
         toggleFocusMode,
         clearFilters,
+        clearFilterChip,
         toggleFiltersPanel,
         toggleEntity,
         resetMapView,

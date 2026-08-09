@@ -3,6 +3,7 @@ import { computed, type ComputedRef, type Ref } from "vue";
 import { formatRelativeAge, formatWorld } from "../lib/formatters";
 import type { Messages } from "../lang";
 import type {
+    ActiveFilterChip,
     CargoConnection,
     CargoMarker,
     CargoResponse,
@@ -511,28 +512,57 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             displayedPois.value.length,
     );
 
-    const activeFilterChips = computed(() => {
-        const chips: string[] = [];
+    // One chip per active filter, each individually removable. Hidden entities
+    // used to be collapsed into a single "Hidden: a, b, c, d…" chip that wrapped
+    // over several lines and could not be undone one at a time.
+    const activeFilterChips = computed<ActiveFilterChip[]>(() => {
+        const chips: ActiveFilterChip[] = [];
 
         if (viewMode.value !== "network") {
-            chips.push(
-                ui.value.format.modeChip(ui.value.viewModes[viewMode.value]),
-            );
+            chips.push({
+                id: "viewMode",
+                label: ui.value.format.modeChip(
+                    ui.value.viewModes[viewMode.value],
+                ),
+                clear: { kind: "viewMode" },
+            });
         }
-        if (!showAllLinks.value) chips.push(ui.value.filters.linksFocus);
-        if (highlightOrphans.value) chips.push(ui.value.filters.orphansVisible);
+        if (!showAllLinks.value) {
+            chips.push({
+                id: "showAllLinks",
+                label: ui.value.filters.linksFocus,
+                clear: { kind: "showAllLinks" },
+            });
+        }
+        if (highlightOrphans.value) {
+            chips.push({
+                id: "highlightOrphans",
+                label: ui.value.filters.orphansVisible,
+                clear: { kind: "highlightOrphans" },
+            });
+        }
         if (userAnnotationsOnly.value) {
-            chips.push(ui.value.filters.userAnnotationsOnlyChip);
+            chips.push({
+                id: "userAnnotationsOnly",
+                label: ui.value.filters.userAnnotationsOnlyChip,
+                clear: { kind: "userAnnotationsOnly" },
+            });
         }
         if (focusMode.value && canEnableFocusMode.value) {
-            chips.push(ui.value.filters.focusOnly);
+            chips.push({
+                id: "focusMode",
+                label: ui.value.filters.focusOnly,
+                clear: { kind: "focusMode" },
+            });
         }
 
-        const hidden = entityToggleOptions.value
-            .filter((option) => !entityVisibility[option.key])
-            .map((option) => option.label);
-        if (hidden.length) {
-            chips.push(ui.value.format.hiddenLabels(hidden.join(", ")));
+        for (const option of entityToggleOptions.value) {
+            if (entityVisibility[option.key]) continue;
+            chips.push({
+                id: `entity:${option.key}`,
+                label: ui.value.format.hiddenLabels(option.label),
+                clear: { kind: "entity", key: option.key },
+            });
         }
 
         return chips;

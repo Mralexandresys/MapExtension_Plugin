@@ -111,7 +111,6 @@ const {
     rupturePhases,
     ruptureMarkerPercent,
     ruptureHasLiveData,
-    ruptureTimelineTicks,
     ruptureMarkerLabel,
     handleEndpointKeydown,
     updateRefreshInterval,
@@ -129,6 +128,7 @@ const {
     centerOnPlayer,
     toggleFocusMode,
     clearFilters,
+    clearFilterChip,
     toggleFiltersPanel,
     toggleEntity,
     resetMapView,
@@ -470,7 +470,6 @@ const rupturePanel = computed<MapRupturePanelModel>(() => ({
     markerPercent: ruptureMarkerPercent.value,
     markerLabel: ruptureMarkerLabel.value,
     hasLiveData: ruptureHasLiveData.value,
-    timelineTicks: ruptureTimelineTicks.value,
 }));
 
 const selectionPanel = computed<MapSelectionPanelModel>(() => {
@@ -665,6 +664,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @toggle-collapse="toggleFiltersPanel"
                 @toggle-section="toggleFilterSection"
                 @clear="clearFilters"
+                @clear-chip="clearFilterChip"
                 @toggle-entity="toggleEntity"
                 @update:view-mode="viewMode = $event"
                 @update:show-all-links="showAllLinks = $event"

@@ -248,14 +248,6 @@ export interface RupturePhaseView {
     toneClass: string;
 }
 
-export interface RuptureTimelineTick {
-    key: string;
-    label: string;
-    leftPercent: number;
-    align: "left" | "center" | "right";
-    stackLevel: number;
-}
-
 export interface ShortcutItem {
     keys: readonly string[];
     label: string;
@@ -296,7 +288,6 @@ export interface MapRupturePanelModel {
     markerPercent: number | null;
     markerLabel: string;
     hasLiveData: boolean;
-    timelineTicks: RuptureTimelineTick[];
 }
 
 export interface MapSelectionPanelModel {
@@ -323,6 +314,21 @@ export interface MapSelectionPanelModel {
     statsOverview: DetailRow[];
 }
 
+/** What clicking an active-filter chip undoes. */
+export type ActiveFilterClear =
+    | { kind: "viewMode" }
+    | { kind: "showAllLinks" }
+    | { kind: "highlightOrphans" }
+    | { kind: "userAnnotationsOnly" }
+    | { kind: "focusMode" }
+    | { kind: "entity"; key: EntityToggleKey };
+
+export interface ActiveFilterChip {
+    id: string;
+    label: string;
+    clear: ActiveFilterClear;
+}
+
 export type FilterSectionKey = "visibility" | "mode" | "behavior" | "catalog";
 
 export type FilterSectionsOpen = Record<FilterSectionKey, boolean>;
@@ -331,7 +337,7 @@ export interface MapFiltersPanelModel {
     collapsed: boolean;
     sectionsOpen: FilterSectionsOpen;
     ui: Messages;
-    activeFilterChips: string[];
+    activeFilterChips: ActiveFilterChip[];
     viewMode: ViewMode;
     entityToggleOptions: Array<{
         key: EntityToggleKey;

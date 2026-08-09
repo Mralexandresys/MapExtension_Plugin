@@ -6,7 +6,6 @@ import type {
     RuptureCycleResponse,
     RupturePhaseKey,
     RupturePhaseView,
-    RuptureTimelineTick,
 } from "../lib/types";
 
 const RUPTURE_INCOMING_MIN_WIDTH_PERCENT = 2;
@@ -316,83 +315,6 @@ export function useRuptureTimeline(
         formatClockSeconds(ruptureMarkerSeconds.value),
     );
 
-    const ruptureTimelineTicks = computed<RuptureTimelineTick[]>(() => {
-        const durations = rupturePhaseDurations.value;
-        const total = ruptureCycleTotalSeconds.value || 1;
-        const phaseDefs = ruptureVisualPhases.value;
-        const boundaries = [
-            { key: "start", seconds: 0 },
-            { key: "burning-end", seconds: durations.burning },
-            { key: "cooling-end", seconds: durations.burning + durations.cooling },
-            {
-                key: "stabilizing-end",
-                seconds:
-                    durations.burning + durations.cooling + durations.stabilizing,
-            },
-            {
-                key: "stable-end",
-                seconds:
-                    durations.burning +
-                    durations.cooling +
-                    durations.stabilizing +
-                    durations.stable,
-            },
-            { key: "end", seconds: total },
-        ];
-
-        let previousStackLevel = 0;
-
-        return boundaries.map((boundary, index) => {
-            const leftPercent = mapRuptureSecondsToVisualPercent(
-                boundary.seconds,
-                phaseDefs,
-                total,
-            );
-            const previousLeftPercent =
-                index > 0
-                    ? mapRuptureSecondsToVisualPercent(
-                          boundaries[index - 1].seconds,
-                          phaseDefs,
-                          total,
-                      )
-                    : null;
-            const nextLeftPercent =
-                index < boundaries.length - 1
-                    ? mapRuptureSecondsToVisualPercent(
-                          boundaries[index + 1].seconds,
-                          phaseDefs,
-                          total,
-                      )
-                    : null;
-            const isCloseToPrevious =
-                previousLeftPercent != null &&
-                Math.abs(leftPercent - previousLeftPercent) < 10;
-            const isCloseToNext =
-                nextLeftPercent != null &&
-                Math.abs(nextLeftPercent - leftPercent) < 10;
-
-            let align: "left" | "center" | "right" = "center";
-            if (index === boundaries.length - 1) align = "right";
-
-            let stackLevel = 0;
-            if (isCloseToPrevious) {
-                stackLevel = Math.min(previousStackLevel + 1, 2);
-            } else if (isCloseToNext && index % 2 === 1) {
-                stackLevel = 1;
-            }
-
-            previousStackLevel = stackLevel;
-
-            return {
-                key: boundary.key,
-                label: formatClockSeconds(boundary.seconds),
-                leftPercent,
-                align,
-                stackLevel,
-            };
-        });
-    });
-
     return {
         ruptureCurrentPhaseKey,
         ruptureCurrentPhaseLabel,
@@ -400,7 +322,6 @@ export function useRuptureTimeline(
         rupturePhases,
         ruptureMarkerPercent,
         ruptureHasLiveData,
-        ruptureTimelineTicks,
         ruptureMarkerLabel,
     };
 }

@@ -156,6 +156,7 @@ export const fr = {
         advancedTitle: "Avances",
         none: "Aucun filtre.",
         noneActive: "Aucun filtre actif.",
+        removeFilter: "Retirer ce filtre",
         summaryHelp: "Resume des filtres actuellement appliques a la carte.",
         visibilityTitle: "Visibilite",
         visibilityHelp: "Choisis quels elements afficher sur la carte.",
