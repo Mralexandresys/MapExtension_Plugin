@@ -101,8 +101,16 @@ export interface CargoCounts {
 export interface MapProjection {
     content_width?: number;
     content_height?: number;
+    /** World-space (Unreal centimetres) source rectangle used by the projection. */
+    src_x1?: number;
+    src_y1?: number;
+    src_x2?: number;
+    src_y2?: number;
+    /** Map-image destination rectangle matching the source rectangle. */
     dst_x1?: number;
     dst_y1?: number;
+    dst_x2?: number;
+    dst_y2?: number;
     image_width?: number;
     image_height?: number;
 }
@@ -325,6 +333,57 @@ export interface MapFiltersPanelModel {
     userAnnotationsOnly: boolean;
     canEnableFocusMode: boolean;
     focusMode: boolean;
+    /** Absent when the static world catalog is not bundled with the viewer. */
+    staticFilters?: MapStaticFiltersModel;
+}
+
+// ── Static world catalog filters ─────────────────────────────────────────
+
+export type StaticFilterScope =
+    | "layer"
+    | "poiGroup"
+    | "resourceCategory"
+    | "resourceType"
+    | "representation"
+    | "placementGroup";
+
+export interface StaticFilterToggle {
+    scope: StaticFilterScope;
+    key: string;
+    /** Only set for placement groups, which are namespaced per layer. */
+    layer?: string;
+}
+
+export interface StaticFilterOption {
+    key: string;
+    label: string;
+    count: number;
+    enabled: boolean;
+    color?: string;
+}
+
+export interface StaticFilterCategory extends StaticFilterOption {
+    types: StaticFilterOption[];
+}
+
+export interface StaticFilterPlacementSection {
+    layer: string;
+    title: string;
+    options: StaticFilterOption[];
+}
+
+export interface MapStaticFiltersModel {
+    ui: Messages;
+    available: boolean;
+    loading: boolean;
+    error: string;
+    search: string;
+    loadedCount: number;
+    layers: StaticFilterOption[];
+    poiGroups: StaticFilterOption[];
+    resourceCategories: StaticFilterCategory[];
+    representations: StaticFilterOption[];
+    placementSections: StaticFilterPlacementSection[];
 }
 
 export interface MapCanvasToolbarModel {

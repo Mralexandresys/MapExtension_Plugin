@@ -18,8 +18,19 @@ import type {
   UserMarker,
   UserZone,
 } from '../lib/types';
+import { mapToWorld, resolveMapProjection } from '../lib/mapProjection';
+import {
+  groupColor,
+  type StaticPlacement,
+  type StaticPointSeries,
+} from '../lib/staticMapCatalog';
+import type {
+  StaticMapPoiView,
+  StaticSelection,
+} from '../composables/useStaticMapData';
 import { useMapTooltip } from '../composables/useMapTooltip';
 import { useMapPanZoom } from '../composables/useMapPanZoom';
+import StaticMapCanvas from './mapview/StaticMapCanvas.vue';
 
 const props = defineProps<{
   loading: boolean;
@@ -42,6 +53,17 @@ const props = defineProps<{
   annotationEditMode?: UserAnnotationEditMode;
   selectedAnnotation?: UserAnnotationSelection;
 
+  // ── Static world catalog (map-data/) ───────────────────────────────────────
+  staticSeries?: StaticPointSeries[];
+  staticPlacements?: StaticPlacement[];
+  staticPois?: StaticMapPoiView[];
+  staticStateVersion?: number;
+  staticSelection?: StaticSelection | null;
+  staticSeriesVisible?: (entry: StaticPointSeries) => boolean;
+  staticPlacementVisible?: (entry: StaticPlacement) => boolean;
+  staticPoiVisible?: (entry: StaticMapPoiView) => boolean;
+  staticPick?: (x: number, y: number, radius: number) => StaticSelection | null;
+  staticDescribe?: (selection: StaticSelection) => { title: string; lines: string[] };
 }>();
 
 const emit = defineEmits<{
@@ -53,16 +75,8 @@ const emit = defineEmits<{
   "create-zone": [rect: Rect2D];
   "move-marker": [point: { x: number; y: number }];
   "update-zone": [rect: Rect2D];
+  "select-static": [selection: StaticSelection | null];
 }>(); 
-
-const DEFAULT_MAP = {
-  content_width: 5376.663803,
-  content_height: 5262.277317,
-  dst_x1: 1518.414983,
-  dst_y1: 2272.832995,
-  image_width: 9019,
-  image_height: 11691,
-};
 
 const TELEPORTER_SYMBOL_ID = 'teleporter-marker-icon';
 const TELEPORTER_ICON_SIZE = 28;
@@ -89,13 +103,13 @@ const teleporterSymbolMarkup = teleporterSvg
 const mapShell = ref<HTMLElement | null>(null);
 
 const ui = computed(() => getMessages(props.lang));
-const projection = computed(() => props.cargo?.map ?? DEFAULT_MAP);
-const viewBoxWidth = computed(() => Number(projection.value.content_width) || 3547);
-const viewBoxHeight = computed(() => Number(projection.value.content_height) || 3471);
-const imageWidth = computed(() => Number(projection.value.image_width) || 4352);
-const imageHeight = computed(() => Number(projection.value.image_height) || 5120);
-const imageX = computed(() => -(Number(projection.value.dst_x1) || 380));
-const imageY = computed(() => -(Number(projection.value.dst_y1) || 567));
+const projection = computed(() => resolveMapProjection(props.cargo?.map));
+const viewBoxWidth = computed(() => projection.value.content_width);
+const viewBoxHeight = computed(() => projection.value.content_height);
+const imageWidth = computed(() => projection.value.image_width);
+const imageHeight = computed(() => projection.value.image_height);
+const imageX = computed(() => -projection.value.dst_x1);
+const imageY = computed(() => -projection.value.dst_y1);
 const orphanKeySet = computed(() => new Set(props.orphanKeys));
 const focusKeySet = computed(() => new Set(props.focusKeys));
 
@@ -202,6 +216,7 @@ const {
   mapTranslateX,
   mapTranslateY,
   transform,
+  mapPixelsPerUnit,
   isDragging,
   viewportBounds,
   resetView,
@@ -620,6 +635,13 @@ function handleCanvasClick(event: MouseEvent): void {
   if (!target?.closest('.map-svg')) return;
 
   const mode = props.annotationMode ?? 'idle';
+  if (mode === 'idle') {
+    if (consumeDragMovement()) return;
+    if (target.closest('.map-marker, .connection-line, .user-zone')) return;
+    const found = pickStaticAt(event.clientX, event.clientY);
+    if (found) emit('select-static', found);
+    return;
+  }
   if (mode !== 'marker' || consumeDragMovement()) return;
 
   const pt = screenToMapPoint(event.clientX, event.clientY);
@@ -637,10 +659,17 @@ function handleMouseMove(event: MouseEvent): void {
   } else {
     ghostPoint.value = null;
   }
+
+  if (mode !== 'idle' || target?.closest('.map-marker, .connection-line, .user-zone')) {
+    clearStaticHover();
+    return;
+  }
+  updateStaticHover(event);
 }
 
 function handleMouseLeave(): void {
   ghostPoint.value = null;
+  clearStaticHover();
 }
 
 function isAnnotationSelected(type: 'marker' | 'zone', id: string): boolean {
@@ -664,12 +693,150 @@ function zoneGroupClass(zone: UserZone): Record<string, boolean> {
   };
 }
 
+// ── static world catalog ─────────────────────────────────────────────────
+
+const staticSeriesList = computed(() => props.staticSeries ?? []);
+const staticPlacementList = computed(() => props.staticPlacements ?? []);
+const noStaticSeries = () => false;
+const noStaticPlacement = () => false;
+const staticSeriesVisible = computed(() => props.staticSeriesVisible ?? noStaticSeries);
+const staticPlacementVisible = computed(
+  () => props.staticPlacementVisible ?? noStaticPlacement,
+);
+const visibleStaticPois = computed(() => {
+  const entries = props.staticPois ?? [];
+  const isVisible = props.staticPoiVisible;
+  return isVisible ? entries.filter(isVisible) : entries;
+});
+
+const staticHover = ref<StaticSelection | null>(null);
+let staticPickHandle = 0;
+let staticPickEvent: MouseEvent | null = null;
+
+const staticHighlight = computed(() => {
+  const target = staticHover.value ?? props.staticSelection ?? null;
+  return target ? { x: target.x, y: target.y } : null;
+});
+
+/** Converts a screen position to world decimetres and queries the catalog. */
+function pickStaticAt(clientX: number, clientY: number): StaticSelection | null {
+  const pick = props.staticPick;
+  if (!pick) return null;
+
+  const point = screenToMapPoint(clientX, clientY);
+  if (!point) return null;
+
+  const world = mapToWorld(point, projection.value);
+  const scaleX =
+    (projection.value.dst_x2 - projection.value.dst_x1) /
+    (projection.value.src_x2 - projection.value.src_x1);
+  // Keep the hit radius at roughly 9 screen pixels whatever the viewport or zoom.
+  const radiusDm =
+    Math.abs(9 / Math.max(mapPixelsPerUnit.value, Number.EPSILON) / scaleX) / 10;
+
+  return pick(world.x / 10, world.y / 10, radiusDm);
+}
+
+function clearStaticHover(): void {
+  if (!staticHover.value) return;
+  staticHover.value = null;
+  hideTooltip();
+}
+
+function updateStaticHover(event: MouseEvent): void {
+  if (!props.staticPick) return;
+
+  staticPickEvent = event;
+  if (staticPickHandle) return;
+
+  staticPickHandle = requestAnimationFrame(() => {
+    staticPickHandle = 0;
+    const pointer = staticPickEvent;
+    if (!pointer) return;
+
+    const found = pickStaticAt(pointer.clientX, pointer.clientY);
+    const previousKey = staticHover.value?.key ?? null;
+    staticHover.value = found;
+
+    if (!found) {
+      if (previousKey) hideTooltip();
+      return;
+    }
+    if (found.key === previousKey) {
+      moveTooltip(pointer);
+      return;
+    }
+
+    const description = props.staticDescribe?.(found);
+    if (description) {
+      showTooltip(description.title, description.lines, pointer);
+    }
+  });
+}
+
+function staticPoiLabel(poi: StaticMapPoiView): string {
+  return props.lang === 'fr' ? poi.nameFr || poi.nameEn : poi.nameEn || poi.nameFr;
+}
+
+function staticPoiColorStyle(poi: StaticMapPoiView): Record<string, string> {
+  return { '--static-poi-color': groupColor(poi.group) };
+}
+
+function staticPoiTransform(poi: StaticMapPoiView): string {
+  const screenConstantScale =
+    props.iconScale / Math.max(mapPixelsPerUnit.value, Number.EPSILON);
+  return `translate(${poi.map.x} ${poi.map.y}) scale(${screenConstantScale}) translate(${-poi.map.x} ${-poi.map.y})`;
+}
+
+function staticPoiSelection(poi: StaticMapPoiView): StaticSelection {
+  return {
+    kind: 'poi',
+    key: poi.key,
+    layer: 'poi',
+    group: poi.group,
+    x: poi.x,
+    y: poi.y,
+    z: poi.z,
+    state: 'unknown',
+    label: staticPoiLabel(poi),
+    guid: poi.guid,
+    poi,
+  };
+}
+
+function showStaticPoiTooltip(poi: StaticMapPoiView, event: MouseEvent): void {
+  const description = props.staticDescribe?.(staticPoiSelection(poi));
+  if (description) showTooltip(description.title, description.lines, event);
+}
+
+function handleStaticPoiFocus(poi: StaticMapPoiView, event: FocusEvent): void {
+  const target = event.currentTarget as Element | null;
+  const description = props.staticDescribe?.(staticPoiSelection(poi));
+  if (target && description) {
+    showTooltipFromElement(description.title, description.lines, target);
+  }
+}
+
+function handleStaticPoiKeydown(event: KeyboardEvent, poi: StaticMapPoiView): void {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    emit('select-static', staticPoiSelection(poi));
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    emit('select-static', null);
+  }
+}
+
 onMounted(() => {
   window.addEventListener('mousemove', handleWindowMouseMove);
   window.addEventListener('mouseup', handleWindowMouseUp);
 });
 
 onBeforeUnmount(() => {
+  if (staticPickHandle) cancelAnimationFrame(staticPickHandle);
   window.removeEventListener('mousemove', handleWindowMouseMove);
   window.removeEventListener('mouseup', handleWindowMouseUp);
 });
@@ -699,12 +866,11 @@ defineExpose({
     @click="handleCanvasClick"
   >
     <svg
-      class="map-svg"
+      class="map-svg map-svg-base"
       :viewBox="`0 0 ${viewBoxWidth} ${viewBoxHeight}`"
       preserveAspectRatio="xMidYMid meet"
-      @dblclick="emit('clear-selection')"
+      aria-hidden="true"
     >
-      <defs v-html="teleporterSymbolMarkup"></defs>
       <g :transform="transform">
         <image
           v-for="tile in visibleBaseMapTiles"
@@ -716,6 +882,33 @@ defineExpose({
           :width="tile.width"
           :height="tile.height"
         />
+      </g>
+    </svg>
+
+    <StaticMapCanvas
+      :series="staticSeriesList"
+      :placements="staticPlacementList"
+      :is-series-visible="staticSeriesVisible"
+      :is-placement-visible="staticPlacementVisible"
+      :projection="projection"
+      :map-scale="mapScale"
+      :map-translate-x="mapTranslateX"
+      :map-translate-y="mapTranslateY"
+      :viewport-bounds="viewportBounds"
+      :view-box-width="viewBoxWidth"
+      :view-box-height="viewBoxHeight"
+      :state-version="staticStateVersion ?? 0"
+      :highlight="staticHighlight"
+    />
+
+    <svg
+      class="map-svg map-svg-entities"
+      :viewBox="`0 0 ${viewBoxWidth} ${viewBoxHeight}`"
+      preserveAspectRatio="xMidYMid meet"
+      @dblclick="emit('clear-selection')"
+    >
+      <defs v-html="teleporterSymbolMarkup"></defs>
+      <g :transform="transform">
 
         <!-- Locked user zones under everything else -->
         <g v-if="lockedUserZones.length">
@@ -748,6 +941,44 @@ defineExpose({
               text-anchor="start"
               dominant-baseline="hanging"
             >{{ zone.label }}</text>
+          </g>
+        </g>
+
+        <g>
+          <!-- Catalog points of interest, selectable like live entities -->
+          <g
+            v-for="poi in visibleStaticPois"
+            :key="poi.key"
+            class="map-marker static-poi"
+            :class="{ active: staticSelection?.key === poi.key }"
+            :style="staticPoiColorStyle(poi)"
+            tabindex="0"
+            role="button"
+            :aria-pressed="staticSelection?.key === poi.key"
+            :aria-label="staticPoiLabel(poi)"
+            :transform="staticPoiTransform(poi)"
+            @click.stop="emit('select-static', staticPoiSelection(poi))"
+            @keydown="handleStaticPoiKeydown($event, poi)"
+            @dblclick.stop
+            @focus.stop="handleStaticPoiFocus(poi, $event)"
+            @mouseenter.stop="showStaticPoiTooltip(poi, $event)"
+            @mousemove.stop="moveTooltip($event)"
+            @blur.stop="hideTooltip"
+            @mouseleave.stop="hideTooltip"
+          >
+            <rect
+              class="poi-hitbox"
+              :x="poi.map.x - POI_HITBOX_HALF"
+              :y="poi.map.y - POI_HITBOX_HALF"
+              :width="POI_HITBOX_SIZE"
+              :height="POI_HITBOX_SIZE"
+              rx="4"
+            />
+            <path
+              class="static-poi-pin"
+              :d="`M ${poi.map.x} ${poi.map.y + 9} L ${poi.map.x - 7} ${poi.map.y - 3} A 7 7 0 1 1 ${poi.map.x + 7} ${poi.map.y - 3} Z`"
+            />
+            <circle class="static-poi-core" :cx="poi.map.x" :cy="poi.map.y - 4" r="2.6" />
           </g>
         </g>
 
@@ -1034,10 +1265,48 @@ defineExpose({
 }
 
 .map-svg {
+    position: absolute;
+    inset: 0;
     display: block;
     width: 100%;
     height: 100%;
     user-select: none;
+}
+
+.map-svg-base {
+    z-index: 0;
+    pointer-events: none;
+}
+
+.map-svg-entities {
+    z-index: 2;
+}
+
+:deep(.map-marker.static-poi .poi-hitbox) {
+    fill: transparent;
+    stroke: none;
+}
+
+:deep(.map-marker.static-poi .static-poi-pin) {
+    fill: var(--static-poi-color, #94a3b8);
+    stroke: rgba(8, 14, 26, 0.85);
+    stroke-width: 1.2;
+    opacity: 0.9;
+}
+
+:deep(.map-marker.static-poi .static-poi-core) {
+    fill: #0b1220;
+}
+
+:deep(.map-marker.static-poi:hover .static-poi-pin),
+:deep(.map-marker.static-poi:focus-visible .static-poi-pin) {
+    opacity: 1;
+}
+
+:deep(.map-marker.static-poi.active .static-poi-pin) {
+    stroke: #22d3ee;
+    stroke-width: 2;
+    opacity: 1;
 }
 
 :deep(.base-map) {

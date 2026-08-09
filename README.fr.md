@@ -14,6 +14,7 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local,
 - Afficher la position des `teleporteurs`
 - Afficher la position des `joueurs`, avec son propre joueur mis en avant dans une couleur distincte
 - Afficher les bases abandonnees et les plantes recoltables prises en charge comme points d'interet (POI), dont Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb et Nootka Lupine
+- Parcourir un catalogue du monde pre-genere contenant les POI principaux, plantes, minerais, ressources animales, batiments, zones et elements techniques optionnels, avec des filtres persistants et une recherche
 - Cumuler les plantes observees dans les zones chargees au lieu de retirer leurs marqueurs quand le joueur quitte le rayon de chargement courant
 - Scanner manuellement toute la carte en solo/local depuis le panneau MapExtension en jeu, avec progression et annulation
 - Conserver la position des plantes epuisees ou recoltees de facon permanente avec un etat visuel distinct
@@ -28,9 +29,11 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local,
 
 Le `mapview` inclus est une interface web locale concue pour lire les donnees du plugin et les afficher dans un navigateur en ouvrant le fichier genere `dist/MapExtensionViewer.html`.
 
-Une fois packagee, il faut garder le dossier genere `map-tiles/` a cote de `MapExtensionViewer.html` ; l'interface charge le fond de carte depuis ces tuiles.
+Une fois packagee, il faut garder les dossiers generes `map-tiles/` et `map-data/` a cote de `MapExtensionViewer.html` ; l'interface charge le fond de carte depuis les tuiles et le catalogue statique depuis les fichiers de donnees compacts.
 
 Il consomme a la fois les donnees de carte/cargo et l'endpoint de cycle de rupture pour afficher la timeline de l'interface.
+
+L'interface combine les observations live du plugin avec un catalogue statique pre-genere du monde. Les POI principaux sont des pins selectionnables, tandis que les couches plus volumineuses de ressources, batiments et zones utilisent un rendu canvas. Des filtres avec recherche controlent les couches, categories et types de ressources, sources de representation, batiments, zones et elements techniques ; les choix sont conserves dans `localStorage`.
 
 Les bases abandonnees utilisent leur propre icone sur la carte. Les ressources vegetales utilisent une couleur de palette stable derivee du nom de la ressource, afin qu'une meme ressource garde la meme couleur apres les refreshs. Les ressources epuisees restent visibles avec un marqueur attenue et en contour. Des filtres separes controlent les bases abandonnees et les ressources vegetales.
 
@@ -94,14 +97,15 @@ L'archive de release client contient :
 - `Plugins/MapExtension_Plugin.json`
 - `MapExtensionViewer.html`
 - `map-tiles/`
+- `map-data/`
 
-Copier le contenu de `Plugins/` dans `StarRupture/Binaries/Win64/Plugins/`, puis garder `MapExtensionViewer.html` a cote de son dossier `map-tiles/`, n'importe ou sur la machine.
+Copier le contenu de `Plugins/` dans `StarRupture/Binaries/Win64/Plugins/`, puis garder `MapExtensionViewer.html`, `map-tiles/` et `map-data/` ensemble, n'importe ou sur la machine.
 
 `MapExtension_Plugin.json` est le sidecar de mise a jour du modloader. Son seul champ est `manifest_url`, qui pointe vers le manifest de release `latest/download`. Quand le sidecar est present, le modloader verifie au demarrage s'il existe une version plus recente du plugin et remplace `MapExtension_Plugin.dll` avant de charger le moindre plugin. Installer uniquement la DLL seule desactive les mises a jour automatiques.
 
 Deux limites a connaitre :
 
-- La mise a jour automatique ne remplace que la DLL. `MapExtensionViewer.html` et `map-tiles/` ne sont jamais touches, puisqu'ils vivent hors du dossier du jeu. L'interface detecte les contrats de payload incompatibles : quand le plugin annonce un contrat plus recent que celui avec lequel l'interface locale a ete construite, une fenetre propose le telechargement direct de l'asset `MapExtension_Plugin-<tag>-viewer.zip` correspondant, avec les liens vers la release GitHub et la page du mod. Les ameliorations retrocompatibles du viewer peuvent ne pas declencher cette fenetre ; installer donc manuellement l'archive viewer correspondante pour profiter des nouvelles fonctions d'interface. Remplacer `MapExtensionViewer.html` et `map-tiles/` ensemble, puis recharger la page.
+- La mise a jour automatique ne remplace que la DLL. `MapExtensionViewer.html`, `map-tiles/` et `map-data/` ne sont jamais touches, puisqu'ils vivent hors du dossier du jeu. L'interface detecte les contrats de payload incompatibles : quand le plugin annonce un contrat plus recent que celui avec lequel l'interface locale a ete construite, une fenetre propose le telechargement direct de l'asset `MapExtension_Plugin-<tag>-viewer.zip` correspondant, avec les liens vers la release GitHub et la page du mod. Les ameliorations retrocompatibles du viewer peuvent ne pas declencher cette fenetre ; installer donc manuellement l'archive viewer correspondante pour profiter des nouvelles fonctions d'interface. Remplacer `MapExtensionViewer.html`, `map-tiles/` et `map-data/` ensemble, puis recharger la page.
 - Le build serveur n'est pas couvert par le sidecar. Le protocole de synchronisation v4 exige des builds client et serveur correspondants : mettre a jour les deux DLL ensemble et remplacer manuellement celle du serveur dedie.
 
 Les mises a jour automatiques peuvent etre desactivees globalement dans le modloader avec `[AutoUpdate] Enabled=0` dans `modloader.ini`.

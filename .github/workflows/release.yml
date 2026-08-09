@@ -253,12 +253,18 @@ jobs:
           if (Test-Path "mapview\dist\map-tiles") {
             Copy-Item "mapview\dist\map-tiles" (Join-Path $clientStageRoot "map-tiles") -Recurse -Force
           }
+          if (Test-Path "mapview\dist\map-data") {
+            Copy-Item "mapview\dist\map-data" (Join-Path $clientStageRoot "map-data") -Recurse -Force
+          }
 
           # Viewer-only archive: the modloader auto-updater replaces the DLL but never
           # these files, so the viewer points users here when it detects it is outdated.
           Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $viewerStageRoot "MapExtensionViewer.html") -Force
           if (Test-Path "mapview\dist\map-tiles") {
             Copy-Item "mapview\dist\map-tiles" (Join-Path $viewerStageRoot "map-tiles") -Recurse -Force
+          }
+          if (Test-Path "mapview\dist\map-data") {
+            Copy-Item "mapview\dist\map-data" (Join-Path $viewerStageRoot "map-data") -Recurse -Force
           }
           Copy-Item $serverDllSource (Join-Path $serverPluginsDir "MapExtension_Plugin.dll") -Force
           if (Test-Path $serverPdbSource) {

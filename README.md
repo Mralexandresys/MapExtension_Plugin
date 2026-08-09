@@ -14,6 +14,7 @@ The plugin works in both single-player and multiplayer. For solo/local sessions,
 - Display the positions of `teleporters`
 - Display the positions of `players`, with your own player highlighted in a distinct color
 - Display abandoned bases and supported gatherable plants as points of interest (POIs), including Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb, and Nootka Lupine
+- Browse a pre-generated world catalog containing major POIs, plants, minerals, animal resources, buildings, zones, and optional technical elements, with searchable persistent filters
 - Accumulate plant observations across streamed areas instead of dropping markers when the player leaves the current loading radius
 - Manually scan the full map in solo/local play from the in-game MapExtension panel, with progress and cancellation
 - Keep depleted or permanently gathered plant positions on the map with a distinct depleted state
@@ -28,9 +29,11 @@ The plugin works in both single-player and multiplayer. For solo/local sessions,
 
 The included `mapview` is a local web UI designed to read the plugin data and display it in a browser by opening the generated `dist/MapExtensionViewer.html` file.
 
-When packaged, keep the generated `map-tiles/` folder next to `MapExtensionViewer.html`; the viewer loads the map background from those tiles.
+When packaged, keep the generated `map-tiles/` and `map-data/` folders next to `MapExtensionViewer.html`; the viewer loads the map background from the tiles and the static world catalog from the compact data files.
 
 It consumes both cargo/map data and the rupture cycle endpoint to render the timeline shown in the HUD replacement UI.
+
+The viewer combines live plugin observations with a pre-generated static world catalog. Major POIs are rendered as selectable pins, while the larger resource, building, and zone layers use a canvas renderer. Searchable filters control layers, resource categories and types, representation sources, buildings, zones, and technical elements; filter choices persist in `localStorage`.
 
 Abandoned bases use their own map icon. Plant resources use a stable palette color derived from the resource name, so the same resource keeps the same color after refreshes. Depleted resources remain visible as faded outlined markers. Separate filters control abandoned bases and plant resources.
 
@@ -94,14 +97,15 @@ The client release archive contains:
 - `Plugins/MapExtension_Plugin.json`
 - `MapExtensionViewer.html`
 - `map-tiles/`
+- `map-data/`
 
-Copy the `Plugins/` content into `StarRupture/Binaries/Win64/Plugins/`, then keep `MapExtensionViewer.html` next to its `map-tiles/` folder anywhere on the machine.
+Copy the `Plugins/` content into `StarRupture/Binaries/Win64/Plugins/`, then keep `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` together anywhere on the machine.
 
 `MapExtension_Plugin.json` is the modloader update sidecar. Its only field is `manifest_url`, pointing at the `latest/download` release manifest. When the sidecar is present, the modloader checks for a newer plugin version at startup and replaces `MapExtension_Plugin.dll` before loading any plugin. Installing only the standalone DLL asset disables automatic updates.
 
 Two limits are worth knowing:
 
-- The auto-updater replaces the DLL only. `MapExtensionViewer.html` and `map-tiles/` are never touched, since they live outside the game folder. The viewer detects incompatible payload contracts: when the plugin reports a contract newer than the one the local viewer was built with, a dialog offers a direct download of the matching `MapExtension_Plugin-<tag>-viewer.zip` asset, along with links to the GitHub release and the mod page. Backward-compatible viewer improvements may not trigger that dialog, so install the matching viewer archive manually to receive new UI features. Replace `MapExtensionViewer.html` and `map-tiles/` together, then reload the page.
+- The auto-updater replaces the DLL only. `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` are never touched, since they live outside the game folder. The viewer detects incompatible payload contracts: when the plugin reports a contract newer than the one the local viewer was built with, a dialog offers a direct download of the matching `MapExtension_Plugin-<tag>-viewer.zip` asset, along with links to the GitHub release and the mod page. Backward-compatible viewer improvements may not trigger that dialog, so install the matching viewer archive manually to receive new UI features. Replace `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` together, then reload the page.
 - The server build is not covered by the sidecar. Sync protocol v4 requires matching client and server builds, so update both DLLs together and replace the dedicated-server DLL by hand.
 
 Automatic updates can be disabled modloader-wide with `[AutoUpdate] Enabled=0` in `modloader.ini`.

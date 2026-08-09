@@ -5,7 +5,7 @@ Frontend Vue 3 + Vite de l'interface web locale de `MapExtension_Plugin`.
 ## Objectif
 
 - UI locale dediee a l'affichage de la carte, des entites et de leurs connexions.
-- Build de production compose de `dist/MapExtensionViewer.html` et du dossier `dist/map-tiles/`.
+- Build de production compose de `dist/MapExtensionViewer.html` et des dossiers `dist/map-tiles/` et `dist/map-data/`.
 - Utilisable directement contre le plugin local expose sur `http://127.0.0.1:9000` par defaut.
 - V2 avec focus reseau, tri des elements et raccourcis clavier integres.
 - V3 en layout `map-first` : carte dominante, overlays translucides, stats en panneau secondaire.
@@ -28,13 +28,14 @@ Le build de production genere l'entree HTML :
 dist/MapExtensionViewer.html
 ```
 
-Et le fond de carte tuile :
+Et les assets externes utilises en ouverture locale :
 
 ```text
 dist/map-tiles/
+dist/map-data/
 ```
 
-Pour utiliser ou distribuer l'interface, garder `map-tiles/` a cote de `MapExtensionViewer.html`.
+Pour utiliser ou distribuer l'interface, garder `map-tiles/` et `map-data/` a cote de `MapExtensionViewer.html`. Le HTML reste autonome pour le code Vue, mais ces deux dossiers sont necessaires au fond de carte et au catalogue du monde.
 
 ## Stack retenue
 
@@ -49,17 +50,36 @@ Pour utiliser ou distribuer l'interface, garder `map-tiles/` a cote de `MapExten
 - L'app consomme `GET /health`, `GET /cargo` et `GET /rupture-cycle`.
 - Les labels d'interface utilisent `Cargo Dispatchers` et `Cargo Receivers`.
 - Le fond de carte est charge depuis `map-tiles/base_newmap_q70_2048/`.
+- Le catalogue statique est charge depuis `map-data/` par balises `<script>` JSONP afin de rester compatible avec une ouverture directe en `file://`.
 - La timeline du cycle de rupture reste animee localement a partir de `elapsed_seconds` et `observed_at_unix_ms`.
-- Le plugin se met a jour tout seul via le sidecar du modloader, mais seule la DLL est remplacee : `MapExtensionViewer.html` et `map-tiles/` restent sur la version installee par l'utilisateur. Toute evolution de la forme des payloads doit donc rester retro-compatible avec une interface plus ancienne, ou etre annoncee comme mise a jour manuelle de l'interface.
+- Le plugin se met a jour tout seul via le sidecar du modloader, mais seule la DLL est remplacee : `MapExtensionViewer.html`, `map-tiles/` et `map-data/` restent sur la version installee par l'utilisateur. Toute evolution de la forme des payloads doit donc rester retro-compatible avec une interface plus ancienne, ou etre annoncee comme mise a jour manuelle de l'interface.
 - Pour rendre ce cas visible, l'interface consomme trois champs optionnels de `GET /health` : `plugin_version` (chaine), `viewer_contract_version` (entier) et `viewer_update` (`download_url`, `release_url`, `mod_page_url`, tous optionnels). Un plugin plus ancien n'envoie rien de tout cela et le comportement reste strictement inchange.
 - Les URLs sont fabriquees par le plugin, jamais par l'interface : c'est le plugin qui est toujours a jour grace a l'auto-update. `download_url` et `release_url` sont absents sur un build local de developpement, et les liens correspondants ne sont alors pas affiches.
-- L'interface embarque `VIEWER_CONTRACT_VERSION` dans `src/lib/viewerContract.ts`. Si `viewer_contract_version` renvoye par le plugin est strictement superieur a cette constante, une pop-up modale explique qu'il faut remplacer `MapExtensionViewer.html` et `map-tiles/` a la main. Aucune comparaison de numeros de version n'est faite.
+- L'interface embarque `VIEWER_CONTRACT_VERSION` dans `src/lib/viewerContract.ts`. Si `viewer_contract_version` renvoye par le plugin est strictement superieur a cette constante, une pop-up modale explique qu'il faut remplacer `MapExtensionViewer.html`, `map-tiles/` et `map-data/` a la main. Aucune comparaison de numeros de version n'est faite.
 - Regle de bump : incrementer `VIEWER_CONTRACT_VERSION` et `kViewerContractVersion` (`map_state_json.cpp`) dans le meme changement, uniquement quand une evolution de payload casse les interfaces plus anciennes. Un ajout de champ retro-compatible ne doit pas etre bumpe.
 - Le rejet de la pop-up est memorise dans `localStorage` sous la cle dediee `starrupture-mapview:viewer-update-dismissed:v1`, par `plugin_version` : fermer la pop-up la masque pour cette version du plugin, et elle revient des que le plugin passe a une version plus recente. Les cles existantes (preferences, annotations) ne sont pas touchees.
 - L'interface inclut des modes de vue reseau/ressources/teleporteurs/joueurs, des filtres, l'echelle d'icones et des annotations personnelles exportables/importables en JSON.
 - Raccourcis utiles : `?`, `/`, `R`, `L`, `G`, `E`, `S`, `F`, `C`, `P`, `0`, `Esc`.
 
-## POI et filtres de carte
+## Catalogue statique du monde
+
+Le viewer charge un catalogue compact pre-genere depuis `public/map-data/`. Il contient 241 POI principaux ainsi que les ressources, batiments, zones et elements techniques extraits localement des exports `analyse_map/map_v2_*`. Les POI restent dans le SVG interactif ; les centaines de milliers de ressources et placements sont dessines par `StaticMapCanvas.vue` afin d'eviter un DOM SVG trop volumineux.
+
+Le volet `Filtres` permet de rechercher et d'activer les couches, groupes de POI, categories et types de ressources, representations HISM/PCG/acteur, batiments, zones et elements techniques. Les choix sont persistants sous la cle `mapview.static-filters.v1`. Les couches POI et ressources sont actives par defaut ; les donnees techniques et les points PCG deja couverts restent masques.
+
+Les observations live de plantes recues dans `/cargo` sont appariees au point statique du meme type le plus proche dans un rayon de 150 cm. L'etat live est applique au point catalogue sans creer un doublon ; une observation sans correspondance reste un marqueur runtime distinct.
+
+### Regeneration
+
+Depuis la racine du depot, avec les quatre exports locaux presents dans `analyse_map/` :
+
+```bash
+python3 tools/build_map_data.py
+```
+
+Le script lit `map_v2_resources.jsonl`, `map_v2_placements.jsonl`, `map_v2_pois.geojson` et `map_v2_catalog.json`, puis reecrit `mapview/public/map-data/*.js`. `analyse_map/` est ignore par Git, mais les fichiers compacts generes doivent etre versionnes pour que les builds locaux et CI disposent du catalogue.
+
+## POI live et filtres de carte
 
 Le tableau optionnel `pois` de `GET /cargo` alimente deux familles de points
 d'interet :

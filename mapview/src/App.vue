@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, readonly, ref } from "vue";
+import { computed, readonly, ref, watch } from "vue";
 
 import MapAnnotationFab from "./components/mapview/MapAnnotationFab.vue";
 import MapCanvas from "./components/MapCanvas.vue";
@@ -12,8 +12,24 @@ import MapSelectionPanel from "./components/mapview/MapSelectionPanel.vue";
 import MapShortcutDialog from "./components/mapview/MapShortcutDialog.vue";
 import MapViewerUpdateDialog from "./components/mapview/MapViewerUpdateDialog.vue";
 import { useMapViewState } from "./composables/useMapViewState";
+import {
+    useStaticMapData,
+    type StaticMapPoiView,
+    type StaticSelection,
+} from "./composables/useStaticMapData";
+import {
+    applyStaticFilterToggle,
+    useStaticFiltersModel,
+    useStaticMapFilters,
+} from "./composables/useStaticMapFilters";
 import { useUserAnnotations } from "./composables/useUserAnnotations";
+import { resolveMapProjection, worldToMap } from "./lib/mapProjection";
 import type {
+    StaticPlacement,
+    StaticPointSeries,
+} from "./lib/staticMapCatalog";
+import type {
+    DetailRow,
     MapCanvasHandle,
     MapCanvasToolbarModel,
     MapControlDockModel,
@@ -23,6 +39,7 @@ import type {
     MapSelectionPanelModel,
     MapViewerUpdateDialogModel,
     Rect2D,
+    StaticFilterToggle,
     UserAnnotationDraft,
     UserAnnotationSelection,
 } from "./lib/types";
@@ -165,6 +182,7 @@ function handleEntitySelect(key: string): void {
 function clearAllSelection(): void {
     clearSelection();
     clearAnnotationSelection();
+    clearStaticSelection();
 }
 
 function centerSelectedAnnotation(): void {
@@ -214,6 +232,214 @@ function handleCreateZone(rect: Rect2D): void {
     addZone(rect);
 }
 
+// ── Static world catalog ───────────────────────────────────────────────
+
+const projection = computed(() => resolveMapProjection(cargo.value?.map));
+const staticData = useStaticMapData(projection);
+const staticFilters = useStaticMapFilters(staticData.manifest);
+const staticSelection = ref<StaticSelection | null>(null);
+const matchedLivePoiKeys = ref<Set<string>>(new Set());
+
+watch(
+    [staticFilters.enabledLayers, staticData.manifest],
+    ([layers]) => {
+        void staticData.ensureLayers(layers);
+    },
+    { immediate: true },
+);
+
+// Live observations are folded into the catalog instead of adding a second
+// marker at the same spot.
+watch(
+    [() => cargo.value?.pois, staticData.series],
+    () => {
+        matchedLivePoiKeys.value = staticData.applyDynamicPois(
+            cargo.value?.pois ?? [],
+        );
+    },
+    { immediate: true },
+);
+
+watch(selectedKey, (key) => {
+    if (key) staticSelection.value = null;
+});
+
+const visiblePois = computed(() =>
+    displayedPois.value.filter(
+        (poi) => !matchedLivePoiKeys.value.has(poi.unique_key),
+    ),
+);
+
+const staticLoadedCount = computed(
+    () =>
+        staticData.totalPointCount.value +
+        staticData.placements.value.length +
+        staticData.pois.value.length,
+);
+
+const staticFiltersModel = useStaticFiltersModel({
+    manifest: staticData.manifest,
+    filters: staticFilters,
+    ui,
+    lang,
+    loading: staticData.loading,
+    error: staticData.error,
+    available: staticData.available,
+    loadedCount: staticLoadedCount,
+});
+
+function isStaticSeriesVisible(entry: StaticPointSeries): boolean {
+    return staticFilters.isSeriesVisible(entry);
+}
+
+function isStaticPlacementVisible(entry: StaticPlacement): boolean {
+    return staticFilters.isPlacementGroupEnabled(entry.layer, entry.group);
+}
+
+function isStaticPoiVisible(entry: StaticMapPoiView): boolean {
+    return staticFilters.isPoiGroupEnabled(entry.group);
+}
+
+function pickStatic(
+    x: number,
+    y: number,
+    radius: number,
+): StaticSelection | null {
+    return staticData.findNearest(
+        x,
+        y,
+        radius,
+        isStaticSeriesVisible,
+        isStaticPlacementVisible,
+    );
+}
+
+function staticGroupLabel(key: string): string {
+    const groups = ui.value.staticFilters.groups as Record<string, string>;
+    return groups[key] ?? key;
+}
+
+function staticResourceLabel(typeId: string): string {
+    const entry = staticData.manifest.value?.resource_types?.[typeId];
+    if (!entry) return typeId;
+    return lang.value === "fr" ? entry.fr : entry.en;
+}
+
+function staticTitle(selection: StaticSelection): string {
+    if (selection.kind === "resource") return staticResourceLabel(selection.group);
+    if (selection.kind === "poi") {
+        return selection.label || staticGroupLabel(selection.group);
+    }
+    return selection.label || selection.actorType || staticGroupLabel(selection.group);
+}
+
+function staticDetailRows(selection: StaticSelection): DetailRow[] {
+    const messages = ui.value.staticFilters;
+    const rows: DetailRow[] = [
+        {
+            label: messages.details.catalog,
+            value: messages.layers[selection.layer],
+        },
+    ];
+
+    if (selection.kind === "resource") {
+        const categories = messages.categories as Record<string, string>;
+        rows.push({
+            label: messages.details.group,
+            value: categories[selection.category ?? ""] ?? selection.category ?? "",
+        });
+        if (selection.representation) {
+            rows.push({
+                label: messages.details.representation,
+                value: messages.representations[selection.representation],
+            });
+        }
+        rows.push({
+            label: ui.value.selection.state,
+            value: messages.states[selection.state],
+        });
+    } else {
+        rows.push({
+            label: messages.details.group,
+            value: staticGroupLabel(selection.group),
+        });
+    }
+
+    if (selection.actorType) {
+        rows.push({
+            label: messages.details.actorType,
+            value: selection.actorType,
+        });
+    }
+
+    const poi = selection.poi;
+    if (poi) {
+        const description =
+            lang.value === "fr"
+                ? poi.descriptionFr || poi.descriptionEn
+                : poi.descriptionEn || poi.descriptionFr;
+        if (description) {
+            rows.push({
+                label: messages.details.description,
+                value: description,
+            });
+        }
+        if (poi.guid) {
+            rows.push({ label: messages.details.guid, value: poi.guid });
+        }
+    }
+
+    rows.push({
+        label: messages.details.position,
+        value: `X ${Math.round(selection.x / 10)} m | Y ${Math.round(selection.y / 10)} m`,
+    });
+    rows.push({
+        label: messages.details.altitude,
+        value: `${selection.z} m`,
+    });
+
+    return rows;
+}
+
+function describeStatic(selection: StaticSelection): {
+    title: string;
+    lines: string[];
+} {
+    return {
+        title: staticTitle(selection),
+        lines: staticDetailRows(selection).map(
+            (row) => `${row.label}: ${row.value}`,
+        ),
+    };
+}
+
+function handleStaticSelect(selection: StaticSelection | null): void {
+    clearSelection();
+    clearAnnotationSelection();
+    staticSelection.value = selection;
+}
+
+function clearStaticSelection(): void {
+    staticSelection.value = null;
+}
+
+function handleStaticFilterToggle(toggle: StaticFilterToggle): void {
+    applyStaticFilterToggle(staticFilters, toggle);
+}
+
+function centerCurrentSelection(): void {
+    const selection = staticSelection.value;
+    if (selection && !selectedEntity.value) {
+        const point = worldToMap(
+            { x: selection.x * 10, y: selection.y * 10 },
+            projection.value,
+        );
+        mapCanvasRef.value?.focusPoint(point.x, point.y);
+        return;
+    }
+    centerSelection();
+}
+
 // ── Panel models ──────────────────────────────────────────────────────────────
 
 const controlDockPanel = computed<MapControlDockModel>(() => ({
@@ -253,22 +479,36 @@ const rupturePanel = computed<MapRupturePanelModel>(() => ({
     timelineTicks: ruptureTimelineTicks.value,
 }));
 
-const selectionPanel = computed<MapSelectionPanelModel>(() => ({
-    detailsExpanded: detailsPanelExpanded.value,
-    ui: ui.value,
-    selectedEntityKeyLabel: selectedEntityKeyLabel.value,
-    selectedEntitySummary: selectedEntitySummary.value,
-    selectedEntityTone: selectedEntityTone.value,
-    selectedDisplayName: selectedDisplayName.value,
-    selectedPreviewFacts: selectedPreviewFacts.value,
-    selectedDetailRows: selectedDetailRows.value,
-    selectedEntityActive: !!selectedEntity.value,
-    canEnableFocusMode: canEnableFocusMode.value,
-    focusMode: focusMode.value,
-    totalCounts: totalCounts.value,
-    visibleCargoConnectionsCount: visibleCargoConnections.value.length,
-    statsOverview: statsOverview.value,
-}));
+const selectionPanel = computed<MapSelectionPanelModel>(() => {
+    const staticEntry = staticSelection.value;
+    const showStatic = !!staticEntry && !selectedEntity.value;
+    const staticRows = showStatic && staticEntry ? staticDetailRows(staticEntry) : [];
+
+    return {
+        detailsExpanded: detailsPanelExpanded.value,
+        ui: ui.value,
+        selectedEntityKeyLabel: showStatic && staticEntry
+            ? staticEntry.key
+            : selectedEntityKeyLabel.value,
+        selectedEntitySummary: showStatic && staticEntry
+            ? ui.value.staticFilters.layers[staticEntry.layer]
+            : selectedEntitySummary.value,
+        selectedEntityTone: showStatic ? "neutral" : selectedEntityTone.value,
+        selectedDisplayName: showStatic && staticEntry
+            ? staticTitle(staticEntry)
+            : selectedDisplayName.value,
+        selectedPreviewFacts: showStatic
+            ? staticRows.slice(0, 3)
+            : selectedPreviewFacts.value,
+        selectedDetailRows: showStatic ? staticRows : selectedDetailRows.value,
+        selectedEntityActive: showStatic || !!selectedEntity.value,
+        canEnableFocusMode: showStatic ? false : canEnableFocusMode.value,
+        focusMode: showStatic ? false : focusMode.value,
+        totalCounts: totalCounts.value,
+        visibleCargoConnectionsCount: visibleCargoConnections.value.length,
+        statsOverview: statsOverview.value,
+    };
+});
 
 const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     collapsed: filtersPanelCollapsed.value,
@@ -282,11 +522,12 @@ const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     userAnnotationsOnly: userAnnotationsOnly.value,
     canEnableFocusMode: canEnableFocusMode.value,
     focusMode: focusMode.value,
+    staticFilters: staticFiltersModel.value,
 }));
 
 const canvasToolbarPanel = computed<MapCanvasToolbarModel>(() => ({
     ui: ui.value,
-    selectedEntityActive: !!selectedEntity.value,
+    selectedEntityActive: !!selectedEntity.value || !!staticSelection.value,
     canEnableFocusMode: canEnableFocusMode.value,
     focusMode: focusMode.value,
     filtersOpen: !filtersPanelCollapsed.value,
@@ -342,7 +583,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 :cargo-connections="visibleCargoConnections"
                 :teleporters="displayedTeleporters"
                 :players="displayedPlayers"
-                :pois="displayedPois"
+                :pois="visiblePois"
                 :selected-key="selectedKey"
                 :selected-entity="selectedEntity"
                 :orphan-keys="Array.from(orphanKeySet)"
@@ -355,10 +596,21 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 :annotation-mode="annotationMode"
                 :annotation-edit-mode="annotationEditMode"
                 :selected-annotation="selectedAnnotation"
+                :static-series="staticData.series.value"
+                :static-placements="staticData.placements.value"
+                :static-pois="staticData.poiViews.value"
+                :static-state-version="staticData.stateVersion.value"
+                :static-selection="staticSelection"
+                :static-series-visible="isStaticSeriesVisible"
+                :static-placement-visible="isStaticPlacementVisible"
+                :static-poi-visible="isStaticPoiVisible"
+                :static-pick="pickStatic"
+                :static-describe="describeStatic"
                 @select="handleEntitySelect"
                 @clear-selection="clearAllSelection"
                 @hover="hoveredKey = $event"
                 @select-annotation="handleAnnotationSelect"
+                @select-static="handleStaticSelect"
                 @create-marker="handleCreateMarker"
                 @create-zone="handleCreateZone"
                 @move-marker="handleMoveMarker"
@@ -373,7 +625,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                         resetMapView();
                     }
                 "
-                @center="centerSelection"
+                @center="centerCurrentSelection"
                 @center-player="centerOnPlayer"
                 @toggle-focus="toggleFocusMode"
                 @toggle-filters="toggleFiltersPanel"
@@ -406,9 +658,9 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 v-if="selectionPanel.selectedEntityActive"
                 :panel="selectionPanel"
                 @toggle-details="toggleDetailsPanel"
-                @center="centerSelection"
+                @center="centerCurrentSelection"
                 @toggle-focus="toggleFocusMode"
-                @clear-selection="clearSelection"
+                @clear-selection="clearAllSelection"
                 @open-shortcuts="openShortcuts"
             />
 
@@ -422,6 +674,10 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @update:highlight-orphans="highlightOrphans = $event"
                 @update:user-annotations-only="userAnnotationsOnly = $event"
                 @toggle-focus="toggleFocusMode"
+                @static-toggle="handleStaticFilterToggle"
+                @update:static-search="staticFilters.search.value = $event"
+                @static-show-all="staticFilters.setAll(true)"
+                @static-hide-all="staticFilters.setAll(false)"
             />
         </section>
 

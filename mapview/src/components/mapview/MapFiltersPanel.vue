@@ -3,8 +3,10 @@ import teleporterSvg from "../../assets/teleporter.svg?raw";
 import type {
     EntityToggleKey,
     MapFiltersPanelModel,
+    StaticFilterToggle,
     ViewMode,
 } from "../../lib/types";
+import MapStaticFilters from "./MapStaticFilters.vue";
 
 const viewModeOptions: ViewMode[] = [
     "network",
@@ -31,6 +33,10 @@ const emit = defineEmits<{
     "update:highlight-orphans": [value: boolean];
     "update:user-annotations-only": [value: boolean];
     "toggle-focus": [];
+    "static-toggle": [value: StaticFilterToggle];
+    "update:static-search": [value: string];
+    "static-show-all": [];
+    "static-hide-all": [];
 }>();
 
 function handleShowAllLinksChange(event: Event): void {
@@ -217,6 +223,15 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
                         </button>
                     </div>
                 </div>
+
+                <MapStaticFilters
+                    v-if="panel.staticFilters"
+                    :model="panel.staticFilters"
+                    @toggle="emit('static-toggle', $event)"
+                    @update:search="emit('update:static-search', $event)"
+                    @show-all="emit('static-show-all')"
+                    @hide-all="emit('static-hide-all')"
+                />
 
             </div>
         </section>

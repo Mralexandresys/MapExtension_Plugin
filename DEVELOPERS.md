@@ -4,7 +4,8 @@
 
 - plugin source: `MapExtension_Plugin/`
 - frontend source: `MapExtension_Plugin/mapview/`
-- frontend build output: `MapExtension_Plugin/mapview/dist/MapExtensionViewer.html`
+- frontend build output: `MapExtension_Plugin/mapview/dist/MapExtensionViewer.html`, `map-tiles/`, and `map-data/`
+- static world-catalog generator: `MapExtension_Plugin/tools/build_map_data.py`
 
 ## Runtime module layout
 
@@ -120,7 +121,30 @@ The production build entry point is:
 MapExtension_Plugin/mapview/dist/MapExtensionViewer.html
 ```
 
-Depending on the active map rendering mode, the build output can also include `mapview/dist/map-tiles/` assets alongside the HTML entry point.
+The build output also includes `mapview/dist/map-tiles/` and `mapview/dist/map-data/` alongside the HTML entry point. Both folders must stay next to `MapExtensionViewer.html` for direct `file://` use.
+
+## Static world catalog
+
+`tools/build_map_data.py` converts local reverse-engineering exports into the compact files committed under `mapview/public/map-data/`. Its default inputs are:
+
+- `analyse_map/map_v2_resources.jsonl`
+- `analyse_map/map_v2_placements.jsonl`
+- `analyse_map/map_v2_pois.geojson`
+- `analyse_map/map_v2_catalog.json`
+
+Run it from the repository root:
+
+```bash
+python3 tools/build_map_data.py
+```
+
+`analyse_map/` is a strictly local, ignored input and must not be committed. The generated `mapview/public/map-data/*.js` files are build inputs and must be committed because CI does not have the raw exports.
+
+The format uses integer world decimetres, metre altitudes, dictionary/group indexes, locality sorting, and delta-encoded coordinate arrays. Multi-mesh HISM duplicates are merged within 50 cm; PCG points covered by nearby HISM instances are tagged separately so the viewer can hide them by default. Placements are split into building, zone, and technical parts, and supported box shapes retain a projected ground footprint.
+
+The files contain compact JSON wrapped as `SRMAPDATA(<payload>);`. This JSONP wrapper is intentional: browsers commonly block `fetch()` from a page opened through `file://`, while classic relative `<script src>` loading remains available. Do not replace it with `fetch()` unless the distribution model changes to an HTTP-served viewer.
+
+The viewer loads parts lazily by enabled layer. `StaticMapCanvas.vue` renders large point and placement layers on canvas; the existing SVG remains responsible for live entities, annotations, and selectable catalog POIs. World coordinates are projected with `mapProjection.ts`, whose defaults must stay synchronized with `map_state_types.h`; a reachable plugin can override those defaults through the `map` object in `/cargo`.
 
 ## Packaging a release
 
@@ -133,8 +157,9 @@ Depending on the active map rendering mode, the build output can also include `m
    - `build/Client Release/Plugins/MapExtension_Plugin.dll`
    - `Plugins/MapExtension_Plugin.json`, the update sidecar whose only field is `manifest_url` (see the GitHub Actions release section below); omit it only if the archive is not meant to receive automatic updates
    - `mapview/dist/MapExtensionViewer.html`
-   - `mapview/dist/map-tiles/` if present in the build output
-4. Create a viewer-only archive containing `mapview/dist/MapExtensionViewer.html` and `mapview/dist/map-tiles/`. This is what the in-app update dialog links to, so it must be named `MapExtension_Plugin-<tag>-viewer.zip`.
+   - `mapview/dist/map-tiles/`
+   - `mapview/dist/map-data/`
+4. Create a viewer-only archive containing `mapview/dist/MapExtensionViewer.html`, `mapview/dist/map-tiles/`, and `mapview/dist/map-data/`. This is what the in-app update dialog links to, so it must be named `MapExtension_Plugin-<tag>-viewer.zip`.
 5. Create a server archive containing:
    - `build/Server Release/Plugins/MapExtension_Plugin.dll`
 6. (Optional) add `README.md`, `README.fr.md`, `LICENSE`, notice files, and `licenses/` content alongside the binaries if you want a fuller release bundle.
@@ -161,11 +186,11 @@ The workflow:
 5. creates a client zip with the client DLL, `MapExtensionViewer.html`, and `Plugins/MapExtension_Plugin.json` sidecar whose only field is `manifest_url`; `.pdb` files are included when available
 6. publishes `MapExtension_Plugin-client-manifest.json` and a direct client DLL asset for the modloader auto-updater
 7. creates a separate server zip with the server DLL
-8. creates a viewer-only zip `MapExtension_Plugin-<tag>-viewer.zip` with `MapExtensionViewer.html` and `map-tiles/`, which is the asset the viewer update dialog points users to
+8. creates a viewer-only zip `MapExtension_Plugin-<tag>-viewer.zip` with `MapExtensionViewer.html`, `map-tiles/`, and `map-data/`, which is the asset the viewer update dialog points users to
 9. creates a plugin tag in the format `ML-<sdk-version>-vX.Y` (for example `ML-2026.04.09-200640-v0.2` or `ML-v1.2.0-v0.2`, depending on the selected SDK tag)
 10. publishes a GitHub release in the plugin repository
 
-The modloader auto-updater replaces `MapExtension_Plugin.dll` only. `MapExtensionViewer.html` and `map-tiles/` live outside the game folder and are never updated, so any change to the `/cargo`, `/health`, or `/rupture-cycle` payload shape must stay backward compatible with an older viewer, or bump the viewer contract version described below so the viewer prompts the user to download the viewer zip.
+The modloader auto-updater replaces `MapExtension_Plugin.dll` only. `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` live outside the game folder and are never updated, so any change to the `/cargo`, `/health`, or `/rupture-cycle` payload shape must stay backward compatible with an older viewer, or bump the viewer contract version described below so the viewer prompts the user to download the viewer zip.
 
 The server build ships no sidecar and is not auto-updated. Sync protocol v4 requires an exact protocol-version match, so releases using it must tell server admins to update the client and dedicated-server DLLs together. A mixed-version pair ignores incompatible packets and cannot publish a remote snapshot.
 

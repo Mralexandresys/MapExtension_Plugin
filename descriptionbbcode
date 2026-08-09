@@ -19,6 +19,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]Show [b]teleporter positions[/b][/*]
 [*]Show [b]player positions[/b][/*]
 [*]Show [b]abandoned bases[/b] and available Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart plants[/*]
+[*]Browse a pre-generated [b]world catalog[/b] of major POIs, plants, minerals, animal resources, buildings, zones, and optional technical elements with searchable persistent filters[/*]
 [*]Keep observed plant markers when their World Partition area leaves the current loading radius, and remember them on disk between game restarts[/*]
 [*]Manually scan the full map in solo/local play, one World Partition zone at a time, with progress and cancellation[/*]
 [*]Remove depleted or permanently gathered plants from the map[/*]
@@ -32,6 +33,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 
 [size=4][b]Latest Changes[/b][/size]
 [list]
+[*]Added a compact static world catalog with major POIs, resources, buildings, zones, searchable filters, and canvas rendering for large layers[/*]
 [*]Added a solo/local full-map plant scan from the in-game MapExtension panel, with progress, cancellation, per-zone timeouts, and incremental disk saves[/*]
 [*]Discovered plants are now saved to disk per save session, so accumulated plant coverage survives game restarts[/*]
 [*]Harvested plants are now removed reliably: depleted-location matching tolerates small coordinate differences instead of requiring an exact match[/*]
@@ -43,7 +45,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]Added a compact Rupture view with phase, time remaining, legend, and timeline details on hover or keyboard focus[/*]
 [*]Added a filter that leaves only personal markers and zones, plus player centering from the Player control or the P shortcut[/*]
 [*][b]Dedicated-server sync now uses protocol v4 so pages from different POI revisions cannot be mixed. Update the client and dedicated-server builds together; mixed protocol versions ignore each other's packets.[/b][/*]
-[*]The Mod Loader still updates only the plugin DLL. Replace MapExtensionViewer.html and map-tiles manually to receive viewer changes[/*]
+[*]The Mod Loader still updates only the plugin DLL. Replace MapExtensionViewer.html, map-tiles, and map-data manually to receive viewer changes[/*]
 [/list]
 
 [size=4][b]Change Log v0.5[/b][/size]
@@ -145,7 +147,7 @@ The map viewer runs on the client. In dedicated-server play, the client plugin c
 [code]StarRupture/Binaries/Win64/Plugins/[/code]
 [/*]
 [*]Start the game once so the plugin can initialize and generate its config file[/*]
-[*]Place [b]MapExtensionViewer.html[/b] and the [b]map-tiles[/b] folder together wherever you want on your PC[/*]
+[*]Place [b]MapExtensionViewer.html[/b], [b]map-tiles[/b], and [b]map-data[/b] together wherever you want on your PC[/*]
 [*]Double-click [b]MapExtensionViewer.html[/b] to open it in your default browser[/*]
 [*]Keep the game running while you use the map viewer[/*]
 [/list]
@@ -160,7 +162,7 @@ If you play on a dedicated server, install the server build of [b]MapExtension_P
 
 Once [b]MapExtension_Plugin.json[/b] sits next to the DLL in your [b]Plugins[/b] folder, the Mod Loader checks for a newer plugin version when the game starts and replaces [b]MapExtension_Plugin.dll[/b] for you.
 
-[b]Important:[/b] the automatic update only replaces the plugin DLL. It does [b]not[/b] touch [b]MapExtensionViewer.html[/b] or the [b]map-tiles[/b] folder, because those live wherever you chose to put them on your PC.
+[b]Important:[/b] the automatic update only replaces the plugin DLL. It does [b]not[/b] touch [b]MapExtensionViewer.html[/b], [b]map-tiles[/b], or [b]map-data[/b], because those live wherever you chose to put them on your PC.
 
 Good news: [b]the map viewer tells you when its payload contract is incompatible.[/b] If the plugin has moved on to a contract the viewer no longer understands, a window opens in the browser page with a direct download link for the new viewer, plus links to the GitHub release and to this mod page. Backward-compatible viewer improvements may not open that window, so install the matching viewer archive manually when a release includes viewer changes.
 
@@ -168,11 +170,11 @@ When that happens:
 
 [list=1]
 [*]Download the viewer archive from the link in the window[/*]
-[*]Replace your [b]MapExtensionViewer.html[/b] and your [b]map-tiles[/b] folder with the ones from the archive[/*]
+[*]Replace your [b]MapExtensionViewer.html[/b], [b]map-tiles[/b], and [b]map-data[/b] with the ones from the archive[/*]
 [*]Reload [b]MapExtensionViewer.html[/b] in your browser[/*]
 [/list]
 
-Always keep the [b]map-tiles[/b] folder next to [b]MapExtensionViewer.html[/b], otherwise the map background will not load.
+Always keep [b]map-tiles[/b] and [b]map-data[/b] next to [b]MapExtensionViewer.html[/b], otherwise the map background or world catalog will not load.
 
 [list]
 [*]On a dedicated server, the server build is [b]not[/b] updated automatically: protocol v4 requires you to replace the server [b]MapExtension_Plugin.dll[/b] by hand and update it together with the client build[/*]
@@ -186,11 +188,11 @@ Always keep the [b]map-tiles[/b] folder next to [b]MapExtensionViewer.html[/b], 
 [b]MapExtensionViewer.html[/b] is the browser page used by the mod.
 
 [list]
-[*]It can be stored [b]anywhere on your PC[/b] as long as the [b]map-tiles[/b] folder stays next to it[/*]
+[*]It can be stored [b]anywhere on your PC[/b] as long as [b]map-tiles[/b] and [b]map-data[/b] stay next to it[/*]
 [*]You can move it to your [b]Desktop[/b] for easier access[/*]
 [*]A simple [b]double-click[/b] opens it in your default browser[/*]
 [*]It does [b]not[/b] need to stay inside the game folder[/*]
-[*]The [b]map-tiles[/b] folder must stay beside [b]MapExtensionViewer.html[/b] so the map background can load correctly[/*]
+[*]The [b]map-tiles[/b] and [b]map-data[/b] folders must stay beside [b]MapExtensionViewer.html[/b] so the map background and world catalog can load correctly[/*]
 [*]The game must still be running so the page can read live data from the plugin[/*]
 [/list]
 
@@ -253,7 +255,7 @@ Yes. The viewer reads live data from the running game.
 
 [b]Do I need to open the HTML file from the game folder every time?[/b]
 
-No. You can place [b]MapExtensionViewer.html[/b] anywhere on your PC, including your Desktop, as long as the [b]map-tiles[/b] folder stays next to it.
+No. You can place [b]MapExtensionViewer.html[/b] anywhere on your PC, including your Desktop, as long as [b]map-tiles[/b] and [b]map-data[/b] stay next to it.
 
 [b]Is this a client-side mod?[/b]
 
@@ -273,7 +275,7 @@ Yes, as long as you installed from the client archive so that [b]MapExtension_Pl
 
 [b]How do I know when the map viewer needs updating?[/b]
 
-The map viewer tells you. When the plugin becomes too recent for your copy of [b]MapExtensionViewer.html[/b], a window opens in the browser page with a direct download link for the new viewer. Replace [b]MapExtensionViewer.html[/b] and the [b]map-tiles[/b] folder together, then reload the page.
+The map viewer tells you. When the plugin becomes too recent for your copy of [b]MapExtensionViewer.html[/b], a window opens in the browser page with a direct download link for the new viewer. Replace [b]MapExtensionViewer.html[/b], [b]map-tiles[/b], and [b]map-data[/b] together, then reload the page.
 
 [line]
 
@@ -308,12 +310,14 @@ After installation, your files should look similar to this:
 
 Anywhere on your PC
 |-- MapExtensionViewer.html
+|-- map-data/
 `-- map-tiles/
     `-- base_newmap_q70_2048/
 
 Example if you place it on your Desktop
 Desktop/
 |-- MapExtensionViewer.html
+|-- map-data/
 `-- map-tiles/
     `-- base_newmap_q70_2048/[/code]
 
@@ -325,6 +329,6 @@ Desktop/
 [code]StarRupture/Binaries/Win64/Plugins/[/code]
 [/*]
 [*][b]MapExtension_Plugin.json[/b] must stay next to the DLL so the Mod Loader can update the plugin automatically[/*]
-[*][b]MapExtensionViewer.html[/b] and the [b]map-tiles[/b] folder can be stored anywhere, including your Desktop[/*]
-[*]Keep the [b]map-tiles[/b] folder and its contents next to [b]MapExtensionViewer.html[/b][/*]
+[*][b]MapExtensionViewer.html[/b], [b]map-tiles[/b], and [b]map-data[/b] can be stored anywhere, including your Desktop[/*]
+[*]Keep the [b]map-tiles[/b] and [b]map-data[/b] folders and their contents next to [b]MapExtensionViewer.html[/b][/*]
 [/list]

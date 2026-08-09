@@ -75,6 +75,23 @@ export function useMapPanZoom(
     const transform = computed(
         () => `translate(${mapTranslateX.value},${mapTranslateY.value}) scale(${mapScale.value})`,
     );
+    const mapPixelsPerUnit = computed(() => {
+        const width = finiteNumber(viewBoxWidth.value);
+        const height = finiteNumber(viewBoxHeight.value);
+        if (
+            width <= 0 ||
+            height <= 0 ||
+            shellWidth.value <= 0 ||
+            shellHeight.value <= 0
+        ) {
+            return mapScale.value;
+        }
+
+        return (
+            Math.min(shellWidth.value / width, shellHeight.value / height) *
+            mapScale.value
+        );
+    });
     const isDragging = computed(() => drag.value !== null);
 
     function measureViewport(): void {
@@ -288,6 +305,7 @@ export function useMapPanZoom(
         mapTranslateY,
         drag,
         transform,
+        mapPixelsPerUnit,
         isDragging,
         viewportBounds,
         resetView,
