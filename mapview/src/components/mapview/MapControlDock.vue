@@ -321,7 +321,7 @@ function handleFileChange(event: Event): void {
                     </div>
                 </div>
             </div>
-            <div v-if="panel.commandStats?.length" class="command-stats-row">
+            <div class="command-stats-row">
                 <div
                     v-for="stat in panel.commandStats"
                     :key="stat.key"
@@ -330,6 +330,12 @@ function handleFileChange(event: Event): void {
                 >
                     <span class="command-stat-label">{{ stat.label }}</span>
                     <span class="command-stat-value">{{ stat.value }}</span>
+                </div>
+
+                <!-- Rupture timeline: global status, so it belongs with the other
+                     global status readouts rather than floating over the map. -->
+                <div class="command-stats-timeline">
+                    <slot name="timeline" />
                 </div>
             </div>
         </div>
@@ -519,10 +525,19 @@ function handleFileChange(event: Event): void {
 .command-stat.warn strong    { color: var(--warn); }
 .command-stat.bad strong     { color: var(--bad); }
 
+.command-stats-timeline {
+    flex: 1;
+    min-width: 260px;
+    display: flex;
+    align-items: stretch;
+    padding: 6px 0;
+}
+
 .command-stats-row {
     display: flex;
+    flex-wrap: wrap;
     gap: 16px;
-    align-items: center;
+    align-items: stretch;
     padding: 6px 16px;
     border-top: 1px solid var(--border-strong);
     background: rgba(14, 22, 42, 0.96);

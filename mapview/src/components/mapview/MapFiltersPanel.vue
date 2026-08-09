@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { computed } from "vue";
+
 import teleporterSvg from "../../assets/teleporter.svg?raw";
 import type {
     EntityToggleKey,
+    FilterSectionKey,
     MapFiltersPanelModel,
     StaticFilterToggle,
     ViewMode,
@@ -26,6 +29,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     "toggle-collapse": [];
+    "toggle-section": [key: FilterSectionKey];
     "clear": [];
     "toggle-entity": [key: EntityToggleKey];
     "update:view-mode": [value: ViewMode];
@@ -56,6 +60,33 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
         (event.target as HTMLInputElement).checked,
     );
 }
+
+// Every collapsed section still advertises its state in its header, so folding
+// one never hides the fact that filters are active inside it.
+const visibilitySummary = computed(() => {
+    const options = props.panel.entityToggleOptions;
+    const enabled = options.filter(
+        (option) => props.panel.entityVisibility[option.key],
+    ).length;
+    return `${enabled}/${options.length}`;
+});
+
+const modeSummary = computed(() => props.panel.ui.viewModes[props.panel.viewMode]);
+
+const behaviorSummary = computed(() => {
+    const enabled = [
+        !props.panel.showAllLinks,
+        props.panel.highlightOrphans,
+        props.panel.userAnnotationsOnly,
+    ].filter(Boolean).length;
+    return `${enabled}/3`;
+});
+
+const catalogSummary = computed(() => {
+    const model = props.panel.staticFilters;
+    if (!model || !model.available) return "--";
+    return model.loadedCount.toLocaleString(props.panel.ui.locale);
+});
 </script>
 
 <template>
@@ -120,11 +151,26 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
                     </div>
                 </div>
 
-                <div class="panel-section">
-                    <div>
-                        <h3>{{ panel.ui.filters.visibilityTitle }}</h3>
-                        <p>{{ panel.ui.filters.visibilityHelp }}</p>
-                    </div>
+                <section class="filter-section">
+                    <button
+                        class="filter-section-head"
+                        type="button"
+                        :aria-expanded="panel.sectionsOpen.visibility"
+                        @click="emit('toggle-section', 'visibility')"
+                    >
+                        <span
+                            class="collapse-arrow"
+                            :class="panel.sectionsOpen.visibility ? 'down' : 'right'"
+                            aria-hidden="true"
+                        ></span>
+                        <span class="filter-section-title">
+                            {{ panel.ui.filters.visibilityTitle }}
+                        </span>
+                        <span class="filter-section-summary">{{ visibilitySummary }}</span>
+                    </button>
+
+                    <div v-if="panel.sectionsOpen.visibility" class="filter-section-body">
+                    <p class="filter-section-help">{{ panel.ui.filters.visibilityHelp }}</p>
 
                     <div class="chip-group quick-filter-group filters-sidebar-chips">
                         <button
@@ -158,13 +204,29 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
                             </strong>
                         </button>
                     </div>
-                </div>
-
-                <div class="panel-section">
-                    <div>
-                        <h3>{{ panel.ui.filters.modeTitle }}</h3>
-                        <p>{{ panel.ui.filters.modeHelp }}</p>
                     </div>
+                </section>
+
+                <section class="filter-section">
+                    <button
+                        class="filter-section-head"
+                        type="button"
+                        :aria-expanded="panel.sectionsOpen.mode"
+                        @click="emit('toggle-section', 'mode')"
+                    >
+                        <span
+                            class="collapse-arrow"
+                            :class="panel.sectionsOpen.mode ? 'down' : 'right'"
+                            aria-hidden="true"
+                        ></span>
+                        <span class="filter-section-title">
+                            {{ panel.ui.filters.modeTitle }}
+                        </span>
+                        <span class="filter-section-summary">{{ modeSummary }}</span>
+                    </button>
+
+                    <div v-if="panel.sectionsOpen.mode" class="filter-section-body">
+                    <p class="filter-section-help">{{ panel.ui.filters.modeHelp }}</p>
 
                     <div class="side-tabs filters-sidebar-modes">
                         <button
@@ -179,13 +241,29 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
                             {{ panel.ui.viewModes[mode] }}
                         </button>
                     </div>
-                </div>
-
-                <div class="panel-section">
-                    <div>
-                        <h3>{{ panel.ui.filters.behaviorTitle }}</h3>
-                        <p>{{ panel.ui.filters.behaviorHelp }}</p>
                     </div>
+                </section>
+
+                <section class="filter-section">
+                    <button
+                        class="filter-section-head"
+                        type="button"
+                        :aria-expanded="panel.sectionsOpen.behavior"
+                        @click="emit('toggle-section', 'behavior')"
+                    >
+                        <span
+                            class="collapse-arrow"
+                            :class="panel.sectionsOpen.behavior ? 'down' : 'right'"
+                            aria-hidden="true"
+                        ></span>
+                        <span class="filter-section-title">
+                            {{ panel.ui.filters.behaviorTitle }}
+                        </span>
+                        <span class="filter-section-summary">{{ behaviorSummary }}</span>
+                    </button>
+
+                    <div v-if="panel.sectionsOpen.behavior" class="filter-section-body">
+                    <p class="filter-section-help">{{ panel.ui.filters.behaviorHelp }}</p>
 
                     <div class="toggle-grid compact-toggle-grid filters-sidebar-toggles">
                         <label class="toggle-line">
@@ -215,17 +293,37 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
                             }}
                         </button>
                     </div>
-                </div>
+                    </div>
+                </section>
 
-                <MapStaticFilters
-                    v-if="panel.staticFilters"
-                    :model="panel.staticFilters"
-                    @toggle="emit('static-toggle', $event)"
-                    @update:search="emit('update:static-search', $event)"
-                    @show-all="emit('static-show-all')"
-                    @hide-all="emit('static-hide-all')"
-                />
+                <section v-if="panel.staticFilters" class="filter-section">
+                    <button
+                        class="filter-section-head"
+                        type="button"
+                        :aria-expanded="panel.sectionsOpen.catalog"
+                        @click="emit('toggle-section', 'catalog')"
+                    >
+                        <span
+                            class="collapse-arrow"
+                            :class="panel.sectionsOpen.catalog ? 'down' : 'right'"
+                            aria-hidden="true"
+                        ></span>
+                        <span class="filter-section-title">
+                            {{ panel.ui.staticFilters.title }}
+                        </span>
+                        <span class="filter-section-summary">{{ catalogSummary }}</span>
+                    </button>
 
+                    <div v-if="panel.sectionsOpen.catalog" class="filter-section-body">
+                        <MapStaticFilters
+                            :model="panel.staticFilters"
+                            @toggle="emit('static-toggle', $event)"
+                            @update:search="emit('update:static-search', $event)"
+                            @show-all="emit('static-show-all')"
+                            @hide-all="emit('static-hide-all')"
+                        />
+                    </div>
+                </section>
             </div>
         </section>
     </div>
@@ -289,9 +387,63 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
     padding: 0 0 2px;
 }
 
-.filters-sidebar .panel-section + .panel-section {
-    padding-top: 12px;
+.filter-section + .filter-section,
+.panel-section + .filter-section {
     border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.filter-section-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 11px 2px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    text-align: left;
+    cursor: pointer;
+}
+
+.filter-section-head:hover {
+    color: var(--accent);
+}
+
+.filter-section-head .collapse-arrow {
+    color: var(--muted);
+}
+
+.filter-section-title {
+    flex: 1;
+    min-width: 0;
+}
+
+.filter-section-summary {
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #dbe6ff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: none;
+}
+
+.filter-section-body {
+    display: grid;
+    gap: 10px;
+    padding: 0 0 12px;
+}
+
+.filter-section-help {
+    color: var(--muted);
+    font-size: 0.78rem;
 }
 
 .filters-sidebar-chips {

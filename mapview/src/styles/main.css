@@ -153,6 +153,16 @@ h3,
     background: #0a1018;
     border: 0;
     border-radius: 0;
+
+    /* Width of the filters sidebar, and the left inset the centred overlays must
+       respect. Without it the map toolbar centres on the whole stage and lands
+       visibly off-centre over the actually visible map. */
+    --sidebar-width: min(320px, calc(100% - 420px));
+    --sidebar-inset: 46px;
+}
+
+.map-stage.sidebar-open {
+    --sidebar-inset: var(--sidebar-width);
 }
 
 /* map-stage : pas de pseudo-éléments de fond (quadrillage supprimé) */
@@ -180,14 +190,6 @@ h3,
     display: flex;
 }
 
-.overlay-top-center {
-    top: 0;
-    left: 0;
-    right: 0;
-    justify-content: center;
-    align-items: flex-start;
-}
-
 /* The layer itself must never capture pointer events: it spans the full height
    of the map even when the panel inside it is small or absent, and any
    `pointer-events: auto` here turns that whole band into a dead zone where the
@@ -203,29 +205,25 @@ h3,
     padding-right: 10px;
 }
 
-/* Above `.overlay-top-center`: the timeline is a transient overlay, the filters
-   sidebar is a structural panel. With the previous z-index of 11 the expanded
-   timeline covered the top of the sidebar, hiding its title, the active-filters
-   section and the first visibility chip. */
+/* Structural panel, kept above the floating overlays. Its width is shared with
+   the centred overlays through --sidebar-width. */
 .overlay-left-sidebar {
     top: 0;
     left: 0;
     bottom: 0;
-    width: min(320px, calc(100% - 420px));
+    width: var(--sidebar-width);
     align-items: stretch;
     z-index: 15;
 }
 
+/* Centred on the visible map, not on the stage: the sidebar occupies the left
+   edge and used to push this off-centre by its full width. */
 .overlay-bottom-center {
-    left: 50%;
+    left: var(--sidebar-inset, 0px);
+    right: 0;
     bottom: 18px;
-    transform: translateX(-50%);
     justify-content: center;
     align-items: flex-end;
-}
-
-.timeline-layer {
-    top: 0;
 }
 
 .floating-panel {
@@ -264,21 +262,6 @@ h3,
     z-index: 1;
 }
 
-.timeline-panel {
-    width: calc(100% - 32px);
-    gap: 12px;
-    padding-bottom: 22px;
-    border-top: 0;
-    border-radius: 0 0 18px 18px;
-    overflow: visible;
-    /* Pas de clip-path : le bouton replier doit pouvoir dépasser en bas */
-    clip-path: none;
-}
-
-
-.timeline-panel.collapsed {
-    transform: translateY(calc(-100% + 8px));
-}
 
 .panel-top-row,
 .section-header-row {
@@ -311,12 +294,6 @@ h3,
 }
 
 
-.timeline-panel h2 {
-    font-size: clamp(1rem, 1.6vw, 1.2rem);
-    margin-top: 4px;
-}
-
-.timeline-panel p,
 .selection-panel p,
 .fact-card span,
 .details-grid span,
@@ -880,33 +857,25 @@ textarea:focus-visible,
 
 
 @media (max-width: 1260px) {
-    .timeline-panel {
-        width: calc(100% - 24px);
-    }
-
     .overlay-top-right {
         width: min(336px, calc(100% - 18px));
     }
 
-    .overlay-left-sidebar {
-        width: min(300px, calc(100% - 380px));
+    .map-stage {
+        --sidebar-width: min(300px, calc(100% - 380px));
     }
 
 }
 
 @media (max-width: 980px) {
-    .timeline-panel {
-        width: calc(100% - 18px);
-    }
-
     .overlay-top-right {
         top: 14px;
         bottom: 18px;
         width: min(360px, calc(100% - 18px));
     }
 
-    .overlay-left-sidebar {
-        width: min(280px, calc(100% - 400px));
+    .map-stage {
+        --sidebar-width: min(280px, calc(100% - 400px));
     }
 
     .panel-top-row,
@@ -925,9 +894,8 @@ textarea:focus-visible,
     }
 
     .overlay-bottom-center {
-        left: 18px;
+        left: calc(var(--sidebar-inset, 0px) + 18px);
         right: 18px;
-        transform: none;
         justify-content: center;
     }
 
@@ -955,7 +923,12 @@ textarea:focus-visible,
         border-radius: 0;
     }
 
-    .overlay-top-center,
+    .map-stage,
+    .map-stage.sidebar-open {
+        --sidebar-width: calc(100% - 56px);
+        --sidebar-inset: 0px;
+    }
+
     .overlay-top-right,
     .overlay-left-sidebar,
     .overlay-bottom-center {
@@ -969,20 +942,14 @@ textarea:focus-visible,
         width: calc(100% - 38px);
     }
 
-    .overlay-top-center {
-        justify-content: center;
-    }
-
     .overlay-left-sidebar {
         top: auto;
         bottom: 0;
-        width: calc(100% - 56px);
         align-items: flex-end;
     }
 
     .overlay-bottom-center {
         bottom: 78px;
-        transform: none;
     }
 
     .floating-panel {
@@ -992,11 +959,6 @@ textarea:focus-visible,
     .drawer-handle {
         min-height: 40px;
         padding: 8px 10px;
-    }
-
-    .timeline-panel {
-        width: calc(100% - 12px);
-        border-radius: 0 0 20px 20px;
     }
 
     .floating-actions,

@@ -10,6 +10,7 @@ import {
 import { formatRelativeAge } from "../lib/formatters";
 import type {
     EntityToggleKey,
+    FilterSectionKey,
     MapCanvasHandle,
     ShortcutItem,
     StatusTone,
@@ -48,8 +49,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         now,
         viewMode,
         entityVisibility,
-        ruptureCompact,
         filtersPanelCollapsed,
+        filterSectionsOpen,
         status,
         ui,
         languageOptions,
@@ -76,7 +77,9 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     const selectedKey = ref<string | null>(null);
     const hoveredKey = ref<string | null>(null);
     const controlSettingsOpen = ref(false);
-    const rupturePanelCollapsed = ref(false);
+    // Transient: the timeline strip lives in the header, this only controls its
+    // detail dropdown.
+    const ruptureDetailsOpen = ref(false);
     const detailsPanelExpanded = ref(false);
     const shortcutsOpen = ref(false);
 
@@ -298,12 +301,16 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         controlSettingsOpen.value = !controlSettingsOpen.value;
     }
 
-    function toggleRupturePanel(): void {
-        rupturePanelCollapsed.value = !rupturePanelCollapsed.value;
+    function toggleRuptureDetails(): void {
+        ruptureDetailsOpen.value = !ruptureDetailsOpen.value;
     }
 
-    function toggleRuptureCompact(): void {
-        ruptureCompact.value = !ruptureCompact.value;
+    function closeRuptureDetails(): void {
+        ruptureDetailsOpen.value = false;
+    }
+
+    function toggleFilterSection(key: FilterSectionKey): void {
+        filterSectionsOpen[key] = !filterSectionsOpen[key];
     }
 
     function toggleDetailsPanel(): void {
@@ -441,8 +448,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         selectedKey,
         hoveredKey,
         controlSettingsOpen,
-        rupturePanelCollapsed,
-        ruptureCompact,
+        ruptureDetailsOpen,
+        filterSectionsOpen,
         detailsPanelExpanded,
         filtersPanelCollapsed,
         shortcutsOpen,
@@ -504,8 +511,9 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         clearSelection,
         selectEntity,
         toggleControlSettings,
-        toggleRupturePanel,
-        toggleRuptureCompact,
+        toggleRuptureDetails,
+        closeRuptureDetails,
+        toggleFilterSection,
         toggleDetailsPanel,
         centerSelection,
         canCenterOnPlayer,

@@ -62,8 +62,8 @@ const {
     selectedKey,
     hoveredKey,
     controlSettingsOpen,
-    rupturePanelCollapsed,
-    ruptureCompact,
+    ruptureDetailsOpen,
+    filterSectionsOpen,
     detailsPanelExpanded,
     filtersPanelCollapsed,
     shortcutsOpen,
@@ -120,8 +120,9 @@ const {
     clearSelection,
     selectEntity,
     toggleControlSettings,
-    toggleRupturePanel,
-    toggleRuptureCompact,
+    toggleRuptureDetails,
+    closeRuptureDetails,
+    toggleFilterSection,
     toggleDetailsPanel,
     centerSelection,
     canCenterOnPlayer,
@@ -460,8 +461,7 @@ const controlDockPanel = computed<MapControlDockModel>(() => ({
 }));
 
 const rupturePanel = computed<MapRupturePanelModel>(() => ({
-    collapsed: rupturePanelCollapsed.value,
-    compact: ruptureCompact.value,
+    detailsOpen: ruptureDetailsOpen.value,
     ui: ui.value,
     currentPhaseKey: ruptureCurrentPhaseKey.value,
     currentPhaseLabel: ruptureCurrentPhaseLabel.value,
@@ -506,6 +506,7 @@ const selectionPanel = computed<MapSelectionPanelModel>(() => {
 
 const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     collapsed: filtersPanelCollapsed.value,
+    sectionsOpen: { ...filterSectionsOpen },
     ui: ui.value,
     activeFilterChips: activeFilterChips.value,
     viewMode: viewMode.value,
@@ -565,10 +566,21 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @update:lang="lang = $event"
                 @export-json="exportAnnotations"
                 @import-json="handleImport"
-            />
+            >
+                <template #timeline>
+                    <MapRupturePanel
+                        :panel="rupturePanel"
+                        @toggle-details="toggleRuptureDetails"
+                        @close-details="closeRuptureDetails"
+                    />
+                </template>
+            </MapControlDock>
         </header>
 
-        <section class="card map-stage">
+        <section
+            class="card map-stage"
+            :class="{ 'sidebar-open': !filtersPanelCollapsed }"
+        >
             <MapCanvas
                 ref="mapCanvasRef"
                 :loading="status.loading"
@@ -620,12 +632,6 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @toggle-filters="toggleFiltersPanel"
             />
 
-            <MapRupturePanel
-                :panel="rupturePanel"
-                @toggle-collapse="toggleRupturePanel"
-                @toggle-compact="toggleRuptureCompact"
-            />
-
             <MapNotesPanel
                 v-if="notesPanel.selectedAnnotation || annotationMode !== 'idle' || notesPanel.importError"
                 :panel="notesPanel"
@@ -657,6 +663,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
             <MapFiltersPanel
                 :panel="filtersPanel"
                 @toggle-collapse="toggleFiltersPanel"
+                @toggle-section="toggleFilterSection"
                 @clear="clearFilters"
                 @toggle-entity="toggleEntity"
                 @update:view-mode="viewMode = $event"

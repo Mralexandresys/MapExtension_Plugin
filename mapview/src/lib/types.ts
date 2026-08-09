@@ -286,8 +286,8 @@ export interface MapControlDockModel {
 }
 
 export interface MapRupturePanelModel {
-    collapsed: boolean;
-    compact: boolean;
+    /** Detail dropdown state. The strip itself always shows in the header. */
+    detailsOpen: boolean;
     ui: Messages;
     currentPhaseKey: RupturePhaseKey;
     currentPhaseLabel: string;
@@ -323,8 +323,13 @@ export interface MapSelectionPanelModel {
     statsOverview: DetailRow[];
 }
 
+export type FilterSectionKey = "visibility" | "mode" | "behavior" | "catalog";
+
+export type FilterSectionsOpen = Record<FilterSectionKey, boolean>;
+
 export interface MapFiltersPanelModel {
     collapsed: boolean;
+    sectionsOpen: FilterSectionsOpen;
     ui: Messages;
     activeFilterChips: string[];
     viewMode: ViewMode;

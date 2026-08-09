@@ -38,17 +38,11 @@ function handleSearch(event: Event): void {
 </script>
 
 <template>
-    <div class="panel-section static-filters">
-        <div>
-            <h3>{{ model.ui.staticFilters.title }}</h3>
-            <p>
-                {{
-                    model.available
-                        ? model.ui.staticFilters.format.loaded(model.loadedCount)
-                        : model.ui.staticFilters.unavailable
-                }}
-            </p>
-        </div>
+    <div class="static-filters">
+        <!-- Title and loaded count live in the collapsible section header. -->
+        <p v-if="!model.available" class="static-hint">
+            {{ model.ui.staticFilters.unavailable }}
+        </p>
 
         <template v-if="model.available">
             <div class="static-filters-toolbar">

@@ -13,6 +13,7 @@ import { applyLanguage, getMessages, resolveInitialLanguage } from "../lang";
 import type { Language } from "../lang";
 import type {
     EntityVisibility,
+    FilterSectionsOpen,
     HealthResponse,
     CargoResponse,
     RuptureCycleResponse,
@@ -61,8 +62,10 @@ interface PersistedPreferences {
     viewMode?: ViewMode;
     lang?: Language;
     entityVisibility?: Partial<EntityVisibility>;
-    ruptureCompact?: boolean;
     filtersPanelCollapsed?: boolean;
+    filterSectionsOpen?: Partial<FilterSectionsOpen>;
+    /** Legacy: the rupture timeline is now a header strip with no compact mode. */
+    ruptureCompact?: boolean;
 }
 
 export function useMapViewDataSource() {
@@ -80,14 +83,19 @@ export function useMapViewDataSource() {
     const lastUpdatedAt = ref(0);
     const now = ref(Date.now());
     const viewMode = ref<ViewMode>("network");
-    // Compact by default: the expanded timeline claims ~45% of the viewport
-    // height in a map-first layout. Users can still expand it, and the choice
-    // is persisted.
-    const ruptureCompact = ref(true);
     // Open on first run: the world catalog (241 POI and ~80k elements) was only
     // reachable through a 46px vertical rail, so most of the product was
     // invisible by default. The user's choice is persisted from then on.
     const filtersPanelCollapsed = ref(false);
+
+    // Only the entity toggles start open. Every other section still advertises
+    // its state through the count in its header, so nothing becomes hidden.
+    const filterSectionsOpen = reactive<FilterSectionsOpen>({
+        visibility: true,
+        mode: false,
+        behavior: false,
+        catalog: false,
+    });
 
     const entityVisibility = reactive<EntityVisibility>({
         sender: true,
@@ -162,8 +170,14 @@ export function useMapViewDataSource() {
             showAllLinks.value = saved.showAllLinks ?? true;
             highlightOrphans.value = saved.highlightOrphans ?? false;
             viewMode.value = saved.viewMode || "network";
-            ruptureCompact.value = saved.ruptureCompact ?? true;
             filtersPanelCollapsed.value = saved.filtersPanelCollapsed ?? false;
+            filterSectionsOpen.visibility =
+                saved.filterSectionsOpen?.visibility ?? true;
+            filterSectionsOpen.mode = saved.filterSectionsOpen?.mode ?? false;
+            filterSectionsOpen.behavior =
+                saved.filterSectionsOpen?.behavior ?? false;
+            filterSectionsOpen.catalog =
+                saved.filterSectionsOpen?.catalog ?? false;
             if (saved.lang && LANGUAGE_OPTIONS.includes(saved.lang as Language)) {
                 lang.value = saved.lang as Language;
             }
@@ -200,8 +214,8 @@ export function useMapViewDataSource() {
                 viewMode: viewMode.value,
                 lang: lang.value,
                 entityVisibility: { ...entityVisibility },
-                ruptureCompact: ruptureCompact.value,
                 filtersPanelCollapsed: filtersPanelCollapsed.value,
+                filterSectionsOpen: { ...filterSectionsOpen },
             }),
         );
     }
@@ -312,8 +326,8 @@ export function useMapViewDataSource() {
             viewMode: viewMode.value,
             lang: lang.value,
             entityVisibility: { ...entityVisibility },
-            ruptureCompact: ruptureCompact.value,
             filtersPanelCollapsed: filtersPanelCollapsed.value,
+            filterSectionsOpen: { ...filterSectionsOpen },
         }),
         savePreferences,
         { deep: true },
@@ -361,8 +375,8 @@ export function useMapViewDataSource() {
         lastUpdatedAt,
         now,
         viewMode,
-        ruptureCompact,
         filtersPanelCollapsed,
+        filterSectionsOpen,
         entityVisibility,
         status,
         ui,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 
 import droneProhibitedSvg from "../../assets/drone-prohibited-1-svgrepo-com.svg?raw";
 import type { MapRupturePanelModel } from "../../lib/types";
@@ -13,15 +13,18 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    "toggle-collapse": [];
-    "toggle-compact": [];
+    "toggle-details": [];
+    "close-details": [];
 }>();
 
-const compactHovered = ref(false);
-const compactFocused = ref(false);
+const rootRef = ref<HTMLElement | null>(null);
 
-// The tick scale used to reserve a fixed 86px whatever the graduations needed.
-// Derive it from the deepest stack level actually rendered instead.
+const activeToneClass = computed(
+    () => props.panel.phases.find((phase) => phase.active)?.toneClass ?? "",
+);
+
+// The tick scale used to reserve a fixed height whatever the graduations
+// needed. Derive it from the deepest stack level actually rendered instead.
 const tickStackLevels = computed(() =>
     props.panel.timelineTicks.reduce(
         (deepest, tick) => Math.max(deepest, tick.stackLevel),
@@ -33,136 +36,151 @@ const tickScaleStyle = computed(() => ({
     "--rupture-tick-levels": String(tickStackLevels.value),
 }));
 
-function resetCompactInteractionState() {
-    compactHovered.value = false;
-    compactFocused.value = false;
+function handleDocumentPointerDown(event: PointerEvent): void {
+    const target = event.target as Node | null;
+    if (target && rootRef.value?.contains(target)) return;
+    emit("close-details");
 }
 
-function handleCompactFocusOut(event: FocusEvent) {
-    const panelElement = event.currentTarget as HTMLElement;
-    const nextFocusedElement = event.relatedTarget as Node | null;
-
-    if (nextFocusedElement && panelElement.contains(nextFocusedElement)) {
-        return;
-    }
-
-    compactFocused.value = false;
+function handleDocumentKeydown(event: KeyboardEvent): void {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    emit("close-details");
 }
 
 watch(
-    [() => props.panel.compact, () => props.panel.collapsed],
-    resetCompactInteractionState,
+    () => props.panel.detailsOpen,
+    (open) => {
+        if (open) {
+            document.addEventListener("pointerdown", handleDocumentPointerDown);
+            document.addEventListener("keydown", handleDocumentKeydown, true);
+            return;
+        }
+        document.removeEventListener("pointerdown", handleDocumentPointerDown);
+        document.removeEventListener("keydown", handleDocumentKeydown, true);
+    },
 );
+
+onBeforeUnmount(() => {
+    document.removeEventListener("pointerdown", handleDocumentPointerDown);
+    document.removeEventListener("keydown", handleDocumentKeydown, true);
+});
 </script>
 
 <template>
-    <div class="overlay-layer overlay-top-center timeline-layer">
+    <div ref="rootRef" class="rupture-strip">
         <button
-            v-if="panel.collapsed"
-            class="drawer-handle drawer-handle-top-center"
+            class="rupture-strip-trigger"
             type="button"
-            :aria-expanded="!panel.collapsed"
-            @click="emit('toggle-collapse')"
+            :aria-expanded="panel.detailsOpen"
+            :title="panel.ui.rupture.title"
+            @click="emit('toggle-details')"
         >
-            <span class="timeline-handle-pulse" aria-hidden="true"></span>
-            <span class="timeline-handle-label">
-                {{ panel.ui.handles.timeline }}
-            </span>
-            <span class="collapse-arrow down" aria-hidden="true"></span>
-        </button>
-        <section
-            v-if="panel.compact && !panel.collapsed"
-            class="floating-panel timeline-panel timeline-panel-compact"
-            tabindex="0"
-            :aria-label="panel.ui.rupture.title"
-            @mouseenter="compactHovered = true"
-            @mouseleave="compactHovered = false"
-            @focusin="compactFocused = true"
-            @focusout="handleCompactFocusOut"
-        >
-            <div class="compact-track-row">
-                <div
-                    v-if="panel.hasLiveData"
-                    class="rupture-track rupture-track-compact"
-                >
-                    <div
+            <span class="rupture-strip-kicker">{{ panel.ui.handles.timeline }}</span>
+
+            <template v-if="panel.hasLiveData">
+                <span class="rupture-strip-phase" :class="activeToneClass">
+                    {{ panel.currentPhaseLabel }}
+                </span>
+
+                <span class="rupture-track rupture-track-strip" aria-hidden="true">
+                    <span
                         v-for="phase in panel.phases"
                         :key="phase.key"
                         class="rupture-segment"
                         :class="[phase.toneClass, { active: phase.active }]"
                         :style="{ width: `${phase.widthPercent}%` }"
-                    ></div>
-                    <div
+                    ></span>
+                    <span
                         v-if="panel.markerPercent !== null"
-                        class="rupture-marker rupture-marker-compact"
+                        class="rupture-strip-marker"
                         :style="{ left: `${panel.markerPercent}%` }"
-                    >
-                        <span>{{ panel.markerLabel }}</span>
-                    </div>
+                    ></span>
+                </span>
+
+                <strong class="rupture-strip-remaining">
+                    {{ panel.currentPhaseRemainingLabel }}
+                </strong>
+            </template>
+
+            <span v-else class="rupture-strip-nodata">
+                {{ panel.ui.rupture.noDataShort }}
+            </span>
+
+            <span
+                class="collapse-arrow rupture-strip-chevron"
+                :class="panel.detailsOpen ? 'up' : 'down'"
+                aria-hidden="true"
+            ></span>
+        </button>
+
+        <div v-if="panel.detailsOpen" class="rupture-details">
+            <div class="rupture-details-head">
+                <div>
+                    <h2>{{ panel.ui.rupture.title }}</h2>
+                    <p>{{ panel.ui.rupture.subtitle }}</p>
                 </div>
-                <p v-else class="rupture-compact-nodata">
-                    {{ panel.ui.rupture.noData }}
-                </p>
-                <div class="compact-actions">
-                    <button
-                        class="compact-action-button"
-                        type="button"
-                        :aria-label="panel.ui.rupture.detailedView"
-                        :title="panel.ui.rupture.detailedView"
-                        @click="emit('toggle-compact')"
-                    >
-                        <span aria-hidden="true">⤢</span>
-                    </button>
-                    <button
-                        class="compact-action-button"
-                        type="button"
-                        :aria-label="panel.ui.buttons.collapse"
-                        :title="panel.ui.buttons.collapse"
-                        @click="emit('toggle-collapse')"
-                    >
-                        <span class="collapse-arrow up" aria-hidden="true"></span>
-                    </button>
-                </div>
+                <button
+                    class="button subtle small"
+                    type="button"
+                    @click="emit('close-details')"
+                >
+                    {{ panel.ui.buttons.close }}
+                </button>
             </div>
 
-            <div
-                v-if="(compactHovered || compactFocused) && panel.hasLiveData"
-                class="compact-hover-details"
-            >
+            <template v-if="panel.hasLiveData">
                 <div class="rupture-focus-inline">
                     <span class="rupture-focus-pill">
-                        <span class="rupture-focus-label">{{
-                            panel.ui.rupture.currentPhase
-                        }}</span>
-                        <strong class="rupture-focus-value">{{
-                            panel.currentPhaseLabel
-                        }}</strong>
+                        <span class="rupture-focus-label">
+                            {{ panel.ui.rupture.currentPhase }}
+                        </span>
+                        <strong class="rupture-focus-value">
+                            {{ panel.currentPhaseLabel }}
+                        </strong>
                     </span>
                     <span class="rupture-focus-pill">
-                        <span class="rupture-focus-label">{{
-                            panel.ui.rupture.timeRemaining
-                        }}</span>
-                        <strong class="rupture-focus-value">{{
-                            panel.currentPhaseRemainingLabel
-                        }}</strong>
+                        <span class="rupture-focus-label">
+                            {{ panel.ui.rupture.timeRemaining }}
+                        </span>
+                        <strong class="rupture-focus-value">
+                            {{ panel.currentPhaseRemainingLabel }}
+                        </strong>
                     </span>
                 </div>
-                <div class="rupture-track-scale" :style="tickScaleStyle">
-                    <span
-                        v-for="tick in panel.timelineTicks"
-                        :key="tick.key"
-                        class="rupture-track-tick"
-                        :class="[
-                            tick.align,
-                            `stack-${tick.stackLevel}`,
-                        ]"
-                        :style="tick.align === 'right'
-                            ? {}
-                            : { left: `${tick.leftPercent}%` }"
-                    >
-                        {{ tick.label }}
-                    </span>
+
+                <div class="rupture-timeline">
+                    <div class="rupture-track">
+                        <div
+                            v-for="phase in panel.phases"
+                            :key="phase.key"
+                            class="rupture-segment"
+                            :class="[phase.toneClass, { active: phase.active }]"
+                            :style="{ width: `${phase.widthPercent}%` }"
+                        ></div>
+                        <div
+                            v-if="panel.markerPercent !== null"
+                            class="rupture-marker"
+                            :style="{ left: `${panel.markerPercent}%` }"
+                        >
+                            <span>{{ panel.markerLabel }}</span>
+                        </div>
+                    </div>
+                    <div class="rupture-track-scale" :style="tickScaleStyle">
+                        <span
+                            v-for="tick in panel.timelineTicks"
+                            :key="tick.key"
+                            class="rupture-track-tick"
+                            :class="[tick.align, `stack-${tick.stackLevel}`]"
+                            :style="tick.align === 'right'
+                                ? {}
+                                : { left: `${tick.leftPercent}%` }"
+                        >
+                            {{ tick.label }}
+                        </span>
+                    </div>
                 </div>
+
                 <div
                     class="rupture-legend-row"
                     :aria-label="panel.ui.handles.legend"
@@ -187,150 +205,140 @@ watch(
                         <strong>{{ phase.label }}</strong>
                     </span>
                 </div>
+            </template>
+
+            <div v-else class="empty-state rupture-empty-state">
+                {{ panel.ui.rupture.noData }}
             </div>
-        </section>
-        <section
-            v-if="!panel.compact"
-            class="floating-panel timeline-panel"
-            :class="{ collapsed: panel.collapsed }"
-        >
-            <button
-                v-if="!panel.collapsed"
-                class="panel-edge-toggle panel-edge-toggle-bottom-center"
-                type="button"
-                :aria-label="panel.ui.buttons.collapse"
-                :title="panel.ui.buttons.collapse"
-                @click="emit('toggle-collapse')"
-            >
-                <span class="collapse-arrow up" aria-hidden="true"></span>
-            </button>
-            <div class="panel-top-row">
-                <div>
-                    <span class="eyebrow">{{ panel.ui.handles.timeline }}</span>
-                    <h2>{{ panel.ui.rupture.title }}</h2>
-                    <p>{{ panel.ui.rupture.subtitle }}</p>
-                </div>
-                <button
-                    class="compact-action-button"
-                    type="button"
-                    :aria-label="panel.ui.rupture.compactView"
-                    :title="panel.ui.rupture.compactView"
-                    @click="emit('toggle-compact')"
-                >
-                    <span aria-hidden="true">⤡</span>
-                </button>
-            </div>
-
-            <div class="drawer-body timeline-body">
-                <section v-if="panel.hasLiveData" class="rupture-panel">
-                    <div class="rupture-focus-inline">
-                        <span class="rupture-focus-pill">
-                            <span class="rupture-focus-label">{{
-                                panel.ui.rupture.currentPhase
-                            }}</span>
-                            <strong class="rupture-focus-value">{{
-                                panel.currentPhaseLabel
-                            }}</strong>
-                        </span>
-                        <span class="rupture-focus-pill">
-                            <span class="rupture-focus-label">{{
-                                panel.ui.rupture.timeRemaining
-                            }}</span>
-                            <strong class="rupture-focus-value">{{
-                                panel.currentPhaseRemainingLabel
-                            }}</strong>
-                        </span>
-                    </div>
-
-                    <div class="rupture-timeline">
-                        <div class="rupture-track">
-                            <div
-                                v-for="phase in panel.phases"
-                                :key="phase.key"
-                                class="rupture-segment"
-                                :class="[
-                                    phase.toneClass,
-                                    { active: phase.active },
-                                ]"
-                                :style="{ width: `${phase.widthPercent}%` }"
-                            ></div>
-                            <div
-                                v-if="panel.markerPercent !== null"
-                                class="rupture-marker"
-                                :style="{ left: `${panel.markerPercent}%` }"
-                            >
-                                <span>{{ panel.markerLabel }}</span>
-                            </div>
-                        </div>
-                        <div class="rupture-track-scale" :style="tickScaleStyle">
-                            <span
-                                v-for="tick in panel.timelineTicks"
-                                :key="tick.key"
-                                class="rupture-track-tick"
-                                :class="[
-                                    tick.align,
-                                    `stack-${tick.stackLevel}`,
-                                ]"
-                                :style="tick.align === 'right'
-                                    ? {}
-                                    : { left: `${tick.leftPercent}%` }"
-                            >
-                                {{ tick.label }}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div
-                        class="rupture-legend-row"
-                        :aria-label="panel.ui.handles.legend"
-                    >
-                        <span
-                            v-for="phase in panel.phases"
-                            :key="phase.key"
-                            class="rupture-legend-item"
-                            :class="{ active: phase.active }"
-                        >
-                            <span
-                                class="rupture-track-swatch"
-                                :class="phase.toneClass"
-                            ></span>
-                            <span
-                                v-if="phase.key === 'incoming'"
-                                class="rupture-legend-icon incoming"
-                                :title="panel.ui.rupture.incomingDroneDisabledTooltip"
-                                :aria-label="panel.ui.rupture.incomingDroneDisabledTooltip"
-                                v-html="incomingDroneIconMarkup"
-                            ></span>
-                            <strong>{{ phase.label }}</strong>
-                        </span>
-                    </div>
-                </section>
-
-                <div
-                    v-else
-                    class="empty-state compact-empty rupture-empty-state"
-                >
-                    {{ panel.ui.rupture.noData }}
-                </div>
-            </div>
-        </section>
+        </div>
     </div>
 </template>
 
 <style scoped>
-.timeline-body {
+/* ── header strip ─────────────────────────────────────────────────────────── */
+
+.rupture-strip {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: stretch;
+}
+
+.rupture-strip-trigger {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--border-strong);
+    background: rgba(12, 19, 35, 0.86);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.rupture-strip-trigger:hover {
+    background: rgba(34, 211, 238, 0.1);
+    border-color: var(--border-strong);
+}
+
+.rupture-strip-kicker {
+    color: var(--accent);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+}
+
+.rupture-strip-phase {
+    color: var(--text);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.rupture-strip-phase.burning     { color: #fca5a5; }
+.rupture-strip-phase.cooling     { color: var(--warn); }
+.rupture-strip-phase.stabilizing { color: #e5e7eb; }
+.rupture-strip-phase.stable      { color: var(--good); }
+.rupture-strip-phase.incoming    { color: #c48dff; }
+
+.rupture-track-strip {
+    flex: 1;
+    height: 10px;
+    min-width: 80px;
+    clip-path: none;
+}
+
+.rupture-strip-marker {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
+    transform: translateX(-50%);
+}
+
+.rupture-strip-remaining {
+    color: var(--amber);
+    font-size: 0.8rem;
+    font-weight: 700;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.rupture-strip-nodata {
+    flex: 1;
+    color: var(--dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rupture-strip-chevron {
+    flex: 0 0 auto;
+    color: var(--muted);
+}
+
+/* ── detail dropdown ──────────────────────────────────────────────────────── */
+
+.rupture-details {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 20;
+    width: min(760px, calc(100vw - 32px));
     display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--border-strong);
+    background: rgba(12, 20, 38, 0.99);
+    box-shadow: 0 22px 46px rgba(0, 0, 0, 0.45);
+}
+
+.rupture-details-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
     gap: 14px;
 }
 
-.rupture-panel {
-    display: grid;
-    gap: 16px;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: 0;
-    background: rgba(12, 20, 38, 0.9);
+.rupture-details-head h2 {
+    font-size: 1.05rem;
 }
+
+.rupture-details-head p {
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+/* ── shared track pieces ──────────────────────────────────────────────────── */
 
 .rupture-focus-inline {
     display: flex;
@@ -345,7 +353,6 @@ watch(
     gap: 8px;
     padding: 6px 10px;
     border: 1px solid var(--border);
-    border-radius: 0;
     background: rgba(255, 255, 255, 0.04);
     font-family: var(--font-mono);
 }
@@ -449,7 +456,6 @@ watch(
     left: 4px;
     transform: translateY(-100%);
     padding: 3px 8px;
-    border-radius: 0;
     background: rgba(232, 184, 75, 0.18);
     color: var(--amber);
     font-size: 0.78rem;
@@ -461,13 +467,13 @@ watch(
 
 @keyframes marker-pulse {
     0%, 100% { filter: drop-shadow(0 0 8px var(--amber)); }
-    50%       { filter: drop-shadow(0 0 20px var(--amber)); }
+    50%      { filter: drop-shadow(0 0 20px var(--amber)); }
 }
 
 .rupture-track-scale {
     position: relative;
     /* Ticks sit at top 10 / 32 / 54 depending on their stack level; reserve only
-       the depth actually used instead of a fixed 86px. */
+       the depth actually used. */
     height: calc(30px + var(--rupture-tick-levels, 2) * 22px);
     padding-top: 10px;
 }
@@ -549,15 +555,6 @@ watch(
 .rupture-track-tick.stack-1::before { height: 40px; }
 .rupture-track-tick.stack-2::before { height: 62px; }
 
-@media (max-width: 1100px) {
-    .rupture-track-scale { height: calc(34px + var(--rupture-tick-levels, 2) * 26px); }
-    .rupture-track-tick  { font-size: 0.72rem; }
-    .rupture-track-tick.stack-1 { top: 36px; }
-    .rupture-track-tick.stack-2 { top: 62px; }
-    .rupture-track-tick.stack-1::before { height: 44px; }
-    .rupture-track-tick.stack-2::before { height: 70px; }
-}
-
 .rupture-legend-row {
     display: flex;
     flex-wrap: wrap;
@@ -571,7 +568,6 @@ watch(
     gap: 8px;
     min-height: 30px;
     padding: 5px 10px;
-    border-radius: 0;
     border: 1px solid var(--border);
     background: rgba(255, 255, 255, 0.04);
     color: var(--muted);
@@ -595,86 +591,16 @@ watch(
     border-style: dashed;
 }
 
-/* ── compact mode ── */
+@media (max-width: 980px) {
+    .rupture-strip-kicker,
+    .rupture-track-strip {
+        display: none;
+    }
 
-.timeline-panel-compact {
-    position: relative;
-    padding: 26px 12px 10px;
-    /* Inherits `width: calc(100% - 32px)` from .timeline-panel, which stretched
-       the compact bar edge to edge. Keep it to a readable strip. */
-    width: min(720px, calc(100% - 32px));
-    min-width: 320px;
+    .rupture-details {
+        right: auto;
+        left: 0;
+        width: min(560px, calc(100vw - 32px));
+    }
 }
-
-.compact-track-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.rupture-track-compact {
-    flex: 1;
-    height: 14px;
-}
-
-.rupture-compact-nodata {
-    flex: 1;
-    margin: 0;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
-
-.rupture-marker-compact {
-    top: -22px;
-    bottom: -4px;
-}
-
-.rupture-marker-compact span {
-    font-size: 0.7rem;
-    padding: 2px 6px;
-}
-
-.compact-actions {
-    display: inline-flex;
-    gap: 4px;
-}
-
-.compact-action-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 0;
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 0.85rem;
-    line-height: 1;
-}
-
-.compact-action-button:hover {
-    color: var(--text);
-    border-color: var(--border-strong);
-}
-
-.compact-hover-details {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    right: 0;
-    z-index: 5;
-    display: grid;
-    gap: 10px;
-    padding: 12px;
-    border: 1px solid var(--border-strong);
-    background: rgba(12, 20, 38, 0.96);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-}
-
 </style>
