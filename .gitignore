@@ -40,5 +40,3 @@ Thumbs.db
 # Local working notes
 *.local
 
-# Raw map exports consumed by tools/build_map_data.py (hundreds of MiB)
-analyse_map/
