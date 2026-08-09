@@ -45,6 +45,7 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
 - `mapview/`: local web viewer; follow `mapview/AGENTS.md` for frontend work.
 - `mapview/local-test/`: mock HTTP API and fixture payloads for frontend development without the game/plugin.
 - `mapview/public/map-tiles/`: packaged map tile assets copied next to `MapExtensionViewer.html`.
+- `tools/build_map_data.py`: converts the local raw map exports in `analyse_map/` into the compact static catalog under `mapview/public/map-data/`.
 - `build_client.sh`, `build_server.sh`, `summarize_build.sh`: root build helpers.
 - `.github/workflows/release.yml`: PowerShell-based release packaging flow.
 - `licenses/`, `THIRD_PARTY_NOTICES.md`, `mapview/THIRD_PARTY_NOTICES.md`: third-party attribution and license notices.
@@ -55,6 +56,18 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
 - `StarRupture-Plugin-SDK/Shared.props`: MSBuild SDK path/build property defaults.
 - `StarRupture-Plugin-SDK/PluginDevelopment.md`: full plugin API reference and hook documentation.
 - `StarRupture-Plugin-SDK/ExamplePlugin/`: minimal starter plugin reference.
+
+## Static map-data conversion
+
+- `tools/build_map_data.py` transforms the very large, local raw exports below into the compact JSONP (`SRMAPDATA(...)`) files used by `mapview`. The JSONP wrapper permits loading data from a viewer opened with `file://`.
+- Raw inputs are intentionally ignored and must remain local; do not commit `analyse_map/`:
+  - `analyse_map/map_v2_resources.jsonl` — very large resource-instance export.
+  - `analyse_map/map_v2_placements.jsonl` — very large placement, volume, and technical-actor export.
+  - `analyse_map/map_v2_pois.geojson` — canonical point-of-interest export.
+  - `analyse_map/map_v2_catalog.json` — map metadata, data layers, and rupture rules.
+- Run `python3 tools/build_map_data.py` from the repository root. It regenerates the versioned build inputs in `mapview/public/map-data/`: `manifest.js`, `resources-*.js`, `placements-*.js`, and `pois.js`.
+- Coordinates are compacted to world decimetres, with altitudes in metres, then grouped and delta-encoded. Keep projection assumptions synchronized with `map_state_types.h` and `mapview`.
+- After regenerating data, validate/package the viewer with `cd mapview && npm run check && npm run build`.
 
 ## Exact commands
 
