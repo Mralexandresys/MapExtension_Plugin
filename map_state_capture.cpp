@@ -23,6 +23,8 @@
 #include "Chimera_structs.hpp"
 #include "CoreUObject_classes.hpp"
 #include "Engine_classes.hpp"
+#include "I_FireWaveOre_classes.hpp"
+#include "I_StarTears_classes.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -62,7 +64,7 @@ namespace
 	constexpr int kMaxLoggedActorsPerKind = 4;
 	constexpr int64_t kCargoActorRefreshMinIntervalMs = 750;
 	constexpr int64_t kConnectionRetentionMs = 15000;
-	// POI actors (abandoned bases, gatherable plant resources) are static or
+	// POI actors (abandoned bases, gatherable resources, rupture resources) are static or
 	// slow-changing; rescanning them with GetAllActorsOfClass on every refresh
 	// would be wasteful, so scans are throttled and the previous snapshot's
 	// POIs are reused in between.
@@ -72,6 +74,17 @@ namespace
 	// rounding, pivot differences). Match only the closest catalog plant in
 	// this radius so nearby resources are not all marked depleted together.
 	constexpr double kDepletedPlantMatchRadius = 150.0;
+	// Ignitium cools into Star Tears at the same generated site, but the ore and
+	// gatherable actor pivots need not be identical. Use a small horizontal
+	// tolerance only to prefer an observed Star Tears actor over a phase-derived
+	// marker for the already validated Ignitium site.
+	constexpr double kRuptureResourceSiteMatchRadius = 300.0;
+	// Keep rupture-resource classification synchronized with the timeline sent
+	// by map_state_json.cpp and rendered by useRuptureTimeline.ts.
+	constexpr double kRuptureBurningSeconds = 30.0;
+	constexpr double kRuptureCoolingSeconds = 60.0;
+	constexpr double kRuptureStabilizingSeconds = 600.0;
+	constexpr double kRuptureCycleSeconds = 3240.0;
 	// A world-only persistence key is intentionally not used because it can
 	// mix independent save files that share the same map.
 	struct TrackedChimeraWorldState final
@@ -312,6 +325,8 @@ namespace
 			snapshot.PlayerCount = 0;
 			snapshot.AbandonedBaseCount = 0;
 			snapshot.PlantResourceCount = 0;
+			snapshot.IgnitiumCount = 0;
+			snapshot.StarTearsCount = 0;
 			snapshot.ActorReceiverCount = 0;
 			snapshot.ActorSenderCount = 0;
 			snapshot.UsedReplicator = false;
@@ -2902,6 +2917,70 @@ namespace
 		return false;
 	}
 
+	bool TryGetTrackedStarTearsName(
+		SDK::ACrGatherableBaseActor* actor,
+		std::string& outName)
+	{
+		outName.clear();
+		if (!actor)
+		{
+			return false;
+		}
+
+		SDK::UClass* rewardClass = actor->InteractionRewardResource.Get();
+		if (!rewardClass)
+		{
+			return false;
+		}
+
+		if (rewardClass == SDK::UI_StarTears_C::StaticClass()
+			|| rewardClass->GetName() == "I_StarTears_C")
+		{
+			outName = "Star Tears";
+			return true;
+		}
+		return false;
+	}
+
+	bool TryGetTrackedGatherableResource(
+		SDK::ACrGatherableBaseActor* actor,
+		PoiKind& outKind,
+		std::string& outName)
+	{
+		outKind = PoiKind::PlantResource;
+		if (TryGetTrackedPlantName(actor, outName))
+		{
+			return true;
+		}
+		if (TryGetTrackedStarTearsName(actor, outName))
+		{
+			outKind = PoiKind::StarTears;
+			return true;
+		}
+		return false;
+	}
+
+	bool TryGetTrackedIgnitiumName(
+		SDK::ACrOreActor* actor,
+		std::string& outName)
+	{
+		outName.clear();
+		if (!actor)
+		{
+			return false;
+		}
+
+		SDK::UClass* resourceClass = actor->Resource.Get();
+		if (resourceClass
+			&& (resourceClass == SDK::UI_FireWaveOre_C::StaticClass()
+				|| resourceClass->GetName() == "I_FireWaveOre_C"))
+		{
+			outName = "Ignitium";
+			return true;
+		}
+		return false;
+	}
+
 	bool IsTrackedPlantName(const std::string& resourceName)
 	{
 		for (const TrackedPlantDefinition& definition : kTrackedPlantDefinitions)
@@ -2921,12 +3000,21 @@ namespace
 		return false;
 	}
 
+	bool IsTrackedResourceName(const std::string& resourceName)
+	{
+		return IsTrackedPlantName(resourceName)
+			|| resourceName == "Ignitium"
+			|| resourceName == "Star Tears";
+	}
+
 	using PoiCatalog = std::unordered_map<std::string, PoiMarker>;
 
 	struct ObservedPlantCatalogState final
 	{
 		SDK::UWorld* World = nullptr;
-		PoiCatalog Plants;
+		bool HasGlobalGatherablePcgSeed = false;
+		int32_t GlobalGatherablePcgSeed = 0;
+		PoiCatalog Resources;
 	};
 	std::mutex g_observedPlantCatalogMutex;
 	ObservedPlantCatalogState g_observedPlantCatalog{};
@@ -2972,13 +3060,83 @@ namespace
 
 	void StorePoiMarker(PoiCatalog& catalog, PoiMarker marker)
 	{
+		// Ignitium and Star Tears can legitimately overlap near the end of the
+		// regeneration cycle. Their actor scans are independent, so neither kind
+		// may infer that the other is depleted merely from proximity or scan order.
 		std::string publicKey = marker.PublicKey;
 		catalog.insert_or_assign(std::move(publicKey), std::move(marker));
 	}
 
-	bool StoreObservedPlantMarker(SDK::UWorld* world, PoiMarker marker)
+	bool RefreshObservedRuptureResourceGeneration(SDK::UWorld* world)
 	{
-		if (!world || marker.Kind != PoiKind::PlantResource)
+		if (!world)
+		{
+			return false;
+		}
+
+		SDK::TArray<SDK::AActor*> replicationActors;
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world,
+			SDK::ACrGatherableSpawnersRepActor::StaticClass(),
+			&replicationActors);
+
+		SDK::ACrGatherableSpawnersRepActor* replicationActor = nullptr;
+		for (int index = 0; index < replicationActors.Num(); ++index)
+		{
+			auto* candidate = static_cast<SDK::ACrGatherableSpawnersRepActor*>(
+				replicationActors[index]);
+			if (candidate)
+			{
+				replicationActor = candidate;
+				break;
+			}
+		}
+		if (!replicationActor)
+		{
+			return false;
+		}
+
+		const int32_t currentSeed = replicationActor->RepGlobalGatherablePCGSeed;
+		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+		if (g_observedPlantCatalog.World != world)
+		{
+			g_observedPlantCatalog = ObservedPlantCatalogState{};
+			g_observedPlantCatalog.World = world;
+		}
+
+		if (!g_observedPlantCatalog.HasGlobalGatherablePcgSeed)
+		{
+			g_observedPlantCatalog.HasGlobalGatherablePcgSeed = true;
+			g_observedPlantCatalog.GlobalGatherablePcgSeed = currentSeed;
+			return false;
+		}
+		if (g_observedPlantCatalog.GlobalGatherablePcgSeed == currentSeed)
+		{
+			return false;
+		}
+
+		g_observedPlantCatalog.GlobalGatherablePcgSeed = currentSeed;
+		for (auto it = g_observedPlantCatalog.Resources.begin();
+			it != g_observedPlantCatalog.Resources.end();)
+		{
+			const PoiKind kind = it->second.Kind;
+			if (kind == PoiKind::Ignitium || kind == PoiKind::StarTears)
+			{
+				it = g_observedPlantCatalog.Resources.erase(it);
+			}
+			else
+			{
+				++it;
+			}
+		}
+		return true;
+	}
+
+	bool StoreObservedPoiMarker(SDK::UWorld* world, PoiMarker marker)
+	{
+		if (!world || (marker.Kind != PoiKind::PlantResource
+			&& marker.Kind != PoiKind::Ignitium
+			&& marker.Kind != PoiKind::StarTears))
 		{
 			return false;
 		}
@@ -2990,49 +3148,75 @@ namespace
 			g_observedPlantCatalog.World = world;
 		}
 
-		const auto existing = g_observedPlantCatalog.Plants.find(marker.PublicKey);
-		if (existing != g_observedPlantCatalog.Plants.end()
+		const auto existing = g_observedPlantCatalog.Resources.find(marker.PublicKey);
+		if (existing != g_observedPlantCatalog.Resources.end()
 			&& PoiMarkersHaveSameObservedState(existing->second, marker))
 		{
 			return false;
 		}
 
-		StorePoiMarker(g_observedPlantCatalog.Plants, std::move(marker));
+		StorePoiMarker(g_observedPlantCatalog.Resources, std::move(marker));
 		return true;
 	}
 
-	bool ObserveTrackedPlantActor(
+	bool ObserveTrackedGatherableActor(
 		SDK::UWorld* world,
 		SDK::ACrGatherableBaseActor* actor)
 	{
+		PoiKind kind = PoiKind::PlantResource;
 		std::string resourceName;
-		if (!world || !TryGetTrackedPlantName(actor, resourceName))
+		if (!world || !TryGetTrackedGatherableResource(actor, kind, resourceName))
+		{
+			return false;
+		}
+
+		const char* keyPrefix = kind == PoiKind::StarTears
+			? "poi.star_tears"
+			: "poi.plant";
+		PoiMarker marker = BuildPoiMarker(
+			kind,
+			actor->K2_GetActorLocation(),
+			keyPrefix,
+			"actor_observation.gatherable",
+			resourceName,
+			resourceName);
+		marker.Depleted = actor->bIsDepleted || actor->bIsPermanentlyGathered;
+		StoreObservedPoiMarker(world, std::move(marker));
+		return true;
+	}
+
+	bool ObserveTrackedOreActor(
+		SDK::UWorld* world,
+		SDK::ACrOreActor* actor)
+	{
+		std::string resourceName;
+		if (!world || !TryGetTrackedIgnitiumName(actor, resourceName))
 		{
 			return false;
 		}
 
 		PoiMarker marker = BuildPoiMarker(
-			PoiKind::PlantResource,
+			PoiKind::Ignitium,
 			actor->K2_GetActorLocation(),
-			"poi.plant",
-			"actor_observation.gatherable",
+			"poi.ignitium",
+			"actor_observation.ore",
 			resourceName,
 			resourceName);
-		marker.Depleted = actor->bIsDepleted || actor->bIsPermanentlyGathered;
-		StoreObservedPlantMarker(world, std::move(marker));
+		marker.Depleted = actor->OreData.bIsDepleted;
+		StoreObservedPoiMarker(world, std::move(marker));
 		return true;
 	}
 
-	void MergeObservedPlants(SDK::UWorld* world, PoiCatalog& catalog)
+	void MergeObservedPoiMarkers(SDK::UWorld* world, PoiCatalog& catalog)
 	{
 		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
 		if (!world || g_observedPlantCatalog.World != world)
 		{
 			return;
 		}
-		for (const auto& entry : g_observedPlantCatalog.Plants)
+		for (const auto& entry : g_observedPlantCatalog.Resources)
 		{
-			catalog.insert_or_assign(entry.first, entry.second);
+			StorePoiMarker(catalog, entry.second);
 		}
 	}
 
@@ -3095,7 +3279,7 @@ namespace
 		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
 		bool changed = false;
 		const bool matched = MarkPlantDepletedNearLocation(
-			g_observedPlantCatalog.Plants,
+			g_observedPlantCatalog.Resources,
 			worldLocation,
 			changed,
 			exactOnly);
@@ -3256,17 +3440,165 @@ namespace
 	{
 		snapshot.AbandonedBaseCount = 0;
 		snapshot.PlantResourceCount = 0;
+		snapshot.IgnitiumCount = 0;
+		snapshot.StarTearsCount = 0;
 		for (const PoiMarker& marker : snapshot.Pois)
 		{
-			if (marker.Kind == PoiKind::AbandonedBase)
+			switch (marker.Kind)
 			{
+			case PoiKind::AbandonedBase:
 				++snapshot.AbandonedBaseCount;
-			}
-			else
-			{
+				break;
+			case PoiKind::PlantResource:
 				++snapshot.PlantResourceCount;
+				break;
+			case PoiKind::Ignitium:
+				++snapshot.IgnitiumCount;
+				break;
+			case PoiKind::StarTears:
+				++snapshot.StarTearsCount;
+				break;
 			}
 		}
+	}
+
+	bool HasStarTearsObservationNear(
+		const std::vector<PoiMarker>& markers,
+		const SDK::FVector& worldLocation)
+	{
+		const double radiusSquared =
+			kRuptureResourceSiteMatchRadius * kRuptureResourceSiteMatchRadius;
+		for (const PoiMarker& marker : markers)
+		{
+			if (marker.Kind != PoiKind::StarTears)
+			{
+				continue;
+			}
+
+			const double deltaX =
+				static_cast<double>(marker.WorldLocation.X)
+				- static_cast<double>(worldLocation.X);
+			const double deltaY =
+				static_cast<double>(marker.WorldLocation.Y)
+				- static_cast<double>(worldLocation.Y);
+			if (deltaX * deltaX + deltaY * deltaY <= radiusSquared)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	enum class RuptureResourcePhase
+	{
+		Unknown,
+		Ignitium,
+		Transition,
+		StarTears
+	};
+
+	RuptureResourcePhase ResolveRuptureResourcePhase(
+		const RuptureCycleSnapshot& ruptureCycle)
+	{
+		if (!ruptureCycle.Available)
+		{
+			return RuptureResourcePhase::Unknown;
+		}
+
+		if (ruptureCycle.HasElapsed && std::isfinite(ruptureCycle.ElapsedSeconds))
+		{
+			double cyclePosition = std::fmod(
+				ruptureCycle.ElapsedSeconds,
+				kRuptureCycleSeconds);
+			if (cyclePosition < 0.0)
+			{
+				cyclePosition += kRuptureCycleSeconds;
+			}
+
+			const double coolingEnd =
+				kRuptureBurningSeconds + kRuptureCoolingSeconds;
+			const double stabilizingEnd =
+				coolingEnd + kRuptureStabilizingSeconds;
+			if (cyclePosition < coolingEnd)
+			{
+				return RuptureResourcePhase::Ignitium;
+			}
+			if (cyclePosition < stabilizingEnd)
+			{
+				return RuptureResourcePhase::Transition;
+			}
+			return RuptureResourcePhase::StarTears;
+		}
+
+		if (ruptureCycle.Stage == "Moving"
+			|| ruptureCycle.Stage == "Fadeout")
+		{
+			return RuptureResourcePhase::Ignitium;
+		}
+		if (ruptureCycle.Stage == "Growback")
+		{
+			return RuptureResourcePhase::Transition;
+		}
+		if (ruptureCycle.Stage == "PreWave")
+		{
+			return RuptureResourcePhase::StarTears;
+		}
+		return RuptureResourcePhase::Unknown;
+	}
+
+	void ApplyRuptureResourcePhase(CargoSnapshot& snapshot)
+	{
+		const RuptureResourcePhase phase =
+			ResolveRuptureResourcePhase(snapshot.RuptureCycle);
+		const bool arcadiaStable = phase == RuptureResourcePhase::StarTears;
+		const bool ignitiumPhase = phase == RuptureResourcePhase::Ignitium;
+		if (!arcadiaStable && !ignitiumPhase)
+		{
+			// During the transition, both resources can legitimately be present.
+			return;
+		}
+
+		std::vector<PoiMarker> phaseMarkers;
+		phaseMarkers.reserve(snapshot.Pois.size());
+		for (const PoiMarker& marker : snapshot.Pois)
+		{
+			if (ignitiumPhase && marker.Kind == PoiKind::StarTears)
+			{
+				continue;
+			}
+			if (!arcadiaStable || marker.Kind != PoiKind::Ignitium)
+			{
+				phaseMarkers.push_back(marker);
+				continue;
+			}
+
+			// A harvested Ignitium site cannot grow Star Tears. If the site was
+			// left intact, expose it as Star Tears while Arcadia is stable. An
+			// actual Star Tears actor observation always wins over this projection.
+			if (marker.Depleted
+				|| HasStarTearsObservationNear(snapshot.Pois, marker.WorldLocation))
+			{
+				continue;
+			}
+
+			PoiMarker projected = marker;
+			projected.Kind = PoiKind::StarTears;
+			projected.DisplayName = "Star Tears";
+			projected.ResourceName = "Star Tears";
+			projected.Source = "rupture_phase.ignitium_to_star_tears";
+			projected.InternalKey = BuildLocationKey(
+				"poi.star_tears.phase",
+				projected.WorldLocation);
+			projected.PublicKey = MakeTaggedPublicKey(
+				"poi",
+				projected.InternalKey);
+			phaseMarkers.push_back(std::move(projected));
+		}
+
+		snapshot.Pois = std::move(phaseMarkers);
+		std::sort(snapshot.Pois.begin(), snapshot.Pois.end(), PoiMarkerSortsBefore);
+		snapshot.PoiRevision = ComputePoiRevision(snapshot.Pois);
+		UpdatePoiCounts(snapshot);
 	}
 
 	bool CapturePois(
@@ -3283,16 +3615,19 @@ namespace
 		const std::string worldName = !snapshot.WorldName.empty()
 			? snapshot.WorldName
 			: world->GetName();
+		const bool ruptureResourceGenerationChanged =
+			RefreshObservedRuptureResourceGeneration(world);
 
-		bool scanIsFresh = false;
+		bool reusePreviousScan = false;
 		{
 			std::lock_guard<std::mutex> lock(g_poiScanMutex);
-			scanIsFresh = g_poiScanInProgress
-				|| (g_lastPoiScanAtUnixMs != 0
+			reusePreviousScan = !ruptureResourceGenerationChanged
+				&& (g_poiScanInProgress
+					|| (g_lastPoiScanAtUnixMs != 0
 						&& observedAtUnixMs >= g_lastPoiScanAtUnixMs
 					&& observedAtUnixMs - g_lastPoiScanAtUnixMs < kPoiScanMinIntervalMs
-					&& g_lastPoiScanWorldName == worldName);
-			if (!scanIsFresh)
+					&& g_lastPoiScanWorldName == worldName));
+			if (!reusePreviousScan)
 			{
 				g_poiScanInProgress = true;
 			}
@@ -3305,8 +3640,11 @@ namespace
 			for (const PoiMarker& marker : previousSnapshot.Pois)
 			{
 				const bool retainMarker = marker.Kind == PoiKind::AbandonedBase
-					|| (marker.Kind == PoiKind::PlantResource
-						&& IsTrackedPlantName(marker.ResourceName));
+					|| (marker.Kind != PoiKind::AbandonedBase
+						&& IsTrackedResourceName(marker.ResourceName)
+						&& !(ruptureResourceGenerationChanged
+							&& (marker.Kind == PoiKind::Ignitium
+								|| marker.Kind == PoiKind::StarTears)));
 				if (retainMarker)
 				{
 					catalog.insert_or_assign(marker.PublicKey, marker);
@@ -3317,12 +3655,12 @@ namespace
 
 		// ActorBeginPlay observations are merged even while the expensive actor
 		// scan is throttled, so short-lived Mass representations are not lost.
-		MergeObservedPlants(world, catalog);
+		MergeObservedPoiMarkers(world, catalog);
 		// Depletion arrays are authoritative and cheap to locate compared with a
 		// full gatherable scan, so apply them on both fresh and throttled paths.
 		MarkReplicatedDepletedPlants(world, catalog);
 
-		if (scanIsFresh)
+		if (reusePreviousScan)
 		{
 			FinalizePoiCatalog(snapshot, catalog);
 			UpdatePoiCounts(snapshot);
@@ -3364,21 +3702,53 @@ namespace
 		{
 			SDK::ACrGatherableBaseActor* actor =
 				static_cast<SDK::ACrGatherableBaseActor*>(gatherables[index]);
+			PoiKind kind = PoiKind::PlantResource;
 			std::string resourceName;
-			if (!TryGetTrackedPlantName(actor, resourceName))
+			if (!TryGetTrackedGatherableResource(actor, kind, resourceName))
 			{
 				continue;
 			}
 
-			ObserveTrackedPlantActor(world, actor);
+			ObserveTrackedGatherableActor(world, actor);
+			const char* keyPrefix = kind == PoiKind::StarTears
+				? "poi.star_tears"
+				: "poi.plant";
 			PoiMarker marker = BuildPoiMarker(
-				PoiKind::PlantResource,
+				kind,
 				actor->K2_GetActorLocation(),
-				"poi.plant",
+				keyPrefix,
 				"actor_observation.gatherable",
 				resourceName,
 				resourceName);
 			marker.Depleted = actor->bIsDepleted || actor->bIsPermanentlyGathered;
+			StorePoiMarker(catalog, std::move(marker));
+		}
+
+		SDK::TArray<SDK::AActor*> ores;
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world,
+			SDK::ACrOreActor::StaticClass(),
+			&ores);
+
+		for (int index = 0; index < ores.Num(); ++index)
+		{
+			SDK::ACrOreActor* actor =
+				static_cast<SDK::ACrOreActor*>(ores[index]);
+			std::string resourceName;
+			if (!TryGetTrackedIgnitiumName(actor, resourceName))
+			{
+				continue;
+			}
+
+			ObserveTrackedOreActor(world, actor);
+			PoiMarker marker = BuildPoiMarker(
+				PoiKind::Ignitium,
+				actor->K2_GetActorLocation(),
+				"poi.ignitium",
+				"actor_observation.ore",
+				resourceName,
+				resourceName);
+			marker.Depleted = actor->OreData.bIsDepleted;
 			StorePoiMarker(catalog, std::move(marker));
 		}
 
@@ -3529,6 +3899,7 @@ namespace
 		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(world);
 		ApplyRuptureCycleObservationTimestamp(nextSnapshot.RuptureCycle);
 		StorePersistentRuptureCycleSnapshot(nextSnapshot.RuptureCycle);
+		ApplyRuptureResourcePhase(nextSnapshot);
 		timing.Phase("rupture");
 
 		nextSnapshot.SenderCount = 0;
@@ -3875,12 +4246,20 @@ namespace MapStateRuntime
 		if (beginPlayActor->IsA(SDK::ACrGatherableBaseActor::StaticClass()))
 		{
 			auto* gatherable = static_cast<SDK::ACrGatherableBaseActor*>(beginPlayActor);
-			if (ObserveTrackedPlantActor(trackedState.World, gatherable))
+			if (ObserveTrackedGatherableActor(trackedState.World, gatherable))
 			{
 				// Coalesce spawn bursts into the normal engine-tick refresh path.
 				// CapturePois will merge this event catalog even while its expensive
 				// actor enumeration remains throttled.
 				Detail::RequestCargoSnapshotRefresh("ActorBeginPlay(Gatherable)");
+			}
+		}
+		else if (beginPlayActor->IsA(SDK::ACrOreActor::StaticClass()))
+		{
+			auto* ore = static_cast<SDK::ACrOreActor*>(beginPlayActor);
+			if (ObserveTrackedOreActor(trackedState.World, ore))
+			{
+				Detail::RequestCargoSnapshotRefresh("ActorBeginPlay(Ignitium)");
 			}
 		}
 	#endif

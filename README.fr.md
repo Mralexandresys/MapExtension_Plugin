@@ -13,10 +13,10 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local,
 - Voir les objets actuellement transportes dans le reseau
 - Afficher la position des `teleporteurs`
 - Afficher la position des `joueurs`, avec son propre joueur mis en avant dans une couleur distincte
-- Afficher les bases abandonnees et les plantes recoltables prises en charge comme points d'interet (POI), dont Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb et Nootka Lupine
+- Afficher les bases abandonnees, les plantes recoltables prises en charge, Ignitium et Star Tears comme points d'interet (POI), dont Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb et Nootka Lupine
 - Parcourir un catalogue du monde pre-genere contenant les POI principaux, plantes, minerais, ressources animales, batiments, zones et elements techniques optionnels, avec des filtres persistants et une recherche
-- Cumuler les plantes observees en direct dans les zones chargees au lieu de retirer leurs marqueurs quand le joueur quitte le rayon de chargement courant
-- Conserver la position des plantes epuisees ou recoltees observees dans le monde actif avec un etat visuel distinct
+- Cumuler les ressources observees en direct dans les zones chargees au lieu de retirer leurs marqueurs quand le joueur quitte le rayon de chargement courant
+- Conserver la position des ressources epuisees ou recoltees observees dans le monde actif avec un etat visuel distinct
 - Utiliser une vue compacte du cycle de rupture avec phase, temps restant, legende et details de timeline
 - Filtrer la carte pour ne garder que les marqueurs et zones personnels
 - Centrer la carte sur son propre joueur avec le controle `Joueur` ou le raccourci `P`
@@ -34,7 +34,11 @@ Il consomme a la fois les donnees de carte/cargo et l'endpoint de cycle de ruptu
 
 L'interface combine les observations live du plugin avec un catalogue statique pre-genere du monde. Les POI principaux sont des pins selectionnables, tandis que les couches plus volumineuses de ressources, batiments et zones utilisent un rendu canvas. Des filtres avec recherche controlent les couches, categories et types de ressources, sources de representation, batiments, zones et elements techniques ; les choix sont conserves dans `localStorage`.
 
-Les bases abandonnees utilisent leur propre icone sur la carte. Les ressources vegetales utilisent une couleur de palette stable derivee du nom de la ressource, afin qu'une meme ressource garde la meme couleur apres les refreshs. Les ressources epuisees restent visibles avec un marqueur attenue et en contour. Des filtres separes controlent les bases abandonnees et les ressources vegetales.
+Le frontend filtre les placements fondes sur des classes dans la couche `building` : seuls les types d'acteur Unreal dont le nom contient `KeyCard`, `Coralion_Egg` ou `Spawner` (sans distinction de casse) sont rendus. Cette regle ne modifie pas les couches `zone` et `technical`.
+
+Les bases abandonnees utilisent leur propre icone sur la carte. Les ressources vegetales utilisent une couleur de palette stable derivee du nom de la ressource, tandis qu'Ignitium et Star Tears ont des couleurs fixes specifiques. Les ressources epuisees restent visibles avec un marqueur attenue et en contour. Des filtres separes controlent les bases abandonnees, les ressources vegetales, Ignitium et Star Tears.
+
+Les filtres Ignitium et Star Tears utilisent les positions validees depuis les acteurs runtime dans les zones chargees pres des joueurs. Les grands volumes PCG d'inclusion et d'exclusion ne sont pas affiches comme des emplacements de ressources. Quand la timeline publiee indique Arcadia stable (a partir de 690 secondes dans le cycle de 3240 secondes, avec `PreWave` en secours si le temps ecoule est indisponible), un site Ignitium valide et non recolte est expose comme Star Tears plutot que comme Ignitium ; une observation reelle d'acteur Star Tears au meme site reste prioritaire. Pendant la transition de stabilisation, les deux ressources peuvent etre affichees dans la courte fenetre de fin de cycle, avec Star Tears au-dessus du marqueur Ignitium sous-jacent.
 
 L'interface peut reduire la timeline de rupture en barre compacte ; son survol ou son focus clavier affiche la phase courante, le temps restant, la legende et les reperes de timeline. Les filtres peuvent masquer toutes les entites du jeu pour ne laisser que les marqueurs et zones personnels, et le controle `Joueur` ou le raccourci `P` centre la carte sur la premiere position de joueur recue.
 
@@ -42,9 +46,9 @@ L'interface peut reduire la timeline de rupture en barre compacte ; son survol o
 
 Le catalogue statique fourni avec l'interface contient les donnees pre-generees completes pour les plantes et les POI. Il est charge directement par le viewer : le plugin ne lance donc plus de scan complet World Partition, ne deplace plus le joueur, ne suspend plus le cycle de rupture et n'ecrit plus de cache POI par sauvegarde.
 
-Le snapshot live peut toujours capturer les instances `ACrGatherableBaseActor` prises en charge dans les zones deja chargees afin de refleter le monde actif. Ces observations restent uniquement en memoire pour le monde courant ; l'etat des acteurs vivants et les donnees repliquees des emplacements epuises marquent comme epuisee la plante correspondante la plus proche sans supprimer sa position.
+Le snapshot live peut toujours capturer les instances `ACrGatherableBaseActor` et `ACrOreActor` prises en charge dans les zones deja chargees afin de refleter le monde actif. Ces observations restent uniquement en memoire pour le monde courant ; l'etat des acteurs vivants et les donnees repliquees des emplacements epuises conservent les dernieres positions connues. Les observations Ignitium et Star Tears sont supprimees lorsque le seed PCG global replique change, afin que les points de la generation de rupture precedente ne contaminent pas la nouvelle.
 
-La detection par classe de recompense publie Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb et Sulheart. Des classes d'acteur gatherable explicites ajoutent Gold Fruit, Thornfruit, Sikkim Rhubarb, Nootka Lupine et le gatherable generique `Plant_h` du jeu.
+La detection par classe de recompense publie Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb et Sulheart. Des classes d'acteur gatherable explicites ajoutent Gold Fruit, Thornfruit, Sikkim Rhubarb, Nootka Lupine et le gatherable generique `Plant_h` du jeu. Les acteurs dont `InteractionRewardResource` vaut `I_StarTears_C` publient Star Tears ; les `ACrOreActor` dont `Resource` vaut `I_FireWaveOre_C` publient Ignitium.
 
 ## Donnees POI de `/cargo`
 
@@ -55,7 +59,9 @@ La detection par classe de recompense publie Hydrobulb, Polifruit, Oxallop, Purp
   "counts": {
     "pois": 1,
     "abandoned_bases": 0,
-    "plant_resources": 1
+    "plant_resources": 1,
+    "ignitium": 0,
+    "star_tears": 0
   },
   "pois": [
     {
@@ -72,15 +78,15 @@ La detection par classe de recompense publie Hydrobulb, Polifruit, Oxallop, Purp
 }
 ```
 
-- `kind` vaut `abandoned_base` ou `plant_resource`.
+- `kind` vaut `abandoned_base`, `plant_resource`, `ignitium` ou `star_tears`.
 - `label` est le libelle affiche ; `resource` est le nom de ressource detecte et peut etre vide pour une base abandonnee.
-- `depleted` vaut `true` pour les plantes epuisees ou recoltees de facon permanente observees dans le monde actif. Leur derniere position connue reste publiee afin que l'interface les affiche avec un marqueur attenue et en contour.
+- `depleted` vaut `true` pour les acteurs de ressource epuises observes dans le monde actif. Leur derniere position connue reste publiee afin que l'interface les affiche avec un marqueur attenue et en contour.
 - `source` identifie le chemin de capture, `unique_key` identifie le POI pour l'interface, `world` contient les coordonnees Unreal `x`/`y`/`z` et `map` contient les coordonnees projetees `x`/`y`.
-- `counts.pois` est le nombre total de POI ; `counts.abandoned_bases` et `counts.plant_resources` contiennent les totaux par kind.
+- `counts.pois` est le nombre total de POI ; `counts.abandoned_bases`, `counts.plant_resources`, `counts.ignitium` et `counts.star_tears` contiennent les totaux par kind.
 
 ## Compatibilite de la synchronisation serveur dedie
 
-Les snapshots de serveur dedie utilisent le protocole de synchronisation v4, qui transporte les POI par pages de 64 entrees maximum par requete, associe chaque page a une revision stable du contenu, marque le marqueur joueur propre a chaque client, et valide les identifiants de snapshot, generations, revisions, nombres d'elements, nombres de chunks, totaux et disposition des pages avant de publier un snapshot distant. Les pages de revisions POI differentes ne sont jamais fusionnees. Les versions de protocole doivent correspondre exactement : un client ou serveur v4 ignore les paquets d'une autre version de protocole au lieu de tenter un downgrade.
+Les snapshots de serveur dedie utilisent le protocole de synchronisation v5, qui transporte les POI par pages de 64 entrees maximum par requete, associe chaque page a une revision stable du contenu, marque le marqueur joueur propre a chaque client, et valide les identifiants de snapshot, generations, revisions, nombres d'elements, nombres de chunks, totaux et disposition des pages avant de publier un snapshot distant. Les pages de revisions POI differentes ne sont jamais fusionnees. Les versions de protocole doivent correspondre exactement : un client ou serveur v5 ignore les paquets d'une autre version de protocole au lieu de tenter un downgrade.
 
 **Mettre a jour les builds client et serveur dedie ensemble.** La mise a jour automatique du modloader ne remplace que la DLL client ; la DLL du serveur dedie doit etre remplacee manuellement pendant la meme mise a jour. Ne pas laisser les deux cotes sur des releases differentes.
 
@@ -101,7 +107,7 @@ Copier le contenu de `Plugins/` dans `StarRupture/Binaries/Win64/Plugins/`, puis
 Deux limites a connaitre :
 
 - La mise a jour automatique ne remplace que la DLL. `MapExtensionViewer.html`, `map-tiles/` et `map-data/` ne sont jamais touches, puisqu'ils vivent hors du dossier du jeu. L'interface detecte les contrats de payload incompatibles : quand le plugin annonce un contrat plus recent que celui avec lequel l'interface locale a ete construite, une fenetre propose le telechargement direct de l'asset `MapExtension_Plugin-<tag>-viewer.zip` correspondant, avec les liens vers la release GitHub et la page du mod. Les ameliorations retrocompatibles du viewer peuvent ne pas declencher cette fenetre ; installer donc manuellement l'archive viewer correspondante pour profiter des nouvelles fonctions d'interface. Remplacer `MapExtensionViewer.html`, `map-tiles/` et `map-data/` ensemble, puis recharger la page.
-- Le build serveur n'est pas couvert par le sidecar. Le protocole de synchronisation v4 exige des builds client et serveur correspondants : mettre a jour les deux DLL ensemble et remplacer manuellement celle du serveur dedie.
+- Le build serveur n'est pas couvert par le sidecar. Le protocole de synchronisation v5 exige des builds client et serveur correspondants : mettre a jour les deux DLL ensemble et remplacer manuellement celle du serveur dedie.
 
 Les mises a jour automatiques peuvent etre desactivees globalement dans le modloader avec `[AutoUpdate] Enabled=0` dans `modloader.ini`.
 

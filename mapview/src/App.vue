@@ -293,7 +293,7 @@ function isStaticSeriesVisible(entry: StaticPointSeries): boolean {
 }
 
 function isStaticPlacementVisible(entry: StaticPlacement): boolean {
-    return staticFilters.isPlacementGroupEnabled(entry.layer, entry.group);
+    return staticFilters.isPlacementVisible(entry);
 }
 
 function isStaticPoiVisible(entry: StaticMapPoiView): boolean {

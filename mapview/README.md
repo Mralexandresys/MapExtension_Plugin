@@ -65,6 +65,8 @@ Pour utiliser ou distribuer l'interface, garder `map-tiles/` et `map-data/` a co
 
 Le viewer charge un catalogue compact pre-genere depuis `public/map-data/`. Il contient 241 POI principaux ainsi que les ressources, batiments, zones et elements techniques extraits localement des exports `analyse_map/map_v2_*`. Les POI restent dans le SVG interactif ; les centaines de milliers de ressources et placements sont dessines par `StaticMapCanvas.vue` afin d'eviter un DOM SVG trop volumineux.
 
+Dans la couche `building`, le frontend rend uniquement les placements dont l'`actorType` contient `KeyCard`, `Coralion_Egg` ou `Spawner`, sans distinction de casse. Les couches `zone` et `technical` conservent tous leurs placements.
+
 Le volet `Filtres` permet de rechercher et d'activer les couches, groupes de POI, categories et types de ressources, representations PCG/acteur, batiments, zones et elements techniques. Les choix sont persistants sous la cle `mapview.static-filters.v1`. Les couches POI et ressources sont actives par defaut ; les donnees techniques restent masquees.
 
 ### Zones et elements de generation
@@ -113,20 +115,31 @@ d'interet :
 
 - les bases abandonnees utilisent une icone de batiment fissure distincte ;
 - le plugin courant publie les plantes disponibles Hydrobulb, Polifruit, Oxallop,
-  Purplant, Serpent Root, Prickler, Prism Herb et Sulheart ; leur couleur HSL est
-  derivee d'un hachage stable du nom de la ressource, puis du label ou de la cle
-  unique, ce qui limite fortement les collisions de teinte entre ressources differentes ;
+  Purplant, Serpent Root, Prickler, Prism Herb et Sulheart ; il publie aussi les
+  acteurs live Ignitium (`ACrOreActor::Resource == I_FireWaveOre_C`) et Star Tears
+  (`InteractionRewardResource == I_StarTears_C`) avec leurs positions exactes ;
+- les grands volumes PCG d'inclusion et d'exclusion ne sont pas relies a ces filtres :
+  ils ne contiennent pas les points de spawn exacts. Un pin apparait uniquement quand
+  son acteur runtime est effectivement charge pres d'un joueur ;
+- quand la timeline indique Arcadia stable (a partir de 690 secondes dans le cycle,
+  avec `PreWave` en secours), le plugin expose un site Ignitium valide et non recolte
+  comme Star Tears. Une observation reelle de Star Tears au meme site est prioritaire ;
+  pendant la stabilisation, les deux types peuvent coexister. Le viewer applique aussi
+  cette projection depuis sa phase affichee pour neutraliser un payload `/cargo` en retard ;
 - une ressource `available` utilise un remplissage plein. Pour rester compatible avec
   les anciens payloads, une ressource recue avec `depleted: true` reste attenuee,
   avec un anneau pointille et un centre presque vide ;
 - le survol ou le focus clavier affiche le type, le nom, la ressource et l'etat. Un POI
   peut etre selectionne a la souris ou avec `Entree`/`Espace`.
 
-Le volet `Filtres` propose des boutons de visibilite separes pour les bases abandonnees
-et les ressources vegetales. Le mode `Reseau` peut afficher les deux familles, le mode
-`Ressources` affiche uniquement les ressources vegetales, et les modes `Teleporteurs`
-et `Joueurs` masquent les POI. `available` et `depleted` restent des etats visuels,
-pas des filtres separes ; le plugin courant omet les plantes epuisees.
+Le volet `Filtres` propose des boutons de visibilite separes pour les bases abandonnees,
+les ressources vegetales, Ignitium et Star Tears. Le mode `Reseau` peut afficher toutes
+les familles, le mode `Ressources` affiche les trois types de ressources, et les modes
+`Teleporteurs` et `Joueurs` masquent les POI. `available` et `depleted` restent des etats visuels,
+pas des filtres separes ; les acteurs de ressource epuises peuvent rester publies avec leur derniere
+position connue. Quand Ignitium et Star Tears partagent une position pendant la fenetre de fin de
+cycle, Star Tears est rendue au-dessus sans marquer artificiellement l'une des deux ressources comme
+epuisee.
 
 L'option `Afficher uniquement mes marqueurs et zones` masque toutes les donnees issues
 du plugin (cargo, connexions, teleporteurs, joueurs et POI) pour ne conserver que les

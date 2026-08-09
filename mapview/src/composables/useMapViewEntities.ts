@@ -14,6 +14,7 @@ import type {
     Player,
     Poi,
     PoiKind,
+    RupturePhaseKey,
     SelectedEntity,
     SelectionTone,
     StatusTone,
@@ -42,6 +43,8 @@ interface UseMapViewEntitiesOptions {
     statusTone: ComputedRef<StatusTone>;
     now: Ref<number>;
     lastUpdatedAt: Ref<number>;
+    ruptureCurrentPhaseKey: ComputedRef<RupturePhaseKey>;
+    ruptureHasLiveData: ComputedRef<boolean>;
 }
 
 export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
@@ -64,6 +67,8 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         statusTone,
         now,
         lastUpdatedAt,
+        ruptureCurrentPhaseKey,
+        ruptureHasLiveData,
     } = options;
 
     const liveAgeValue = computed(() =>
@@ -90,12 +95,48 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         () => cargo.value?.teleporters || [],
     );
     const allPlayers = computed<Player[]>(() => cargo.value?.players || []);
-    const allPois = computed<Poi[]>(() =>
+    const observedPois = computed<Poi[]>(() =>
         (cargo.value?.pois ?? []).map((poi) => ({
             ...poi,
             depleted: poi.depleted ?? false,
         })),
     );
+
+    const allPois = computed<Poi[]>(() => {
+        const pois = observedPois.value;
+        if (!ruptureHasLiveData.value) return pois;
+
+        const phase = ruptureCurrentPhaseKey.value;
+        if (phase === "burning" || phase === "cooling") {
+            return pois.filter((poi) => poi.kind !== "star_tears");
+        }
+        if (phase === "stabilizing") return pois;
+
+        const starTears = pois.filter((poi) => poi.kind === "star_tears");
+        const siteRadiusSquared = 300 * 300;
+        return pois.flatMap((poi): Poi[] => {
+            if (poi.kind !== "ignitium") return [poi];
+            if (poi.depleted) return [];
+
+            const hasObservedStarTears = starTears.some((starTear) => {
+                const deltaX = starTear.world.x - poi.world.x;
+                const deltaY = starTear.world.y - poi.world.y;
+                return deltaX * deltaX + deltaY * deltaY <= siteRadiusSquared;
+            });
+            if (hasObservedStarTears) return [];
+
+            return [
+                {
+                    ...poi,
+                    unique_key: `rupture-phase:${poi.unique_key}`,
+                    kind: "star_tears",
+                    label: ui.value.map.starTearsLabel,
+                    resource: "Star Tears",
+                    source: "rupture_phase.ignitium_to_star_tears",
+                },
+            ];
+        });
+    });
 
     function isCargoMarkerAllowedByMode(marker: CargoMarker): boolean {
         if (!isCargoViewMode.value) return false;
@@ -185,17 +226,26 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         }),
     );
 
+    function isPoiKindVisible(poi: Poi): boolean {
+        switch (poi.kind) {
+            case "abandoned_base":
+                return entityVisibility.abandonedBase;
+            case "plant_resource":
+                return entityVisibility.plantResource;
+            case "ignitium":
+                return entityVisibility.ignitium;
+            case "star_tears":
+                return entityVisibility.starTears;
+        }
+    }
+
     function isPoiAllowedByMode(poi: Poi): boolean {
         if (viewMode.value === "network") {
-            return poi.kind === "abandoned_base"
-                ? entityVisibility.abandonedBase
-                : entityVisibility.plantResource;
+            return isPoiKindVisible(poi);
         }
-        return (
-            viewMode.value === "resources" &&
-            poi.kind === "plant_resource" &&
-            entityVisibility.plantResource
-        );
+        return viewMode.value === "resources"
+            && poi.kind !== "abandoned_base"
+            && isPoiKindVisible(poi);
     }
 
     const visiblePois = computed<Poi[]>(() =>
@@ -228,6 +278,14 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             viewMode.value === "network" || viewMode.value === "resources"
                 ? allPois.value.filter((poi) => poi.kind === "plant_resource")
                       .length
+                : 0,
+        ignitium:
+            viewMode.value === "network" || viewMode.value === "resources"
+                ? allPois.value.filter((poi) => poi.kind === "ignitium").length
+                : 0,
+        starTears:
+            viewMode.value === "network" || viewMode.value === "resources"
+                ? allPois.value.filter((poi) => poi.kind === "star_tears").length
                 : 0,
     }));
 
@@ -359,13 +417,32 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         );
     });
 
+    function poiRenderPriority(poi: Poi): number {
+        const availability = poi.depleted === true ? 0 : 10;
+        switch (poi.kind) {
+            case "ignitium":
+                return availability + 1;
+            case "star_tears":
+                return availability + 2;
+            case "plant_resource":
+                return availability + 3;
+            case "abandoned_base":
+                return availability + 4;
+        }
+    }
+
     const displayedPois = computed<Poi[]>(() => {
         if (userAnnotationsOnly.value) return [];
-        if (!focusMode.value || focusKeys.value.size === 0) {
-            return visiblePois.value;
-        }
-        return visiblePois.value.filter((poi) =>
-            focusKeys.value.has(poi.unique_key),
+        const entries =
+            !focusMode.value || focusKeys.value.size === 0
+                ? visiblePois.value
+                : visiblePois.value.filter((poi) =>
+                      focusKeys.value.has(poi.unique_key),
+                  );
+        // SVG paints later siblings on top. Star Tears therefore stay visible
+        // when the underlying Ignitium actor legitimately shares the same site.
+        return [...entries].sort(
+            (left, right) => poiRenderPriority(left) - poiRenderPriority(right),
         );
     });
 
@@ -419,13 +496,15 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             cargo.value?.counts?.players ??
             health.value?.player_count ??
             allPlayers.value.length,
-        pois: cargo.value?.counts?.pois ?? allPois.value.length,
+        pois: allPois.value.length,
         abandonedBases:
-            cargo.value?.counts?.abandoned_bases ??
             allPois.value.filter((poi) => poi.kind === "abandoned_base").length,
         plantResources:
-            cargo.value?.counts?.plant_resources ??
             allPois.value.filter((poi) => poi.kind === "plant_resource").length,
+        ignitium:
+            allPois.value.filter((poi) => poi.kind === "ignitium").length,
+        starTears:
+            allPois.value.filter((poi) => poi.kind === "star_tears").length,
     }));
 
     const filteredVisibleCount = computed(
@@ -531,7 +610,9 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         if (type === "teleporter") return ui.value.selection.teleporterFallback;
         if (type === "player") return ui.value.selection.playerFallback;
         if (type === "abandoned_base") return ui.value.map.abandonedBaseLabel;
-        return ui.value.map.plantResourceLabel;
+        if (type === "plant_resource") return ui.value.map.plantResourceLabel;
+        if (type === "ignitium") return ui.value.map.ignitiumLabel;
+        return ui.value.map.starTearsLabel;
     }
 
     const selectedEntitySummary = computed(() => {
@@ -665,7 +746,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
                 },
             ];
 
-            if (selectedPoi.value.kind === "plant_resource") {
+            if (selectedPoi.value.kind !== "abandoned_base") {
                 rows.push({
                     label: ui.value.selection.resource,
                     value:

@@ -27,7 +27,7 @@ namespace Detail
 		// mapview/src/lib/viewerContract.ts to the same value in the same change.
 		// The viewer shows an update prompt when this value is greater than its own.
 		// Purely additive payload fields do not need a bump.
-		constexpr int kViewerContractVersion = 1;
+		constexpr int kViewerContractVersion = 2;
 
 		constexpr const char* kProjectReleasesBaseUrl =
 			"https://github.com/Mralexandresys/MapExtension_Plugin/releases";
@@ -145,7 +145,18 @@ namespace Detail
 
 		std::string PoiKindToString(PoiKind kind)
 		{
-			return kind == PoiKind::AbandonedBase ? "abandoned_base" : "plant_resource";
+			switch (kind)
+			{
+			case PoiKind::AbandonedBase:
+				return "abandoned_base";
+			case PoiKind::PlantResource:
+				return "plant_resource";
+			case PoiKind::Ignitium:
+				return "ignitium";
+			case PoiKind::StarTears:
+				return "star_tears";
+			}
+			return "unknown";
 		}
 
 		json ToJson(const PoiMarker& poi)
@@ -260,7 +271,9 @@ namespace Detail
 				{"players", snapshot.Players.size()},
 				{"pois", snapshot.Pois.size()},
 				{"abandoned_bases", snapshot.AbandonedBaseCount},
-				{"plant_resources", snapshot.PlantResourceCount}
+				{"plant_resources", snapshot.PlantResourceCount},
+				{"ignitium", snapshot.IgnitiumCount},
+				{"star_tears", snapshot.StarTearsCount}
 			}},
 			{"map", {
 				{"src_x1", RoundJsonNumber(kMapSrcX1)},

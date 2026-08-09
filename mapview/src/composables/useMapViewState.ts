@@ -89,6 +89,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         { key: "player", label: ui.value.entityLabels.player },
         { key: "abandonedBase", label: ui.value.entityLabels.abandonedBase },
         { key: "plantResource", label: ui.value.entityLabels.plantResource },
+        { key: "ignitium", label: ui.value.entityLabels.ignitium },
+        { key: "starTears", label: ui.value.entityLabels.starTears },
     ]);
 
     const shortcutItems = computed<ShortcutItem[]>(() => [
@@ -172,6 +174,17 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         return ui.value.status.offline;
     });
 
+    const {
+        ruptureCurrentPhaseKey,
+        ruptureCurrentPhaseLabel,
+        ruptureCurrentPhaseRemainingLabel,
+        rupturePhases,
+        ruptureMarkerPercent,
+        ruptureHasLiveData,
+        ruptureTimelineTicks,
+        ruptureMarkerLabel,
+    } = useRuptureTimeline(ruptureCycle, now, ui);
+
     const entityState = useMapViewEntities({
         cargo,
         health,
@@ -191,6 +204,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         statusTone,
         now,
         lastUpdatedAt,
+        ruptureCurrentPhaseKey,
+        ruptureHasLiveData,
     });
 
     const {
@@ -220,17 +235,6 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         currentTimeLabel,
     } = entityState;
 
-    const {
-        ruptureCurrentPhaseKey,
-        ruptureCurrentPhaseLabel,
-        ruptureCurrentPhaseRemainingLabel,
-        rupturePhases,
-        ruptureMarkerPercent,
-        ruptureHasLiveData,
-        ruptureTimelineTicks,
-        ruptureMarkerLabel,
-    } = useRuptureTimeline(ruptureCycle, now, ui);
-
     function clearFilters(): void {
         showAllLinks.value = true;
         highlightOrphans.value = false;
@@ -243,6 +247,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         entityVisibility.player = true;
         entityVisibility.abandonedBase = true;
         entityVisibility.plantResource = true;
+        entityVisibility.ignitium = true;
+        entityVisibility.starTears = true;
     }
 
     function clearSelection(): void {

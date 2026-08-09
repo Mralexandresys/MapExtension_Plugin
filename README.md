@@ -13,10 +13,10 @@ The plugin works in both single-player and multiplayer. For solo/local sessions,
 - See the items currently travelling through the network
 - Display the positions of `teleporters`
 - Display the positions of `players`, with your own player highlighted in a distinct color
-- Display abandoned bases and supported gatherable plants as points of interest (POIs), including Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb, and Nootka Lupine
+- Display abandoned bases, supported gatherable plants, Ignitium, and Star Tears as points of interest (POIs), including Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb, and Nootka Lupine
 - Browse a pre-generated world catalog containing major POIs, plants, minerals, animal resources, buildings, zones, and optional technical elements, with searchable persistent filters
-- Accumulate live plant observations across streamed areas instead of dropping markers when the player leaves the current loading radius
-- Keep depleted or permanently gathered plant positions observed during the active world on the map with a distinct depleted state
+- Accumulate live resource observations across streamed areas instead of dropping markers when the player leaves the current loading radius
+- Keep depleted or permanently gathered resource positions observed during the active world on the map with a distinct depleted state
 - Use a compact rupture-cycle view with phase, remaining-time, legend, and timeline details
 - Filter the map down to personal markers and zones only
 - Center the map on your own player with the `Player` control or the `P` shortcut
@@ -34,7 +34,11 @@ It consumes both cargo/map data and the rupture cycle endpoint to render the tim
 
 The viewer combines live plugin observations with a pre-generated static world catalog. Major POIs are rendered as selectable pins, while the larger resource, building, and zone layers use a canvas renderer. Searchable filters control layers, resource categories and types, representation sources, buildings, zones, and technical elements; filter choices persist in `localStorage`.
 
-Abandoned bases use their own map icon. Plant resources use a stable palette color derived from the resource name, so the same resource keeps the same color after refreshes. Depleted resources remain visible as faded outlined markers. Separate filters control abandoned bases and plant resources.
+The frontend curates class-based placements in the `building` layer: only Unreal actor types whose names contain `KeyCard`, `Coralion_Egg`, or `Spawner` (case-insensitive) are rendered. This rule does not change the `zone` or `technical` layers.
+
+Abandoned bases use their own map icon. Plant resources use a stable palette color derived from the resource name, while Ignitium and Star Tears have fixed resource-specific colors. Depleted resources remain visible as faded outlined markers. Separate filters control abandoned bases, plant resources, Ignitium, and Star Tears.
+
+Ignitium and Star Tears filters use positions validated from runtime actors in areas loaded near players. The broad PCG inclusion/exclusion volumes are not displayed as resource locations. While the published timeline is in Arcadia stable (from 690 seconds in the 3240-second cycle, with `PreWave` as a fallback when elapsed time is unavailable), a validated, unharvested Ignitium site is exposed as Star Tears instead of Ignitium; an actual Star Tears actor observation is preferred at the same site. During the stabilizing transition, both resources can be displayed in the late-cycle overlap, with Star Tears drawn above the underlying Ignitium marker.
 
 The viewer can reduce the rupture timeline to a compact bar; hover it or focus it with the keyboard to show the current phase, remaining time, legend, and timeline ticks. The filters can hide every game entity and leave only personal markers and zones, and the `Player` control or `P` shortcut centers the map on the first reported player position.
 
@@ -42,9 +46,9 @@ The viewer can reduce the rupture timeline to a compact bar; hover it or focus i
 
 The bundled static world catalog provides the complete pre-generated map data for plants and POIs. It is loaded directly by the viewer, so the plugin no longer drives a full World Partition scan, moves the player, pauses rupture activity, or writes a per-save POI cache.
 
-The live snapshot can still capture supported `ACrGatherableBaseActor` instances in already loaded areas to reflect the active world. Those observations stay in memory only for the current world; live actor state and the game's replicated depleted-location data mark the closest matching plant as depleted without deleting its position.
+The live snapshot can still capture supported `ACrGatherableBaseActor` and `ACrOreActor` instances in already loaded areas to reflect the active world. Those observations stay in memory only for the current world; live actor state and the game's replicated depleted-location data retain the last known positions of depleted resources. Ignitium and Star Tears observations are discarded when the replicated global PCG seed changes so points from the previous rupture generation do not leak into the new one.
 
-Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart. Explicit gatherable actor classes additionally cover Gold Fruit, Thornfruit, Sikkim Rhubarb, Nootka Lupine, and the game's generic `Plant_h` gatherable.
+Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart. Explicit gatherable actor classes additionally cover Gold Fruit, Thornfruit, Sikkim Rhubarb, Nootka Lupine, and the game's generic `Plant_h` gatherable. Actors whose `InteractionRewardResource` is `I_StarTears_C` publish Star Tears; `ACrOreActor` instances whose `Resource` is `I_FireWaveOre_C` publish Ignitium.
 
 ## `/cargo` POI data
 
@@ -55,7 +59,9 @@ Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpen
   "counts": {
     "pois": 1,
     "abandoned_bases": 0,
-    "plant_resources": 1
+    "plant_resources": 1,
+    "ignitium": 0,
+    "star_tears": 0
   },
   "pois": [
     {
@@ -72,15 +78,15 @@ Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpen
 }
 ```
 
-- `kind` is `abandoned_base` or `plant_resource`.
+- `kind` is `abandoned_base`, `plant_resource`, `ignitium`, or `star_tears`.
 - `label` is the display label; `resource` is the detected resource name and can be empty for an abandoned base.
-- `depleted` is `true` for depleted or permanently gathered plants observed during the active world. Their last known positions remain published so the viewer can render them as faded outlined markers.
+- `depleted` is `true` for depleted resource actors observed during the active world. Their last known positions remain published so the viewer can render them as faded outlined markers.
 - `source` identifies the capture path, `unique_key` identifies the POI to the viewer, `world` contains Unreal `x`/`y`/`z` coordinates, and `map` contains projected `x`/`y` coordinates.
-- `counts.pois` is the total POI count; `counts.abandoned_bases` and `counts.plant_resources` contain the per-kind totals.
+- `counts.pois` is the total POI count; `counts.abandoned_bases`, `counts.plant_resources`, `counts.ignitium`, and `counts.star_tears` contain the per-kind totals.
 
 ## Dedicated-server sync compatibility
 
-Dedicated-server snapshots use sync protocol v4, which carries POIs in pages of up to 64 entries per request, associates every page with a stable content revision, flags each client's own player marker, and validates snapshot IDs, generations, revisions, item counts, chunk counts, totals, and page layout before publishing a remote snapshot. Pages from different POI revisions are never merged. Protocol versions must match exactly: a v4 client or server ignores packets from a different protocol version rather than attempting a downgrade.
+Dedicated-server snapshots use sync protocol v5, which carries POIs in pages of up to 64 entries per request, associates every page with a stable content revision, flags each client's own player marker, and validates snapshot IDs, generations, revisions, item counts, chunk counts, totals, and page layout before publishing a remote snapshot. Pages from different POI revisions are never merged. Protocol versions must match exactly: a v5 client or server ignores packets from a different protocol version rather than attempting a downgrade.
 
 **Update the client and dedicated-server builds together.** The modloader auto-updater replaces only the client DLL; the dedicated-server DLL must be replaced manually during the same update. Do not leave the two sides on different releases.
 
@@ -101,7 +107,7 @@ Copy the `Plugins/` content into `StarRupture/Binaries/Win64/Plugins/`, then kee
 Two limits are worth knowing:
 
 - The auto-updater replaces the DLL only. `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` are never touched, since they live outside the game folder. The viewer detects incompatible payload contracts: when the plugin reports a contract newer than the one the local viewer was built with, a dialog offers a direct download of the matching `MapExtension_Plugin-<tag>-viewer.zip` asset, along with links to the GitHub release and the mod page. Backward-compatible viewer improvements may not trigger that dialog, so install the matching viewer archive manually to receive new UI features. Replace `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` together, then reload the page.
-- The server build is not covered by the sidecar. Sync protocol v4 requires matching client and server builds, so update both DLLs together and replace the dedicated-server DLL by hand.
+- The server build is not covered by the sidecar. Sync protocol v5 requires matching client and server builds, so update both DLLs together and replace the dedicated-server DLL by hand.
 
 Automatic updates can be disabled modloader-wide with `[AutoUpdate] Enabled=0` in `modloader.ini`.
 

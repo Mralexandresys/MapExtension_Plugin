@@ -56,6 +56,8 @@ export const fr = {
         player: "Joueurs",
         abandonedBase: "Bases abandonnees",
         plantResource: "Ressources vegetales",
+        ignitium: "Ignitium",
+        starTears: "Star Tears",
     },
     hero: {
         eyebrow: "mapview",
@@ -329,6 +331,8 @@ export const fr = {
         receiverLabel: "Cargo Receiver",
         abandonedBaseLabel: "Base abandonnee",
         plantResourceLabel: "Ressource vegetale",
+        ignitiumLabel: "Ignitium",
+        starTearsLabel: "Star Tears",
         availableLabel: "Disponible",
         depletedLabel: "Epuisee",
         itemLabel: "Item",

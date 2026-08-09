@@ -6,7 +6,7 @@
 
 namespace MapSyncProtocol
 {
-	constexpr uint32_t kProtocolVersion = 4;
+	constexpr uint32_t kProtocolVersion = 5;
 
 	// Reserved for future selective snapshots. The server intentionally
 	// ignores request_flags and always returns a full snapshot.
@@ -36,7 +36,7 @@ namespace MapSyncProtocol
 	constexpr size_t kCargoConnectionChunkCapacity = 4;
 	constexpr size_t kPoiChunkCapacity = 4;
 	constexpr size_t kPreferredPoiPacketSizeLimit = 1024;
-	// POIs are paginated in protocol v4: each snapshot response carries at most
+	// POIs are paginated in protocol v5: each snapshot response carries at most
 	// one page of POIs and the client requests the remaining pages across
 	// subsequent snapshot requests. A stable POI revision prevents pages from
 	// different catalog contents from being merged. This bounds the packet burst
@@ -78,7 +78,9 @@ namespace MapSyncProtocol
 	enum PoiMarkerKind : uint8_t
 	{
 		kPoiAbandonedBase = 0,
-		kPoiPlantResource = 1
+		kPoiPlantResource = 1,
+		kPoiIgnitium = 2,
+		kPoiStarTears = 3
 	};
 
 	enum PoiEntryFlags : uint8_t
@@ -98,7 +100,7 @@ namespace MapSyncProtocol
 		uint32_t protocol_version = kProtocolVersion;
 		uint32_t request_flags = kRequestFlagAll;
 		uint64_t request_sequence = 0;
-		// POI page requested for this snapshot (protocol v4 pagination).
+		// POI page requested for this snapshot (protocol v5 pagination).
 		uint16_t poi_page = 0;
 		uint8_t reserved[14] = {};
 	};
@@ -118,7 +120,7 @@ namespace MapSyncProtocol
 		uint16_t teleporters_chunk_count = 0;
 		uint16_t cargo_markers_chunk_count = 0;
 		uint16_t cargo_connections_chunk_count = 0;
-		// POI pagination (protocol v4): pois_count/pois_chunk_count describe the
+		// POI pagination (protocol v5): pois_count/pois_chunk_count describe the
 		// page carried by this snapshot; pois_total_count is the full POI count
 		// across all poi_page_count pages. poi_revision identifies the exact
 		// canonical catalog from which the page was sliced.

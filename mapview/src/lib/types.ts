@@ -7,7 +7,9 @@ export type EntityToggleKey =
     | "teleporter"
     | "player"
     | "abandonedBase"
-    | "plantResource";
+    | "plantResource"
+    | "ignitium"
+    | "starTears";
 export type ViewMode = "network" | "resources" | "teleporters" | "players";
 export type StatusTone = "loading" | "online" | "stale" | "offline";
 export type SelectionTone =
@@ -81,7 +83,7 @@ export interface Player extends NamedMapEntity {
     self?: boolean;
 }
 
-export type PoiKind = "abandoned_base" | "plant_resource";
+export type PoiKind = "abandoned_base" | "plant_resource" | "ignitium" | "star_tears";
 
 export interface Poi extends NamedMapEntity {
     kind: PoiKind;
@@ -96,6 +98,8 @@ export interface CargoCounts {
     pois?: number;
     abandoned_bases?: number;
     plant_resources?: number;
+    ignitium?: number;
+    star_tears?: number;
 }
 
 export interface MapProjection {
@@ -165,6 +169,8 @@ export interface EntityVisibility {
     player: boolean;
     abandonedBase: boolean;
     plantResource: boolean;
+    ignitium: boolean;
+    starTears: boolean;
 }
 
 export interface MapCanvasHandle {

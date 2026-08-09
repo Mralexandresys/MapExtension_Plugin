@@ -404,6 +404,25 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
     transform: rotate(-35deg);
 }
 
+.filter-option-icon.ignitium::before {
+    content: "";
+    width: 12px;
+    height: 12px;
+    border-radius: 3px 9px 3px 9px;
+    background: #f97316;
+    box-shadow: 0 0 0 1px #ffedd5;
+    transform: rotate(45deg);
+}
+
+.filter-option-icon.starTears::before {
+    content: "";
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #38bdf8;
+    box-shadow: 0 0 0 1px #e0f2fe, 0 0 7px rgba(56, 189, 248, 0.62);
+}
+
 .filter-option-count {
     flex: 0 0 auto;
     min-width: 2.25rem;

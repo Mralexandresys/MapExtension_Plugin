@@ -521,9 +521,21 @@ namespace
 		entry.world_x = static_cast<float>(marker.WorldLocation.X);
 		entry.world_y = static_cast<float>(marker.WorldLocation.Y);
 		entry.world_z = static_cast<float>(marker.WorldLocation.Z);
-		entry.kind = marker.Kind == MapStateRuntime::Detail::PoiKind::AbandonedBase
-			? MapSyncProtocol::kPoiAbandonedBase
-			: MapSyncProtocol::kPoiPlantResource;
+		switch (marker.Kind)
+		{
+		case MapStateRuntime::Detail::PoiKind::AbandonedBase:
+			entry.kind = MapSyncProtocol::kPoiAbandonedBase;
+			break;
+		case MapStateRuntime::Detail::PoiKind::PlantResource:
+			entry.kind = MapSyncProtocol::kPoiPlantResource;
+			break;
+		case MapStateRuntime::Detail::PoiKind::Ignitium:
+			entry.kind = MapSyncProtocol::kPoiIgnitium;
+			break;
+		case MapStateRuntime::Detail::PoiKind::StarTears:
+			entry.kind = MapSyncProtocol::kPoiStarTears;
+			break;
+		}
 		entry.flags = marker.Depleted ? MapSyncProtocol::kPoiEntryDepleted : 0;
 		MapSyncProtocol::CopyCStringTruncated(entry.label, sizeof(entry.label), marker.DisplayName.c_str());
 		MapSyncProtocol::CopyCStringTruncated(entry.resource, sizeof(entry.resource), marker.ResourceName.c_str());
@@ -665,18 +677,18 @@ namespace
 		CargoSnapshot snapshot = MapStateRuntime::Detail::CopySnapshot();
 		if (snapshot.PoiRevision == 0)
 		{
-			LOG_WARN("Cannot send protocol v4 snapshot: POI catalog has no content revision");
+			LOG_WARN("Cannot send protocol v5 snapshot: POI catalog has no content revision");
 			return;
 		}
 
-		// Protocol v4 paginates POIs: each snapshot carries a single POI page of
+		// Protocol v5 paginates POIs: each snapshot carries a single POI page of
 		// at most kPoiPageCapacity items, selected by the client request. Every
 		// page also carries the stable revision of the canonical POI catalog.
 		uint16_t poiTotalCount = 0;
 		if (!TryConvertToUint16(snapshot.Pois.size(), poiTotalCount))
 		{
 			LOG_WARN(
-				"Cannot send protocol v4 snapshot: POI total exceeds uint16 limits (pois=%llu)",
+				"Cannot send protocol v5 snapshot: POI total exceeds uint16 limits (pois=%llu)",
 				static_cast<unsigned long long>(snapshot.Pois.size()));
 			return;
 		}
@@ -698,7 +710,7 @@ namespace
 		if (!TryBuildSnapshotWireCounts(snapshot, poiPageItems.size(), wireCounts))
 		{
 			LOG_WARN(
-				"Cannot send protocol v4 snapshot: a collection exceeds uint16 limits "
+				"Cannot send protocol v5 snapshot: a collection exceeds uint16 limits "
 				"(players=%llu, teleporters=%llu, cargo_markers=%llu, cargo_connections=%llu, pois=%llu)",
 				static_cast<unsigned long long>(snapshot.Players.size()),
 				static_cast<unsigned long long>(snapshot.Teleporters.size()),
@@ -808,7 +820,7 @@ namespace
 		if (!chunksSent)
 		{
 			LOG_WARN(
-				"Protocol v4 snapshot %llu could not dispatch every chunk; sending an unsuccessful end packet",
+				"Protocol v5 snapshot %llu could not dispatch every chunk; sending an unsuccessful end packet",
 				static_cast<unsigned long long>(snapshotId));
 		}
 
@@ -840,7 +852,7 @@ namespace
 			return;
 		}
 
-		// request_flags are reserved in protocol v4. Selective responses would
+		// request_flags are reserved in protocol v5. Selective responses would
 		// replace omitted collections with empty data in current clients, so the
 		// server deliberately sends the complete snapshot for every request.
 		(void)packet.request_flags;

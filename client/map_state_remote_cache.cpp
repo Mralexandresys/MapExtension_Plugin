@@ -61,7 +61,7 @@ namespace
 	bool g_hasCargoSnapshot = false;
 	CargoSnapshot g_activeCargoSnapshot{};
 
-	// Protocol v4 POI pagination: pages already fetched are retained here and
+	// Protocol v5 POI pagination: pages already fetched are retained here and
 	// merged into every finalized snapshot, keyed by page index. The store is
 	// tied to one exact catalog revision so removed or changed POIs cannot leak
 	// in from pages fetched before the catalog changed.
@@ -122,15 +122,24 @@ namespace
 
 		snapshot.AbandonedBaseCount = 0;
 		snapshot.PlantResourceCount = 0;
+		snapshot.IgnitiumCount = 0;
+		snapshot.StarTearsCount = 0;
 		for (const PoiMarker& poi : snapshot.Pois)
 		{
-			if (poi.Kind == PoiKind::AbandonedBase)
+			switch (poi.Kind)
 			{
+			case PoiKind::AbandonedBase:
 				++snapshot.AbandonedBaseCount;
-			}
-			else
-			{
+				break;
+			case PoiKind::PlantResource:
 				++snapshot.PlantResourceCount;
+				break;
+			case PoiKind::Ignitium:
+				++snapshot.IgnitiumCount;
+				break;
+			case PoiKind::StarTears:
+				++snapshot.StarTearsCount;
+				break;
 			}
 		}
 	}
@@ -180,7 +189,7 @@ namespace
 			return false;
 		}
 
-		// Protocol v4 POI pagination coherence: the advertised page must exist,
+		// Protocol v5 POI pagination coherence: the advertised page must exist,
 		// and the page item count must match the slice of the advertised total.
 		const uint32_t expectedPoiPageCount = packet.pois_total_count == 0
 			? 1u
@@ -541,9 +550,23 @@ namespace MapExtensionClient
 			{
 				const auto& item = packet.items[index];
 				PoiMarker marker{};
-				marker.Kind = item.kind == MapSyncProtocol::kPoiAbandonedBase
-					? PoiKind::AbandonedBase
-					: PoiKind::PlantResource;
+				switch (item.kind)
+				{
+				case MapSyncProtocol::kPoiAbandonedBase:
+					marker.Kind = PoiKind::AbandonedBase;
+					break;
+				case MapSyncProtocol::kPoiPlantResource:
+					marker.Kind = PoiKind::PlantResource;
+					break;
+				case MapSyncProtocol::kPoiIgnitium:
+					marker.Kind = PoiKind::Ignitium;
+					break;
+				case MapSyncProtocol::kPoiStarTears:
+					marker.Kind = PoiKind::StarTears;
+					break;
+				default:
+					return;
+				}
 				marker.Depleted = (item.flags & MapSyncProtocol::kPoiEntryDepleted) != 0;
 				marker.WorldLocation = MakeVector(item.world_x, item.world_y, item.world_z);
 				marker.MapLocation = MapStateRuntime::Detail::WorldToMap(marker.WorldLocation);

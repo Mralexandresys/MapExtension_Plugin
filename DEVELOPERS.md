@@ -190,25 +190,25 @@ The workflow:
 
 The modloader auto-updater replaces `MapExtension_Plugin.dll` only. `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` live outside the game folder and are never updated, so any change to the `/cargo`, `/health`, or `/rupture-cycle` payload shape must stay backward compatible with an older viewer, or bump the viewer contract version described below so the viewer prompts the user to download the viewer zip.
 
-The server build ships no sidecar and is not auto-updated. Sync protocol v4 requires an exact protocol-version match, so releases using it must tell server admins to update the client and dedicated-server DLLs together. A mixed-version pair ignores incompatible packets and cannot publish a remote snapshot.
+The server build ships no sidecar and is not auto-updated. Sync protocol v5 requires an exact protocol-version match, so releases using it must tell server admins to update the client and dedicated-server DLLs together. A mixed-version pair ignores incompatible packets and cannot publish a remote snapshot.
 
 `interface_version_min`/`interface_version_max` in the manifest are read from `PLUGIN_INTERFACE_VERSION_MIN`/`PLUGIN_INTERFACE_VERSION_MAX` in the SDK header, matching the SDK's reference workflow. The loader only checks that this range overlaps its own, so the published range is wider than the single `PLUGIN_INTERFACE_VERSION` the DLL actually declares.
 
-## Plant POI capture
+## Plant and rupture-resource POI capture
 
-Plant POIs are deliberately limited by the reward class in `ACrGatherableBaseActor::InteractionRewardResource`, not by localized display text. The accepted classes are `I_Hydrobulb_C`, `I_Polifruit_C`, `I_Oxallop_C`, `I_Purplant_C`, `I_SerpentRoot_C`, `I_Prickler_C`, `I_PrismHerb_C`, and `I_Sulheart_C`.
+Plant POIs are deliberately limited by the reward class in `ACrGatherableBaseActor::InteractionRewardResource`, not by localized display text. The accepted classes are `I_Hydrobulb_C`, `I_Polifruit_C`, `I_Oxallop_C`, `I_Purplant_C`, `I_SerpentRoot_C`, `I_Prickler_C`, `I_PrismHerb_C`, and `I_Sulheart_C`. The same gatherable scan identifies Star Tears only when `InteractionRewardResource` is `I_StarTears_C`; the ore scan identifies Ignitium only when `ACrOreActor::Resource` is `I_FireWaveOre_C` (including `BP_FireWaveMeteOreChunk_C`).
 
-The packaged static world catalog is the complete source for pre-generated plant and POI locations. Do not reintroduce a World Partition full-map scan, player movement, rupture-cycle pausing, or per-save POI cache to populate that data.
+The packaged static world catalog is the complete source for pre-generated plant and POI locations. The dynamic-resource inclusion/exclusion volumes do not contain exact runtime spawn points and must not be connected to the Ignitium or Star Tears visibility filters or turned into resource markers. Do not reintroduce a World Partition full-map scan, player movement, rupture-cycle pausing, or per-save POI cache to populate that data.
 
-`CapturePois` remains a throttled live complement for already loaded actors. It merges observations into an in-memory catalog for the active world only. A cell unloading does not remove its markers during that world, while live `bIsDepleted`/`bIsPermanentlyGathered` state and `ACrGatherableSpawnersRepActor` depleted-location arrays mark gathered markers as depleted. The catalog is cleared on world transitions and engine shutdown.
+`CapturePois` remains a throttled live complement for already loaded actors. It merges observations into an in-memory catalog for the active world only. A cell unloading does not remove its markers during that world, while live `bIsDepleted`/`bIsPermanentlyGathered` state, `ACrOreActor::OreData.bIsDepleted`, and `ACrGatherableSpawnersRepActor` depleted-location arrays mark gathered markers as depleted. The catalog is cleared on world transitions and engine shutdown; Ignitium and Star Tears observations are also cleared when `RepGlobalGatherablePCGSeed` changes. The dynamic-resource inclusion/exclusion volumes are not used as fixed positions; only generated runtime actors validate site coordinates. `ResolveRuptureResourcePhase` deliberately uses the same 30/60/600/2550-second timeline as the viewer before falling back to the raw stage, so the resource kind cannot disagree with the displayed Arcadia phase. In the stable interval, `ApplyRuptureResourcePhase` reclassifies a validated, non-depleted Ignitium site as Star Tears unless a real Star Tears actor has already been observed within the site tolerance. The burning/cooling interval suppresses stale Star Tears, while the stabilizing interval permits both kinds. `useMapViewEntities` repeats this phase projection defensively from the displayed timeline so a stale or older `/cargo` payload cannot render Ignitium while the viewer says Arcadia is stable. Do not infer depletion from a nearby marker of the other rupture-resource kind because the two can coexist late in the cycle; the viewer gives Star Tears the higher SVG paint order at identical coordinates.
 
 The catalog is sorted by public key and assigned a stable 64-bit FNV-1a content revision over the fields sent on the wire. Identical content keeps the same revision across refreshes/processes; any addition, removal, state, coordinate, label, resource, source, or key change invalidates retained dedicated-server pages.
 
-## Dedicated-server sync protocol v4
+## Dedicated-server sync protocol v5
 
 `shared/map_sync_protocol.h` defines the POD request, begin, chunk, rupture, and end packets shared by client and server builds. The protocol version is intentionally exact-match only; there is no downgrade path.
 
-Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker, and cargo-connection stream; protocol v3 added POI pagination and a per-recipient "self" player flag; protocol v4 adds exact POI-catalog revision tracking:
+Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker, and cargo-connection stream; protocol v3 added POI pagination and a per-recipient "self" player flag; protocol v4 added exact POI-catalog revision tracking; protocol v5 extends the POI enum with `ignitium` and `star_tears` and keeps the exact-match requirement:
 
 - `kRequestFlagPois` and `kSnapshotHasPois` identify POI content. All request flags are reserved; the server intentionally ignores `request_flags` and returns a complete snapshot.
 - POIs are paginated: each `ClientSnapshotRequestPacket` carries a `poi_page`, and the server responds with at most `kPoiPageCapacity` POIs (currently 64, i.e. `kPoiChunksPerPage` = 16 chunks) for that page. `ServerSnapshotBeginPacket` declares the page slice via `pois_count`/`pois_chunk_count` plus `poi_page`, `poi_page_count`, `pois_total_count`, and `poi_revision`; `ServerSnapshotEndPacket` repeats the page counters, total, and revision.
@@ -218,7 +218,7 @@ Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker
 - `ServerPoisChunkPacket` carries at most `kPoiChunkCapacity` entries (currently four). The packet remains trivially copyable and is statically limited to the recommended 1 KiB payload size.
 - The server rejects collections that cannot be represented by the `uint16_t` wire counters. The client validates the snapshot ID, generation, POI revision, begin/end counts and totals, chunk counts, chunk indexes, per-chunk item counts, page layout, and merged public-key uniqueness before publishing the assembled snapshot.
 
-**Always update the client and dedicated-server builds together when deploying protocol v4.** The client sidecar updates only `MapExtension_Plugin.dll` on player machines; it does not update the dedicated-server DLL. A mismatched pair will ignore each other's packets, so the server DLL must be replaced manually during the same rollout.
+**Always update the client and dedicated-server builds together when deploying protocol v5.** The client sidecar updates only `MapExtension_Plugin.dll` on player machines; it does not update the dedicated-server DLL. A mismatched pair will ignore each other's packets, so the server DLL must be replaced manually during the same rollout.
 
 ## Runtime contract
 
@@ -234,14 +234,16 @@ The frontend endpoint is editable in the UI, but defaults to `http://127.0.0.1:9
 
 ### `/cargo` POI contract
 
-The payload includes `counts.pois`, `counts.abandoned_bases`, and `counts.plant_resources`, plus a top-level `pois` array:
+The payload includes `counts.pois`, `counts.abandoned_bases`, `counts.plant_resources`, `counts.ignitium`, and `counts.star_tears`, plus a top-level `pois` array:
 
 ```json
 {
   "counts": {
     "pois": 2,
     "abandoned_bases": 1,
-    "plant_resources": 1
+    "plant_resources": 1,
+    "ignitium": 0,
+    "star_tears": 0
   },
   "pois": [
     {
@@ -270,18 +272,18 @@ The payload includes `counts.pois`, `counts.abandoned_bases`, and `counts.plant_
 
 | Field | Contract |
 | --- | --- |
-| `kind` | `abandoned_base` or `plant_resource`. |
-| `label` | Canonical display label for tracked plants, or the fixed abandoned-base label. |
-| `resource` | Canonical tracked plant name; empty when no resource applies, including abandoned bases. |
-| `depleted` | Backward-compatible boolean field. The current catalog emits only available plants (`false`) and omits `bIsDepleted`/`bIsPermanentlyGathered` actors. Abandoned bases also emit `false`. |
+| `kind` | `abandoned_base`, `plant_resource`, `ignitium`, or `star_tears`. |
+| `label` | Canonical display label for tracked plants or rupture resources, or the fixed abandoned-base label. |
+| `resource` | Canonical tracked plant or rupture-resource name; empty when no resource applies, including abandoned bases. |
+| `depleted` | Boolean state from the live gatherable/ore actor when available; the last known position remains in the catalog after depletion. Abandoned bases emit `false`. |
 | `source` | Capture-path identifier such as `actor_scan.abandoned_base` or `actor_scan.gatherable`. |
 | `unique_key` | Public identity used by the viewer for selection and rendering. |
 | `world` | Unreal coordinates as numeric `x`, `y`, and `z`. |
 | `map` | Projected map coordinates as numeric `x` and `y`. |
 
-`counts.pois` equals the length of `pois`; `counts.abandoned_bases` and `counts.plant_resources` are the per-kind totals and add up to that total.
+`counts.pois` equals the length of `pois`; the four per-kind counters (`abandoned_bases`, `plant_resources`, `ignitium`, and `star_tears`) add up to that total.
 
-The viewer renders abandoned bases with a dedicated fixed-color icon. Plant resources use a stable FNV-1a hash of `resource || label || unique_key`, after trimming and lowercasing, to derive an HSL color (hue from the full hash range, saturation 62–82%, lightness 60–72%). The mapping is independent of payload order, and distinct resource names rarely share the same hue. Current plugin payloads contain only available plants and use a solid core; the viewer keeps the faded dashed/outlined rendering for backward compatibility with older payloads that contain `depleted: true`.
+The viewer renders abandoned bases with a dedicated fixed-color icon. Plant resources use stable resource-specific colors of `resource || label || unique_key`, after trimming and lowercasing, to derive an HSL color (hue from the full hash range, saturation 62–82%, lightness 60–72%). Ignitium and Star Tears use fixed resource-specific colors so their independent filters remain visually recognizable. Current plugin payloads use a solid core for available resources and the faded dashed/outlined rendering for depleted actors; the same rendering remains backward compatible with older payloads that contain `depleted: true`.
 
 Player entries in `/cargo` carry an optional boolean `self`, set to `true` on the marker representing the local viewer's own player (the primary local player in solo sessions, or the marker flagged by the dedicated server for this client). The viewer renders the `self` player with a distinct color and prefers it when centering on the player. Older plugins omit the field.
 

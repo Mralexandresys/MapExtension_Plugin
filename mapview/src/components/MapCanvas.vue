@@ -392,9 +392,16 @@ function stableStringHash(value: string): number {
 }
 
 function poiKindLabel(poi: Poi): string {
-  return poi.kind === 'abandoned_base'
-    ? ui.value.map.abandonedBaseLabel
-    : ui.value.map.plantResourceLabel;
+  switch (poi.kind) {
+    case 'abandoned_base':
+      return ui.value.map.abandonedBaseLabel;
+    case 'plant_resource':
+      return ui.value.map.plantResourceLabel;
+    case 'ignitium':
+      return ui.value.map.ignitiumLabel;
+    case 'star_tears':
+      return ui.value.map.starTearsLabel;
+  }
 }
 
 function poiLabel(poi: Poi): string {
@@ -418,6 +425,9 @@ function poiTooltipLines(poi: Poi): string[] {
 }
 
 function poiColorStyle(poi: Poi): Record<string, string> {
+  if (poi.kind === 'ignitium') return { '--poi-color': '#f97316' };
+  if (poi.kind === 'star_tears') return { '--poi-color': '#38bdf8' };
+
   const colorKey = (poi.resource || poi.label || poi.unique_key).trim().toLowerCase();
   const hash = stableStringHash(colorKey);
   // Derive a stable HSL color from the full hash instead of a small fixed
@@ -1048,7 +1058,7 @@ defineExpose({
                 available: poi.depleted !== true,
               },
             ]"
-            :style="poi.kind === 'plant_resource' ? poiColorStyle(poi) : undefined"
+            :style="poi.kind !== 'abandoned_base' ? poiColorStyle(poi) : undefined"
             tabindex="0"
             role="button"
             :aria-pressed="selectedKey === poi.unique_key"
@@ -1082,8 +1092,8 @@ defineExpose({
               />
             </template>
             <template v-else>
-              <circle class="plant-resource-ring" :cx="poi.map.x" :cy="poi.map.y" r="9" />
-              <circle class="plant-resource-core" :cx="poi.map.x" :cy="poi.map.y" r="5.5" />
+              <circle class="poi-resource-ring" :cx="poi.map.x" :cy="poi.map.y" r="9" />
+              <circle class="poi-resource-core" :cx="poi.map.x" :cy="poi.map.y" r="5.5" />
             </template>
           </g>
 
@@ -1409,7 +1419,7 @@ defineExpose({
     stroke-linejoin: round;
 }
 
-:deep(.map-marker.poi.plant_resource .plant-resource-ring) {
+:deep(.map-marker.poi:not(.abandoned_base) .poi-resource-ring) {
     fill: var(--poi-color);
     fill-opacity: 0.18;
     stroke: var(--poi-color);
@@ -1417,19 +1427,19 @@ defineExpose({
     stroke-opacity: 0.72;
 }
 
-:deep(.map-marker.poi.plant_resource .plant-resource-core) {
+:deep(.map-marker.poi:not(.abandoned_base) .poi-resource-core) {
     fill: var(--poi-color);
     stroke: #f7fbff;
     stroke-width: 1.2;
 }
 
-:deep(.map-marker.poi.plant_resource.depleted .plant-resource-ring) {
+:deep(.map-marker.poi:not(.abandoned_base).depleted .poi-resource-ring) {
     fill-opacity: 0;
     stroke-opacity: 0.38;
     stroke-dasharray: 2 2;
 }
 
-:deep(.map-marker.poi.plant_resource.depleted .plant-resource-core) {
+:deep(.map-marker.poi:not(.abandoned_base).depleted .poi-resource-core) {
     fill-opacity: 0.12;
     stroke: var(--poi-color);
     stroke-width: 1.8;
@@ -1459,7 +1469,7 @@ defineExpose({
 :deep(.map-marker.player.active path)     { filter: drop-shadow(0 0 6px var(--player)); }
 :deep(.map-marker.player.self.active path) { filter: drop-shadow(0 0 6px var(--player-self)); }
 :deep(.map-marker.poi.abandoned_base.active .abandoned-base-shell) { filter: drop-shadow(0 0 7px #ffb36b); }
-:deep(.map-marker.poi.plant_resource.active .plant-resource-core)  { filter: drop-shadow(0 0 7px var(--poi-color)); }
+:deep(.map-marker.poi:not(.abandoned_base).active .poi-resource-core)  { filter: drop-shadow(0 0 7px var(--poi-color)); }
 :deep(.map-marker.orphan rect),
 :deep(.map-marker.orphan polygon),
 :deep(.map-marker.orphan circle)          { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 3 2; }

@@ -88,6 +88,8 @@ export function useMapViewDataSource() {
         player: true,
         abandonedBase: true,
         plantResource: true,
+        ignitium: true,
+        starTears: true,
     });
 
     const status = reactive<MapViewStatus>({
@@ -164,6 +166,10 @@ export function useMapViewDataSource() {
                 saved.entityVisibility?.abandonedBase ?? true;
             entityVisibility.plantResource =
                 saved.entityVisibility?.plantResource ?? true;
+            entityVisibility.ignitium =
+                saved.entityVisibility?.ignitium ?? true;
+            entityVisibility.starTears =
+                saved.entityVisibility?.starTears ?? true;
         } catch {
             endpoint.value = DEFAULT_ENDPOINT;
             endpointDraft.value = DEFAULT_ENDPOINT;

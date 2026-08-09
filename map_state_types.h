@@ -92,7 +92,9 @@ namespace Detail
 	enum class PoiKind : uint8_t
 	{
 		AbandonedBase,
-		PlantResource
+		PlantResource,
+		Ignitium,
+		StarTears
 	};
 
 	struct PoiMarker
@@ -140,6 +142,8 @@ namespace Detail
 		int PlayerCount = 0;
 		int AbandonedBaseCount = 0;
 		int PlantResourceCount = 0;
+		int IgnitiumCount = 0;
+		int StarTearsCount = 0;
 		std::vector<CargoMarker> Markers;
 		std::vector<CargoConnection> Connections;
 		std::vector<TeleporterMarker> Teleporters;

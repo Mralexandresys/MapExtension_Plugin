@@ -10,6 +10,7 @@ import {
     STATIC_RESOURCE_KINDS,
     type StaticLayerKey,
     type StaticMapManifest,
+    type StaticPlacement,
     type StaticPointSeries,
     type StaticResourceKind,
 } from "../lib/staticMapCatalog";
@@ -22,6 +23,11 @@ import type {
 } from "../lib/types";
 
 const STORAGE_KEY = "mapview.static-filters.v1";
+const BUILDING_ACTOR_TYPE_FRAGMENTS = [
+    "keycard",
+    "coralion_egg",
+    "spawner",
+] as const;
 
 export interface StaticFilterState {
     layers: Record<string, boolean>;
@@ -163,6 +169,16 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         );
     }
 
+    function isPlacementVisible(placement: StaticPlacement): boolean {
+        if (!isPlacementGroupEnabled(placement.layer, placement.group)) return false;
+        if (placement.layer !== "building") return true;
+
+        const actorType = placement.actorType.toLowerCase();
+        return BUILDING_ACTOR_TYPE_FRAGMENTS.some((fragment) =>
+            actorType.includes(fragment),
+        );
+    }
+
     function isPoiGroupEnabled(group: string): boolean {
         return isLayerEnabled("poi") && state.poiGroups[group] !== false;
     }
@@ -249,6 +265,7 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         isLayerEnabled,
         isSeriesVisible,
         isPlacementGroupEnabled,
+        isPlacementVisible,
         isPoiGroupEnabled,
         isResourceTypeEnabled,
         resourceTypeCount,

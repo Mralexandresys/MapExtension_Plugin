@@ -37,7 +37,7 @@ ENDPOINT_FILES = {
 # Must match VIEWER_CONTRACT_VERSION in mapview/src/lib/viewerContract.ts so the
 # default mock payload does NOT trigger the viewer update dialog. To test the
 # dialog locally, drop a local-test/data/health.json with a higher value.
-MOCK_VIEWER_CONTRACT_VERSION = 1
+MOCK_VIEWER_CONTRACT_VERSION = 2
 MOCK_PLUGIN_VERSION = "ML-v1.16.0-v0.5"
 MOCK_RELEASE_BASE = (
     "https://github.com/Mralexandresys/MapExtension_Plugin/releases"
@@ -75,9 +75,11 @@ def default_payloads(port: int) -> dict[str, Any]:
                 "markers": 0,
                 "teleporters": 0,
                 "players": 2,
-                "pois": 4,
+                "pois": 6,
                 "abandoned_bases": 1,
                 "plant_resources": 3,
+                "ignitium": 1,
+                "star_tears": 1,
             },
             "map": {
                 "src_x1": -358583.0,
@@ -154,6 +156,26 @@ def default_payloads(port: int) -> dict[str, Any]:
                     "unique_key": "poi:mock-plant-fiber-available",
                     "world": {"x": -250000.0, "y": -120000.0, "z": 75.0},
                     "map": {"x": 2245.4, "y": 2974.8},
+                },
+                {
+                    "kind": "ignitium",
+                    "label": "Ignitium",
+                    "resource": "Ignitium",
+                    "depleted": False,
+                    "source": "actor_scan.ore",
+                    "unique_key": "poi:mock-ignitium-available",
+                    "world": {"x": -180000.0, "y": -110000.0, "z": 140.0},
+                    "map": {"x": 3693.0, "y": 3181.0},
+                },
+                {
+                    "kind": "star_tears",
+                    "label": "Star Tears",
+                    "resource": "Star Tears",
+                    "depleted": False,
+                    "source": "actor_scan.gatherable",
+                    "unique_key": "poi:mock-star-tears-available",
+                    "world": {"x": -170000.0, "y": -100000.0, "z": 145.0},
+                    "map": {"x": 3900.0, "y": 3387.0},
                 },
             ],
         },
