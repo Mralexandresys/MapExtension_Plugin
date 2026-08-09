@@ -11,11 +11,9 @@
 
 - `plugin.cpp`: plugin metadata, startup, shutdown, and hook registration
 - `map_state_runtime.cpp`: public runtime facade used by the plugin entrypoints
-- `map_state_capture.cpp` / `map_state_capture.h`: world scanning, snapshot refresh, and gameplay callbacks
-- `map_state_full_scan.cpp` / `map_state_full_scan.h`: client-only progressive full-map World Partition scan controller
+- `map_state_capture.cpp` / `map_state_capture.h`: runtime capture, snapshot refresh, and gameplay callbacks
 - `map_state_http.cpp` / `map_state_http.h`: local HTTP server and endpoint routing
 - `map_state_json.cpp` / `map_state_json.h`: JSON serialization for `/health`, `/cargo`, and `/rupture-cycle`
-- `map_state_poi_store.cpp` / `map_state_poi_store.h`: per-save-session disk persistence for discovered plant POIs
 - `map_state_types.h`: shared snapshot types and map projection constants
 - `client/map_sync_client.cpp` / `client/map_sync_client.h`: client-side snapshot requests and plugin-network handling
 - `client/map_state_remote_cache.cpp` / `client/map_state_remote_cache.h`: client cache for remote rupture/cargo snapshots
@@ -200,13 +198,9 @@ The server build ships no sidecar and is not auto-updated. Sync protocol v4 requ
 
 Plant POIs are deliberately limited by the reward class in `ACrGatherableBaseActor::InteractionRewardResource`, not by localized display text. The accepted classes are `I_Hydrobulb_C`, `I_Polifruit_C`, `I_Oxallop_C`, `I_Purplant_C`, `I_SerpentRoot_C`, `I_Prickler_C`, `I_PrismHerb_C`, and `I_Sulheart_C`.
 
-World Partition and PCG/Mass only materialize gatherable actors in loaded areas. `CapturePois` therefore merges available observations into a per-world cumulative catalog. A cell unloading does not remove its markers. Live `bIsDepleted`/`bIsPermanentlyGathered` state and `ACrGatherableSpawnersRepActor` depleted-location arrays remove gathered markers even when PCG has already removed the visual actor; removal matches the exact rounded-coordinate key first and then any catalog plant within a small world-space radius (`kDepletedPlantRemovalRadius`), because replicated depleted locations can differ slightly from the observed actor location. The catalog is cleared on world transitions and engine shutdown.
+The packaged static world catalog is the complete source for pre-generated plant and POI locations. Do not reintroduce a World Partition full-map scan, player movement, rupture-cycle pausing, or per-save POI cache to populate that data.
 
-Discovered plants are persisted through `map_state_poi_store.cpp` as a per-save-session TSV cache under `Plugins/MapExtension_Plugin/poi_cache/`. The storage key combines the world name and the `UCrSaveSubsystem` save-session name (resolved with backoff, falling back to the world name alone if no session identity appears). Persisted entries are merged into the catalog on the first scan with source `persisted_catalog`, before depleted-location cleanup so stale entries are corrected by current game state; the cache file is rewritten whenever the POI revision changes.
-
-The SDK has no intact-plant registry containing type and position for the entire procedural world. Normal capture is passive progressive coverage. The explicit solo/local full-map action in `map_state_full_scan.cpp` is the only exception: it creates a transient `ATargetPoint` with a `UWorldPartitionStreamingSourceComponent`, traverses an overlapping serpentine grid over the calibrated map bounds, waits for streaming and PCG, then requests the existing POI capture/persistence path. It never moves the player and never loads all zones simultaneously.
-
-The controller is a game-thread state machine. ImGui only sets atomic start/cancel requests. During its first pass it temporarily enables `UMassLODSubsystem::bGatherStreamingSources` and `bAllowNonPlayerViwerActors`, restoring both original bits on cleanup. Capture reports live tracked actors separately from persisted markers. If the whole source-only pass sees no live tracked actor, the scanner repeats in player-fallback mode: it freezes the local character, disables collision, moves it with the source, and restores its immutable original transform and movement/input state before cleanup. Every zone has streaming and capture timeouts; timeout zones produce a partial result rather than a false complete result. Cancellation, world end, engine shutdown, and plugin shutdown must restore player/Mass state, disable the component, and destroy its owner exactly once. Keep this feature client-only and reject `bIsDedicatedServer` sessions.
+`CapturePois` remains a throttled live complement for already loaded actors. It merges observations into an in-memory catalog for the active world only. A cell unloading does not remove its markers during that world, while live `bIsDepleted`/`bIsPermanentlyGathered` state and `ACrGatherableSpawnersRepActor` depleted-location arrays mark gathered markers as depleted. The catalog is cleared on world transitions and engine shutdown.
 
 The catalog is sorted by public key and assigned a stable 64-bit FNV-1a content revision over the fields sent on the wire. Identical content keeps the same revision across refreshes/processes; any addition, removal, state, coordinate, label, resource, source, or key change invalidates retained dedicated-server pages.
 

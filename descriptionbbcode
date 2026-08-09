@@ -20,8 +20,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]Show [b]player positions[/b][/*]
 [*]Show [b]abandoned bases[/b] and available Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart plants[/*]
 [*]Browse a pre-generated [b]world catalog[/b] of major POIs, plants, minerals, animal resources, buildings, zones, and optional technical elements with searchable persistent filters[/*]
-[*]Keep observed plant markers when their World Partition area leaves the current loading radius, and remember them on disk between game restarts[/*]
-[*]Manually scan the full map in solo/local play, one World Partition zone at a time, with progress and cancellation[/*]
+[*]Keep live observed plant markers while the current world is active[/*]
 [*]Remove depleted or permanently gathered plants from the map[/*]
 [*]Show a [b]rupture-cycle timeline[/b] in detailed or compact mode[/*]
 [*]Filter the map to show [b]only your personal markers and zones[/b][/*]
@@ -34,8 +33,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [size=4][b]Latest Changes[/b][/size]
 [list]
 [*]Added a compact static world catalog with major POIs, resources, buildings, zones, searchable filters, and canvas rendering for large layers[/*]
-[*]Added a solo/local full-map plant scan from the in-game MapExtension panel, with progress, cancellation, per-zone timeouts, and incremental disk saves[/*]
-[*]Discovered plants are now saved to disk per save session, so accumulated plant coverage survives game restarts[/*]
+[*]Removed the obsolete in-game full-map plant scan and per-save disk cache; packaged map-data now provides the complete catalog[/*]
 [*]Harvested plants are now removed reliably: depleted-location matching tolerates small coordinate differences instead of requiring an exact match[/*]
 [*]Plant POIs are now limited to the eight supported edible plant resources and only available plants are published[/*]
 [*]Observed plants accumulate across streamed areas instead of disappearing when the player moves outside the current loading radius[/*]
@@ -107,7 +105,7 @@ This is [b]not[/b] an online service and [b]not[/b] a separate game client. It i
 [*]The current rupture-cycle timeline in detailed or compact mode[/*]
 [/list]
 
-Plant coverage grows as players visit or otherwise load World Partition areas, and discovered plants are remembered on disk per save session so coverage survives game restarts. In solo/local play, the in-game MapExtension panel can also scan the calibrated map bounds progressively, one zone at a time. The operation is cancellable but may take several minutes and cause strong temporary slowdowns.
+The packaged world catalog provides complete plant and POI locations without an in-game full-map scan, player movement, or a per-save disk cache. Live observations remain available only while the current world is active.
 
 This is especially useful when your base grows and you want a cleaner overview of your layout, logistics lines, and rupture activity.
 

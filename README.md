@@ -15,9 +15,8 @@ The plugin works in both single-player and multiplayer. For solo/local sessions,
 - Display the positions of `players`, with your own player highlighted in a distinct color
 - Display abandoned bases and supported gatherable plants as points of interest (POIs), including Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb, and Nootka Lupine
 - Browse a pre-generated world catalog containing major POIs, plants, minerals, animal resources, buildings, zones, and optional technical elements, with searchable persistent filters
-- Accumulate plant observations across streamed areas instead of dropping markers when the player leaves the current loading radius
-- Manually scan the full map in solo/local play from the in-game MapExtension panel, with progress and cancellation
-- Keep depleted or permanently gathered plant positions on the map with a distinct depleted state
+- Accumulate live plant observations across streamed areas instead of dropping markers when the player leaves the current loading radius
+- Keep depleted or permanently gathered plant positions observed during the active world on the map with a distinct depleted state
 - Use a compact rupture-cycle view with phase, remaining-time, legend, and timeline details
 - Filter the map down to personal markers and zones only
 - Center the map on your own player with the `Player` control or the `P` shortcut
@@ -41,13 +40,9 @@ The viewer can reduce the rupture timeline to a compact bar; hover it or focus i
 
 ## Plant coverage
 
-StarRupture materializes PCG/Mass gatherables only in World Partition areas that have been loaded. The client captures supported `ACrGatherableBaseActor` instances immediately from `ActorBeginPlay`, before Mass can replace or remove their high-resolution actor representation, and merges those observations into a cumulative catalog. Already observed plants therefore remain on the map after the player moves away. Live actor state and the game's replicated depleted-location data mark the closest matching plant as depleted without deleting its position.
+The bundled static world catalog provides the complete pre-generated map data for plants and POIs. It is loaded directly by the viewer, so the plugin no longer drives a full World Partition scan, moves the player, pauses rupture activity, or writes a per-save POI cache.
 
-Discovered plants, including their depleted state, are persisted to disk only after a non-empty save-session identity is available (under `Plugins/MapExtension_Plugin/poi_cache/`), so accumulated coverage survives game restarts without mixing saves. Cache filenames include a digest of the complete session key. Restored entries are marked with source `persisted_catalog` and are re-validated against live actor state and the game's depleted-location data on every refresh.
-
-The current SDK does not expose an intact-plant registry for cells that have never been generated. Normal operation therefore remains passive and coverage grows as players visit or otherwise load areas.
-
-In solo/local play, the in-game ModLoader panel also provides **Scan the entire map**. This explicit manual operation temporarily disables autosave and player movement, then moves the local player together with an invisible World Partition source across a dense overlapping grid. Scan centers are at most 20,000 world units apart and extend 20,000 units beyond every calibrated map edge so the first, last, and corner cells are covered. For each zone it waits at least two seconds for World Partition, then at least six seconds for PCG while requiring four quiet seconds after the latest gatherable `ActorBeginPlay` event; streaming, PCG, and capture also have longer bounded timeouts. The scan pauses an active rupture wave, or disables the next-wave timer while preserving its remaining duration, and restores the original rupture state on completion, cancellation, or failure. It also reloads the player's original area before restoring the exact original position, rotation, collision, input, movement mode, and autosave setting. Per-zone logs include the target coordinates, observation revision, begin-play event count, newly discovered unique plants, live actors, and catalog size. The denser scan can take tens of minutes and cause significant temporary slowdowns. It is unavailable in dedicated-server sessions.
+The live snapshot can still capture supported `ACrGatherableBaseActor` instances in already loaded areas to reflect the active world. Those observations stay in memory only for the current world; live actor state and the game's replicated depleted-location data mark the closest matching plant as depleted without deleting its position.
 
 Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart. Explicit gatherable actor classes additionally cover Gold Fruit, Thornfruit, Sikkim Rhubarb, Nootka Lupine, and the game's generic `Plant_h` gatherable.
 
@@ -79,7 +74,7 @@ Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpen
 
 - `kind` is `abandoned_base` or `plant_resource`.
 - `label` is the display label; `resource` is the detected resource name and can be empty for an abandoned base.
-- `depleted` is `true` for depleted or permanently gathered plants. Their last known positions remain published and persisted so the viewer can render them as faded outlined markers.
+- `depleted` is `true` for depleted or permanently gathered plants observed during the active world. Their last known positions remain published so the viewer can render them as faded outlined markers.
 - `source` identifies the capture path, `unique_key` identifies the POI to the viewer, `world` contains Unreal `x`/`y`/`z` coordinates, and `map` contains projected `x`/`y` coordinates.
 - `counts.pois` is the total POI count; `counts.abandoned_bases` and `counts.plant_resources` contain the per-kind totals.
 

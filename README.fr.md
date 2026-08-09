@@ -15,9 +15,8 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local,
 - Afficher la position des `joueurs`, avec son propre joueur mis en avant dans une couleur distincte
 - Afficher les bases abandonnees et les plantes recoltables prises en charge comme points d'interet (POI), dont Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb et Nootka Lupine
 - Parcourir un catalogue du monde pre-genere contenant les POI principaux, plantes, minerais, ressources animales, batiments, zones et elements techniques optionnels, avec des filtres persistants et une recherche
-- Cumuler les plantes observees dans les zones chargees au lieu de retirer leurs marqueurs quand le joueur quitte le rayon de chargement courant
-- Scanner manuellement toute la carte en solo/local depuis le panneau MapExtension en jeu, avec progression et annulation
-- Conserver la position des plantes epuisees ou recoltees de facon permanente avec un etat visuel distinct
+- Cumuler les plantes observees en direct dans les zones chargees au lieu de retirer leurs marqueurs quand le joueur quitte le rayon de chargement courant
+- Conserver la position des plantes epuisees ou recoltees observees dans le monde actif avec un etat visuel distinct
 - Utiliser une vue compacte du cycle de rupture avec phase, temps restant, legende et details de timeline
 - Filtrer la carte pour ne garder que les marqueurs et zones personnels
 - Centrer la carte sur son propre joueur avec le controle `Joueur` ou le raccourci `P`
@@ -41,13 +40,9 @@ L'interface peut reduire la timeline de rupture en barre compacte ; son survol o
 
 ## Couverture des plantes
 
-StarRupture materialise les gatherables PCG/Mass uniquement dans les zones World Partition qui ont ete chargees. Le client capture immediatement les instances `ACrGatherableBaseActor` prises en charge depuis `ActorBeginPlay`, avant que Mass puisse remplacer ou supprimer leur representation acteur haute resolution, puis fusionne ces observations dans un catalogue cumulatif. Une plante deja observee reste donc sur la carte lorsque le joueur s'eloigne. L'etat des acteurs vivants et les donnees repliquees des emplacements epuises marquent comme epuisee la plante correspondante la plus proche sans supprimer sa position.
+Le catalogue statique fourni avec l'interface contient les donnees pre-generees completes pour les plantes et les POI. Il est charge directement par le viewer : le plugin ne lance donc plus de scan complet World Partition, ne deplace plus le joueur, ne suspend plus le cycle de rupture et n'ecrit plus de cache POI par sauvegarde.
 
-Les plantes decouvertes, y compris leur etat epuise, sont persistees sur disque uniquement lorsqu'une identite de session de sauvegarde non vide est disponible (sous `Plugins/MapExtension_Plugin/poi_cache/`), afin que la couverture accumulee survive aux redemarrages sans melanger les sauvegardes. Le nom du fichier de cache contient une empreinte de la cle de session complete. Les entrees restaurees portent la source `persisted_catalog` et sont revalidees a chaque refresh avec l'etat des acteurs vivants et les donnees d'emplacements epuises du jeu.
-
-Le SDK actuel n'expose pas de registre des plantes intactes pour les cellules qui n'ont jamais ete generees. Le fonctionnement normal reste donc passif et la couverture s'etend quand les joueurs visitent ou chargent des zones.
-
-En solo/local, le panneau ModLoader du plugin propose aussi **Scanner toute la carte**. Cette operation manuelle explicite desactive temporairement la sauvegarde automatique et les mouvements du joueur, puis deplace le joueur local avec une source World Partition invisible sur une grille dense et chevauchante. Les centres de scan sont espaces de 20 000 unites monde au maximum et depassent de 20 000 unites chacune des limites calibrees de la carte afin de couvrir les premieres, dernieres et coins de cellules. Pour chaque zone, elle attend au moins deux secondes World Partition, puis au moins six secondes PCG en exigeant quatre secondes sans nouvel evenement `ActorBeginPlay` de gatherable ; les timeouts de streaming, PCG et capture sont egalement allonges. Le scan met en pause une vague de rupture active ou desactive le timer de la prochaine vague en conservant sa duree restante, puis restaure l'etat de rupture initial en cas de fin, d'annulation ou d'echec. Il recharge aussi la zone d'origine du joueur avant de restaurer exactement sa position, sa rotation, sa collision, ses entrees, son mode de mouvement et le reglage de sauvegarde automatique. Les logs par zone contiennent la cible, la revision d'observation, le nombre d'evenements begin-play, les nouvelles plantes uniques, les acteurs vivants et la taille du catalogue. Ce scan plus dense peut durer plusieurs dizaines de minutes et provoquer de forts ralentissements temporaires. Il est indisponible en session serveur dediee.
+Le snapshot live peut toujours capturer les instances `ACrGatherableBaseActor` prises en charge dans les zones deja chargees afin de refleter le monde actif. Ces observations restent uniquement en memoire pour le monde courant ; l'etat des acteurs vivants et les donnees repliquees des emplacements epuises marquent comme epuisee la plante correspondante la plus proche sans supprimer sa position.
 
 La detection par classe de recompense publie Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb et Sulheart. Des classes d'acteur gatherable explicites ajoutent Gold Fruit, Thornfruit, Sikkim Rhubarb, Nootka Lupine et le gatherable generique `Plant_h` du jeu.
 
@@ -79,7 +74,7 @@ La detection par classe de recompense publie Hydrobulb, Polifruit, Oxallop, Purp
 
 - `kind` vaut `abandoned_base` ou `plant_resource`.
 - `label` est le libelle affiche ; `resource` est le nom de ressource detecte et peut etre vide pour une base abandonnee.
-- `depleted` vaut `true` pour les plantes epuisees ou recoltees de facon permanente. Leur derniere position connue reste publiee et persistee afin que l'interface les affiche avec un marqueur attenue et en contour.
+- `depleted` vaut `true` pour les plantes epuisees ou recoltees de facon permanente observees dans le monde actif. Leur derniere position connue reste publiee afin que l'interface les affiche avec un marqueur attenue et en contour.
 - `source` identifie le chemin de capture, `unique_key` identifie le POI pour l'interface, `world` contient les coordonnees Unreal `x`/`y`/`z` et `map` contient les coordonnees projetees `x`/`y`.
 - `counts.pois` est le nombre total de POI ; `counts.abandoned_bases` et `counts.plant_resources` contiennent les totaux par kind.
 
