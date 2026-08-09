@@ -67,6 +67,33 @@ Le viewer charge un catalogue compact pre-genere depuis `public/map-data/`. Il c
 
 Le volet `Filtres` permet de rechercher et d'activer les couches, groupes de POI, categories et types de ressources, representations PCG/acteur, batiments, zones et elements techniques. Les choix sont persistants sous la cle `mapview.static-filters.v1`. Les couches POI et ressources sont actives par defaut ; les donnees techniques restent masquees.
 
+### Zones et elements de generation
+
+La couche `Zones` contient les volumes exportes suivants. Lorsqu'un volume fournit
+une boite, Map View en dessine l'empreinte rectangulaire au sol, avec sa rotation ;
+sinon seul son marqueur central est affiche. Ces formes representent les limites
+exportees, pas une garantie qu'une ressource soit actuellement disponible.
+
+| Filtre Map View | Categorie exportee | Role |
+|---|---|---|
+| `Zones de generation` | `resource_spawn_zone` | Volume dans lequel le jeu peut generer des plantes, minerais ou meteorites. |
+| `Zones d'exclusion` | `resource_exclusion_zone` | Volume ou la generation de ressources est interdite. |
+| `Regions de spawn monde` | `world_spawn_region` | Region de generation generale du monde, notamment pour les creatures et ennemis ; ce n'est pas une zone de ressources. |
+
+La couche `Elements techniques`, desactivee par defaut, contient egalement des
+points utiles a la lecture de la generation :
+
+| Filtre Map View | Categorie exportee | Role |
+|---|---|---|
+| `Marqueurs de ressources` | `resource_spawn_marker` | Point fixe servant de centre ou d'ancrage a une generation de ressource. |
+| `Sockets de depots` | `resource_deposit_socket` | Emplacement fixe prevu pour accueillir un gisement de minerai. |
+
+`WorldSpawnerRegionExcluder` n'est pas present comme categorie dans le catalogue
+exporte et n'est donc pas affiche. Les cellules World Partition et les Data Layers
+sont des metadonnees techniques des exports bruts, non des couches du viewer. La
+Rupture est exposee comme un etat et une timeline ; son front mobile n'est pas une
+zone statique dessinee sur la carte.
+
 Les observations live de plantes recues dans `/cargo` sont appariees au point statique du meme type le plus proche dans un rayon de 150 cm. L'etat live est applique au point catalogue sans creer un doublon ; une observation sans correspondance reste un marqueur runtime distinct.
 
 ### Regeneration
