@@ -200,9 +200,7 @@ export const fr = {
             creature: "Ressources animales",
         },
         representations: {
-            hism: "Instances exactes HISM",
             pcg: "Points PCG precalcules",
-            pcg_covered: "Points PCG deja places",
             actor: "Acteurs et ancres",
         },
         groups: {

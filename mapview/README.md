@@ -65,7 +65,7 @@ Pour utiliser ou distribuer l'interface, garder `map-tiles/` et `map-data/` a co
 
 Le viewer charge un catalogue compact pre-genere depuis `public/map-data/`. Il contient 241 POI principaux ainsi que les ressources, batiments, zones et elements techniques extraits localement des exports `analyse_map/map_v2_*`. Les POI restent dans le SVG interactif ; les centaines de milliers de ressources et placements sont dessines par `StaticMapCanvas.vue` afin d'eviter un DOM SVG trop volumineux.
 
-Le volet `Filtres` permet de rechercher et d'activer les couches, groupes de POI, categories et types de ressources, representations HISM/PCG/acteur, batiments, zones et elements techniques. Les choix sont persistants sous la cle `mapview.static-filters.v1`. Les couches POI et ressources sont actives par defaut ; les donnees techniques et les points PCG deja couverts restent masques.
+Le volet `Filtres` permet de rechercher et d'activer les couches, groupes de POI, categories et types de ressources, representations PCG/acteur, batiments, zones et elements techniques. Les choix sont persistants sous la cle `mapview.static-filters.v1`. Les couches POI et ressources sont actives par defaut ; les donnees techniques restent masquees.
 
 Les observations live de plantes recues dans `/cargo` sont appariees au point statique du meme type le plus proche dans un rayon de 150 cm. L'etat live est applique au point catalogue sans creer un doublon ; une observation sans correspondance reste un marqueur runtime distinct.
 

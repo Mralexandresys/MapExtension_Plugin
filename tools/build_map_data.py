@@ -41,12 +41,8 @@ JSONP_CALLBACK = "SRMAPDATA"
 POSITION_SCALE_CM = 10.0  # stored unit = 1 decimetre
 ALTITUDE_SCALE_CM = 100.0  # altitudes stored in metres
 SORT_CELL = 2000  # 200 m locality blocks, keeps delta values small
-HISM_MERGE_CM = 50.0  # merge multi-mesh HISM instances sharing a spot
-PCG_COVER_CELL_CM = 200.0  # PCG point considered already placed as HISM
-
-RESOURCE_KINDS = ("hism", "pcg", "pcg_covered", "actor")
+RESOURCE_KINDS = ("pcg", "actor")
 RAW_KIND_TO_KIND = {
-    "resource_hism_instance": "hism",
     "resource_point": "pcg",
     "resource_actor": "actor",
 }
@@ -207,18 +203,16 @@ def build_resources(path: Path) -> tuple[dict[str, list[dict[str, Any]]], dict[s
     buckets: dict[tuple[str, str, str], list[tuple[int, int, int]]] = defaultdict(list)
     type_labels: dict[str, dict[str, str]] = {}
     type_category: dict[str, str] = {}
-    hism_cells: dict[str, set[tuple[int, int]]] = defaultdict(set)
-    merge_seen: set[tuple[str, int, int]] = set()
-
     total = 0
-    merged = 0
-    pending_pcg: list[tuple[str, str, tuple[int, int, int], float, float]] = []
+    skipped_hism = 0
 
     for entry in read_jsonl(path):
         total += 1
         raw_kind = entry.get("kind")
         kind = RAW_KIND_TO_KIND.get(raw_kind) if isinstance(raw_kind, str) else None
         if kind is None:
+            if raw_kind == "resource_hism_instance":
+                skipped_hism += 1
             continue
 
         position = entry.get("position_cm") or {}
@@ -241,48 +235,9 @@ def build_resources(path: Path) -> tuple[dict[str, list[dict[str, Any]]], dict[s
             quantize(position.get("z"), ALTITUDE_SCALE_CM),
         )
 
-        if kind == "hism":
-            merge_key = (
-                type_id,
-                int(round(x_cm / HISM_MERGE_CM)),
-                int(round(y_cm / HISM_MERGE_CM)),
-            )
-            if merge_key in merge_seen:
-                merged += 1
-                continue
-            merge_seen.add(merge_key)
-            hism_cells[type_id].add(
-                (int(x_cm // PCG_COVER_CELL_CM), int(y_cm // PCG_COVER_CELL_CM))
-            )
-            buckets[(category, type_id, kind)].append(point)
-        elif kind == "pcg":
-            # Resolved in a second pass: HISM instances may appear after the point.
-            pending_pcg.append((category, type_id, point, x_cm, y_cm))
-        else:
-            buckets[(category, type_id, kind)].append(point)
+        buckets[(category, type_id, kind)].append(point)
 
-    covered = 0
-    for category, type_id, point, x_cm, y_cm in pending_pcg:
-        cells = hism_cells.get(type_id)
-        is_covered = False
-        if cells:
-            cell_x = int(x_cm // PCG_COVER_CELL_CM)
-            cell_y = int(y_cm // PCG_COVER_CELL_CM)
-            for offset_x in (-1, 0, 1):
-                for offset_y in (-1, 0, 1):
-                    if (cell_x + offset_x, cell_y + offset_y) in cells:
-                        is_covered = True
-                        break
-                if is_covered:
-                    break
-        if is_covered:
-            covered += 1
-        buckets[(category, type_id, "pcg_covered" if is_covered else "pcg")].append(point)
-
-    log(
-        f"resources: {total} rows, {merged} merged HISM duplicates, "
-        f"{covered} PCG points already covered by a HISM instance"
-    )
+    log(f"resources: {total} rows, {skipped_hism} HISM instances excluded")
 
     groups_by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
     counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))

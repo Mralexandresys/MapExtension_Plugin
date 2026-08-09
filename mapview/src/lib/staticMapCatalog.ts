@@ -28,21 +28,12 @@ export const STATIC_LAYER_KEYS: readonly StaticLayerKey[] = [
 /** Layers loaded and displayed as soon as the catalog is available. */
 export const DEFAULT_ENABLED_LAYERS: readonly StaticLayerKey[] = ["poi", "resource"];
 
-export type StaticResourceKind = "hism" | "pcg" | "pcg_covered" | "actor";
+export type StaticResourceKind = "pcg" | "actor";
 
-export const STATIC_RESOURCE_KINDS: readonly StaticResourceKind[] = [
-    "hism",
-    "pcg",
-    "pcg_covered",
-    "actor",
-];
+export const STATIC_RESOURCE_KINDS: readonly StaticResourceKind[] = ["pcg", "actor"];
 
-/** Representation kinds shown by default: real instances, uncovered PCG points and resource actors. */
-export const DEFAULT_ENABLED_KINDS: readonly StaticResourceKind[] = [
-    "hism",
-    "pcg",
-    "actor",
-];
+/** Resource representations shown by default. */
+export const DEFAULT_ENABLED_KINDS: readonly StaticResourceKind[] = ["pcg", "actor"];
 
 export type StaticElementState =
     | "unknown"
@@ -361,7 +352,7 @@ function decodeResourcePart(
             y[index] = currentY;
             z[index] = currentZ;
         }
-        const kind = STATIC_RESOURCE_KINDS[group.k] ?? "hism";
+        const kind = STATIC_RESOURCE_KINDS[group.k] ?? "pcg";
         return {
             key: `${part.id}:${group.t}:${kind}`,
             layer: part.layer,
