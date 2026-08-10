@@ -36,6 +36,8 @@ export interface StaticSelection {
     seriesKey?: string;
     index?: number;
     representation?: StaticResourceKind;
+    /** Rocks folded into the marker, for `deposit` points. */
+    weight?: number;
     category?: string;
     actorType?: string;
     label?: string;
@@ -277,6 +279,7 @@ export function useStaticMapData(projection: Ref<MapProjectionConstants>) {
                 group: entry.group,
                 category: entry.category,
                 representation: entry.kind,
+                weight: entry.weight ? entry.weight[position] : undefined,
                 seriesKey: entry.key,
                 index: position,
                 x: entry.x[position],

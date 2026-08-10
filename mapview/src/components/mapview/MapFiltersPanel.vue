@@ -8,16 +8,10 @@ import type {
     FilterSectionKey,
     MapFiltersPanelModel,
     StaticFilterToggle,
-    ViewMode,
 } from "../../lib/types";
+import { MAP_PRESETS, PRESET_DEFINITIONS, type MapPreset } from "../../lib/mapPresets";
+import { POI_SYMBOL_VIEWBOX, poiSymbol } from "../../lib/mapMarkers";
 import MapStaticFilters from "./MapStaticFilters.vue";
-
-const viewModeOptions: ViewMode[] = [
-    "network",
-    "resources",
-    "teleporters",
-    "players",
-];
 
 const teleporterIconMarkup = teleporterSvg.replace(
     "<svg",
@@ -34,7 +28,8 @@ const emit = defineEmits<{
     "clear": [];
     "clear-chip": [value: ActiveFilterClear];
     "toggle-entity": [key: EntityToggleKey];
-    "update:view-mode": [value: ViewMode];
+    "update:preset": [value: MapPreset];
+    "update:harvest-resource": [value: string | null];
     "update:show-all-links": [value: boolean];
     "update:highlight-orphans": [value: boolean];
     "update:user-annotations-only": [value: boolean];
@@ -63,17 +58,76 @@ function handleUserAnnotationsOnlyChange(event: Event): void {
     );
 }
 
+const LOGISTICS_KEYS: EntityToggleKey[] = [
+    "sender",
+    "receiver",
+    "teleporter",
+    "player",
+];
+// `abandonedBase` is deliberately absent: it is now driven by the
+// `abandoned_base` landmark chip, which holds the canonical count.
+const RESOURCE_KEYS: EntityToggleKey[] = [
+    "plantResource",
+    "ignitium",
+    "starTears",
+];
+
+const logisticsOptions = computed(() =>
+    props.panel.entityToggleOptions.filter((option) =>
+        LOGISTICS_KEYS.includes(option.key),
+    ),
+);
+
+const resourceOptions = computed(() =>
+    props.panel.entityToggleOptions.filter((option) =>
+        RESOURCE_KEYS.includes(option.key),
+    ),
+);
+
+/** The 241 canonical POI, promoted from three levels deep in the catalog. */
+const landmarkOptions = computed(() => props.panel.staticFilters?.poiGroups ?? []);
+
 // Every collapsed section still advertises its state in its header, so folding
 // one never hides the fact that filters are active inside it.
 const visibilitySummary = computed(() => {
-    const options = props.panel.entityToggleOptions;
-    const enabled = options.filter(
-        (option) => props.panel.entityVisibility[option.key],
-    ).length;
-    return `${enabled}/${options.length}`;
+    const entities = [...logisticsOptions.value, ...resourceOptions.value];
+    const enabled =
+        entities.filter((option) => props.panel.entityVisibility[option.key]).length +
+        landmarkOptions.value.filter((option) => option.enabled).length;
+    return `${enabled}/${entities.length + landmarkOptions.value.length}`;
 });
 
-const modeSummary = computed(() => props.panel.ui.viewModes[props.panel.viewMode]);
+const presetDefinition = computed(() => PRESET_DEFINITIONS[props.panel.preset]);
+
+const harvestSummary = computed(() => {
+    const selected = props.panel.harvestOptions.find(
+        (option) => option.id === props.panel.harvestResource,
+    );
+    return selected ? selected.label : props.panel.ui.harvestNone;
+});
+
+const commonHarvestOptions = computed(() =>
+    props.panel.harvestOptions.filter((option) => option.common),
+);
+
+const rareHarvestOptions = computed(() =>
+    props.panel.harvestOptions.filter((option) => !option.common),
+);
+
+// Rare first: those are the ones worth a per-point marker. Commons are shown
+// but flagged, because each is tens of thousands of points.
+const harvestGroups = computed(() => [
+    {
+        key: "rare",
+        title: props.panel.ui.harvestRare,
+        options: rareHarvestOptions.value,
+    },
+    {
+        key: "common",
+        title: props.panel.ui.harvestCommon,
+        options: commonHarvestOptions.value,
+    },
+]);
 
 const behaviorSummary = computed(() => {
     const enabled = [
@@ -84,10 +138,11 @@ const behaviorSummary = computed(() => {
     return `${enabled}/3`;
 });
 
+// What is drawn, not what was fetched.
 const catalogSummary = computed(() => {
     const model = props.panel.staticFilters;
     if (!model || !model.available) return "--";
-    return model.loadedCount.toLocaleString(props.panel.ui.locale);
+    return props.panel.staticVisibleCount.toLocaleString(props.panel.ui.locale);
 });
 </script>
 
@@ -135,6 +190,29 @@ const catalogSummary = computed(() => {
                     </div>
                 </div>
 
+                <div class="preset-block">
+                    <span class="preset-label">{{ panel.ui.presetsTitle }}</span>
+                    <div class="preset-grid" role="radiogroup" :aria-label="panel.ui.presetsTitle">
+                        <button
+                            v-for="option in MAP_PRESETS"
+                            :key="option"
+                            class="preset-button"
+                            :class="{ active: panel.preset === option }"
+                            type="button"
+                            role="radio"
+                            :aria-checked="panel.preset === option"
+                            :title="panel.ui.presets[option].help"
+                            @click="emit('update:preset', option)"
+                        >
+                            {{ panel.ui.presets[option].label }}
+                        </button>
+                    </div>
+                    <p class="preset-help">{{ panel.ui.presets[panel.preset].help }}</p>
+                    <p v-if="presetDefinition.developerMode" class="preset-warning">
+                        {{ panel.ui.developerModeWarning }}
+                    </p>
+                </div>
+
                 <div v-if="panel.activeFilterChips.length" class="filters-active-block">
                     <div class="active-filters">
                         <button
@@ -176,83 +254,178 @@ const catalogSummary = computed(() => {
                             aria-hidden="true"
                         ></span>
                         <span class="filter-section-title">
-                            {{ panel.ui.filters.visibilityTitle }}
+                            {{ panel.ui.filters.onMapTitle }}
                         </span>
                         <span class="filter-section-summary">{{ visibilitySummary }}</span>
                     </button>
 
                     <div v-if="panel.sectionsOpen.visibility" class="filter-section-body">
-                    <p class="filter-section-help">{{ panel.ui.filters.visibilityHelp }}</p>
+                        <p class="filter-section-help">{{ panel.ui.filters.onMapHelp }}</p>
 
-                    <div class="chip-group quick-filter-group filters-sidebar-chips">
-                        <button
-                            v-for="option in panel.entityToggleOptions"
-                            :key="option.key"
-                            class="chip-button"
-                            :class="{
-                                active: panel.entityVisibility[option.key],
-                                muted: !panel.entityVisibility[option.key],
-                                empty: option.count === 0,
-                            }"
-                            type="button"
-                            :aria-pressed="panel.entityVisibility[option.key]"
-                            @click="emit('toggle-entity', option.key)"
-                        >
-                            <span class="filter-option-label">
-                                <span
-                                    class="filter-option-icon"
-                                    :class="option.key"
-                                    aria-hidden="true"
-                                    v-html="
-                                        option.key === 'teleporter'
-                                            ? teleporterIconMarkup
-                                            : ''
-                                    "
-                                ></span>
-                                <span>{{ option.label }}</span>
-                            </span>
-                            <strong class="filter-option-count">
-                                {{ option.count }}
-                            </strong>
-                        </button>
-                    </div>
+                        <h4 class="filter-family-title">
+                            {{ panel.ui.filters.familyLogistics }}
+                        </h4>
+                        <div class="chip-group quick-filter-group filters-sidebar-chips">
+                            <button
+                                v-for="option in logisticsOptions"
+                                :key="option.key"
+                                class="chip-button"
+                                :class="{
+                                    active: panel.entityVisibility[option.key],
+                                    muted: !panel.entityVisibility[option.key],
+                                    empty: option.count === 0,
+                                }"
+                                type="button"
+                                :aria-pressed="panel.entityVisibility[option.key]"
+                                @click="emit('toggle-entity', option.key)"
+                            >
+                                <span class="filter-option-label">
+                                    <span
+                                        class="filter-option-icon"
+                                        :class="option.key"
+                                        aria-hidden="true"
+                                        v-html="
+                                            option.key === 'teleporter'
+                                                ? teleporterIconMarkup
+                                                : ''
+                                        "
+                                    ></span>
+                                    <span>{{ option.label }}</span>
+                                </span>
+                                <strong class="filter-option-count">{{ option.count }}</strong>
+                            </button>
+                        </div>
+
+                        <!-- The 241 canonical POI. Each chip carries the exact
+                             silhouette used on the map, so this list is also the
+                             legend. -->
+                        <template v-if="landmarkOptions.length">
+                            <h4 class="filter-family-title">
+                                {{ panel.ui.filters.familyLandmarks }}
+                            </h4>
+                            <div class="chip-group quick-filter-group filters-sidebar-chips">
+                                <button
+                                    v-for="option in landmarkOptions"
+                                    :key="option.key"
+                                    class="chip-button"
+                                    :class="{
+                                        active: option.enabled,
+                                        muted: !option.enabled,
+                                        empty: option.count === 0,
+                                    }"
+                                    type="button"
+                                    :aria-pressed="option.enabled"
+                                    @click="emit('static-toggle', { scope: 'poiGroup', key: option.key })"
+                                >
+                                    <span class="filter-option-label">
+                                        <svg
+                                            class="landmark-icon"
+                                            :viewBox="POI_SYMBOL_VIEWBOX"
+                                            width="17"
+                                            height="17"
+                                            aria-hidden="true"
+                                            :style="{ color: option.color ?? '#94a3b8' }"
+                                        >
+                                            <path class="landmark-body" :d="poiSymbol(option.key).body" />
+                                            <path
+                                                v-if="poiSymbol(option.key).detail"
+                                                class="landmark-detail"
+                                                :class="poiSymbol(option.key).detailMode"
+                                                :d="poiSymbol(option.key).detail"
+                                            />
+                                        </svg>
+                                        <span>{{ option.label }}</span>
+                                    </span>
+                                    <strong class="filter-option-count">{{ option.count }}</strong>
+                                </button>
+                            </div>
+                        </template>
+
+                        <h4 class="filter-family-title">
+                            {{ panel.ui.filters.familyResources }}
+                        </h4>
+                        <div class="chip-group quick-filter-group filters-sidebar-chips">
+                            <button
+                                v-for="option in resourceOptions"
+                                :key="option.key"
+                                class="chip-button"
+                                :class="{
+                                    active: panel.entityVisibility[option.key],
+                                    muted: !panel.entityVisibility[option.key],
+                                    empty: option.count === 0,
+                                }"
+                                type="button"
+                                :aria-pressed="panel.entityVisibility[option.key]"
+                                @click="emit('toggle-entity', option.key)"
+                            >
+                                <span class="filter-option-label">
+                                    <span
+                                        class="filter-option-icon"
+                                        :class="option.key"
+                                        aria-hidden="true"
+                                    ></span>
+                                    <span>{{ option.label }}</span>
+                                </span>
+                                <strong class="filter-option-count">{{ option.count }}</strong>
+                            </button>
+                        </div>
                     </div>
                 </section>
 
-                <section class="filter-section">
+                <section v-if="presetDefinition.singleResource" class="filter-section">
                     <button
                         class="filter-section-head"
                         type="button"
-                        :aria-expanded="panel.sectionsOpen.mode"
-                        @click="emit('toggle-section', 'mode')"
+                        :aria-expanded="panel.sectionsOpen.harvest"
+                        @click="emit('toggle-section', 'harvest')"
                     >
                         <span
                             class="collapse-arrow"
-                            :class="panel.sectionsOpen.mode ? 'down' : 'right'"
+                            :class="panel.sectionsOpen.harvest ? 'down' : 'right'"
                             aria-hidden="true"
                         ></span>
                         <span class="filter-section-title">
-                            {{ panel.ui.filters.modeTitle }}
+                            {{ panel.ui.harvestTitle }}
                         </span>
-                        <span class="filter-section-summary">{{ modeSummary }}</span>
+                        <span class="filter-section-summary">{{ harvestSummary }}</span>
                     </button>
 
-                    <div v-if="panel.sectionsOpen.mode" class="filter-section-body">
-                    <p class="filter-section-help">{{ panel.ui.filters.modeHelp }}</p>
+                    <div v-if="panel.sectionsOpen.harvest" class="filter-section-body">
+                        <p class="filter-section-help">{{ panel.ui.harvestHelp }}</p>
 
-                    <div class="side-tabs filters-sidebar-modes">
-                        <button
-                            v-for="mode in viewModeOptions"
-                            :key="mode"
-                            class="tab-button"
-                            :class="{ active: panel.viewMode === mode }"
-                            type="button"
-                            :aria-pressed="panel.viewMode === mode"
-                            @click="emit('update:view-mode', mode)"
-                        >
-                            {{ panel.ui.viewModes[mode] }}
-                        </button>
-                    </div>
+                        <p v-if="!panel.harvestResource" class="filter-section-help harvest-empty">
+                            {{ panel.ui.harvestPick }}
+                        </p>
+
+                        <template v-for="group in harvestGroups" :key="group.key">
+                            <h4 v-if="group.options.length" class="harvest-group-title">
+                                {{ group.title }}
+                            </h4>
+                            <div v-if="group.options.length" class="chip-group harvest-group">
+                                <button
+                                    v-for="option in group.options"
+                                    :key="option.id"
+                                    class="chip-button harvest-option"
+                                    :class="{ active: panel.harvestResource === option.id }"
+                                    type="button"
+                                    role="radio"
+                                    :aria-checked="panel.harvestResource === option.id"
+                                    :style="{ '--harvest-color': option.color }"
+                                    @click="emit(
+                                        'update:harvest-resource',
+                                        panel.harvestResource === option.id ? null : option.id,
+                                    )"
+                                >
+                                    <span class="static-option-label">
+                                        <span class="harvest-swatch" aria-hidden="true"></span>
+                                        {{ option.label }}
+                                    </span>
+                                    <strong class="filter-option-count">
+                                        {{ option.count }}
+                                    </strong>
+                                </button>
+                            </div>
+                        </template>
                     </div>
                 </section>
 
@@ -308,7 +481,12 @@ const catalogSummary = computed(() => {
                     </div>
                 </section>
 
-                <section v-if="panel.staticFilters" class="filter-section">
+                <!-- Nothing to refine in Network: that preset draws the canonical
+                     POI only, and those now live in the section above. -->
+                <section
+                    v-if="panel.staticFilters && panel.preset !== 'network'"
+                    class="filter-section"
+                >
                     <button
                         class="filter-section-head"
                         type="button"
@@ -329,6 +507,7 @@ const catalogSummary = computed(() => {
                     <div v-if="panel.sectionsOpen.catalog" class="filter-section-body">
                         <MapStaticFilters
                             :model="panel.staticFilters"
+                            :developer-mode="presetDefinition.developerMode"
                             @toggle="emit('static-toggle', $event)"
                             @update:search="emit('update:static-search', $event)"
                             @show-all="emit('static-show-all')"
@@ -383,6 +562,103 @@ const catalogSummary = computed(() => {
 
 .filters-sidebar-head {
     padding-right: 54px;
+}
+
+.preset-block {
+    display: grid;
+    gap: 8px;
+}
+
+.preset-label {
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.72rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+}
+
+.preset-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.preset-button {
+    min-height: 34px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--border);
+    background: rgba(12, 19, 35, 0.86);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.preset-button:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+}
+
+.preset-button.active {
+    color: var(--text);
+    background: var(--accent-soft);
+    border-color: rgba(34, 211, 238, 0.46);
+    border-left-color: var(--accent);
+}
+
+.preset-help {
+    color: var(--muted);
+    font-size: 0.76rem;
+}
+
+.preset-warning {
+    padding: 6px 10px;
+    border-left: 2px solid var(--amber);
+    background: var(--amber-soft);
+    color: var(--text);
+    font-size: 0.76rem;
+}
+
+.harvest-group-title {
+    margin: 0;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #9fb2d4;
+}
+
+.harvest-group {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+}
+
+.harvest-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    text-align: left;
+}
+
+.harvest-swatch {
+    width: 10px;
+    height: 10px;
+    flex: 0 0 auto;
+    border-radius: 3px;
+    background: var(--harvest-color, #64748b);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.harvest-empty {
+    color: var(--amber) !important;
 }
 
 .filters-active-block {
@@ -465,6 +741,41 @@ const catalogSummary = computed(() => {
     display: grid;
     gap: 10px;
     padding: 0 0 12px;
+}
+
+.filter-family-title {
+    margin: 6px 0 0;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9fb2d4;
+}
+
+.landmark-icon {
+    flex: 0 0 auto;
+}
+
+.landmark-body {
+    fill: currentColor;
+    stroke: rgba(8, 14, 26, 0.9);
+    stroke-width: 1.1;
+    stroke-linejoin: round;
+    paint-order: stroke fill;
+}
+
+.landmark-detail.fill {
+    fill: #0b1220;
+    stroke: none;
+}
+
+.landmark-detail.stroke {
+    fill: none;
+    stroke: rgba(8, 14, 26, 0.9);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .filter-section-help {

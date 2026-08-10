@@ -58,8 +58,8 @@ Pour utiliser ou distribuer l'interface, garder `map-tiles/` et `map-data/` a co
 - L'interface embarque `VIEWER_CONTRACT_VERSION` dans `src/lib/viewerContract.ts`. Si `viewer_contract_version` renvoye par le plugin est strictement superieur a cette constante, une pop-up modale explique qu'il faut remplacer `MapExtensionViewer.html`, `map-tiles/` et `map-data/` a la main. Aucune comparaison de numeros de version n'est faite.
 - Regle de bump : incrementer `VIEWER_CONTRACT_VERSION` et `kViewerContractVersion` (`map_state_json.cpp`) dans le meme changement, uniquement quand une evolution de payload casse les interfaces plus anciennes. Un ajout de champ retro-compatible ne doit pas etre bumpe.
 - Le rejet de la pop-up est memorise dans `localStorage` sous la cle dediee `starrupture-mapview:viewer-update-dismissed:v1`, par `plugin_version` : fermer la pop-up la masque pour cette version du plugin, et elle revient des que le plugin passe a une version plus recente. Les cles existantes (preferences, annotations) ne sont pas touchees.
-- L'interface inclut des modes de vue reseau/ressources/teleporteurs/joueurs, des filtres, l'echelle d'icones et des annotations personnelles exportables/importables en JSON.
-- Raccourcis utiles : `?`, `/`, `R`, `L`, `G`, `E`, `S`, `F`, `C`, `P`, `0`, `Esc`.
+- L'interface inclut quatre prereglages de carte (Reseau, Exploration, Recolte, Technique), des filtres, l'echelle d'icones et des annotations personnelles exportables/importables en JSON.
+- Raccourcis utiles : `?`, `/`, `R`, `L`, `G`, `E`, `F`, `C`, `P`, `0`, `Esc`.
 
 ## Catalogue statique du monde
 
@@ -67,7 +67,42 @@ Le viewer charge un catalogue compact pre-genere depuis `public/map-data/`. Il c
 
 Dans la couche `building`, le frontend rend uniquement les placements dont l'`actorType` contient `KeyCard`, `Coralion_Egg` ou `Spawner`, sans distinction de casse. Les couches `zone` et `technical` conservent tous leurs placements.
 
-Le volet `Filtres` permet de rechercher et d'activer les couches, groupes de POI, categories et types de ressources, representations PCG/acteur, batiments, zones et elements techniques. Les choix sont persistants sous la cle `mapview.static-filters.v1`. Les couches POI et ressources sont actives par defaut ; les donnees techniques restent masquees.
+Le volet `Filtres` s'ouvre sur un prereglage, puis sur des sections repliables : `Sur la carte`,
+ressource recoltee (mode Recolte uniquement), comportement et catalogue du monde. Les choix sont
+persistants sous la cle `mapview.static-filters.v2`.
+
+La section `Sur la carte` regroupe en trois familles de sens ce qui etait auparavant reparti entre
+la visibilite des entites live et le catalogue :
+
+| Famille | Contenu |
+|---|---|
+| `Logistique` | Cargo Dispatchers, Cargo Receivers, Teleporteurs, Joueurs |
+| `Reperes` | Grottes, Obelisques, Geoscanneurs, Bases abandonnees, Forgotten Engine, Orbital Lander |
+| `Ressources` | Ressources vegetales, Ignitium, Star Tears |
+
+Les six familles de reperes sont les POI canoniques : elles sont accessibles en un clic au premier
+niveau, et non plus a trois niveaux de profondeur dans le catalogue. `Bases abandonnees` est un seul
+controle : le compteur vient du catalogue (valeur canonique) et l'etat live s'y applique, au lieu des
+deux controles qui se contredisaient.
+
+Chaque repere possede une silhouette propre definie une seule fois dans `src/lib/mapMarkers.ts`,
+emise en `<symbol>` par `MapCanvas.vue` et reprise a l'identique dans les chips du volet : la liste
+des filtres sert donc aussi de legende et ne peut pas diverger de la carte.
+
+Le compteur du `Catalogue du monde` indique le nombre d'elements reellement dessines, pas le nombre
+charge. Les couches brutes de l'export (representations PCG/acteur, placements, zones, elements
+techniques) ne sont listees qu'en prereglage `Technique`.
+
+Les quatre prereglages repondent chacun a une question de joueur et pilotent d'un seul geste les entites live et les filtres du catalogue :
+
+| Prereglage | Question | Couches actives |
+|---|---|---|
+| `Reseau` (defaut) | Ou suis-je, comment circulent mes ressources ? | Entites live completes + les 241 POI canoniques |
+| `Exploration` | Ou construire, quel objectif vaut le deplacement ? | POI canoniques + minerais, reseau cargo masque |
+| `Recolte` | Ou est la ressource que je collecte maintenant ? | Une seule ressource a la fois + grottes |
+| `Technique` | Que contient l'export brut ? | Placements, zones, sockets et proxies (mode developpeur) |
+
+Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` (389 sockets `BP_OreSocket`, minerai non identifie) reste masque. Les chips de filtres actifs ne listent que les ecarts par rapport au prereglage courant.
 
 ### Zones et elements de generation
 
@@ -96,7 +131,46 @@ sont des metadonnees techniques des exports bruts, non des couches du viewer. La
 Rupture est exposee comme un etat et une timeline ; son front mobile n'est pas une
 zone statique dessinee sur la carte.
 
+### Gisements de minerai
+
+Le titane, le wolfram et le calcium n'existent dans l'export que sous forme
+d'instances HISM, une par rocher : 150 732 rochers de titane, 80 936 de goethite,
+16 952 de wolfram. Ils etaient donc simplement absents du catalogue. Le builder
+les regroupe desormais par cellules de 80 m et publie un marqueur par cellule,
+place sur le centroide des rochers qu'il couvre et portant leur nombre. C'est la
+troisieme representation de ressource, `deposit`, a cote de `pcg` et `actor` :
+
+| Ressource | Rochers | Marqueurs |
+|---|---|---|
+| `titanium` | 150 732 | 234 |
+| `goethite` | 80 936 | 439 |
+| `wolfram` | 16 952 | 95 |
+| `sulphur` | 4 111 | 65 |
+| `calcium` | 2 726 | 116 |
+| `helium_3` | 1 258 | 40 |
+
+Le marqueur grossit avec la densite du gisement (echelle logarithmique) et le
+panneau de selection indique le nombre de rochers regroupes. Les instances HISM
+de plantes restent exclues : elles doublonnent les points de recolte deja publies.
+
+Les libelles EN/FR viennent des tables d'items du jeu embarquees dans l'export
+(`item.item_name`), donc le catalogue affiche les noms officiels : `Minerai de
+tungstene` pour `wolfram`, `Ophidine` pour `serpent_root`, `Pourprier` pour
+`purplant`. Seuls les noms absents des tables, ou errones ("Polufruit"), sont
+surcharges dans `tools/build_map_data.py`.
+
 Les observations live de plantes recues dans `/cargo` sont appariees au point statique du meme type le plus proche dans un rayon de 150 cm. L'etat live est applique au point catalogue sans creer un doublon ; une observation sans correspondance reste un marqueur runtime distinct.
+
+Ces observations obeissent aux memes interrupteurs par type que le catalogue :
+`Ressources vegetales` reste l'interrupteur global, mais chaque plante possede sa
+propre case. Les plantes que le plugin publie sans que l'export les contienne
+(`Prickler`, `Prism Herb`, le gatherable generique `Plant`) apparaissent dans la
+liste des plantes des qu'elles sont observees.
+
+Cliquer un POI ecrit son nom sur la carte, sous son icone : les 29 bases
+abandonnees se lisent par leur nom (`FRO "Mantis Head"`, `SMB "Purple Haze"`) et
+non par leur silhouette. La description complete (`Future Health Solutions
+Research Outpost`) reste dans le panneau de selection.
 
 ### Regeneration
 
@@ -133,9 +207,11 @@ d'interet :
   peut etre selectionne a la souris ou avec `Entree`/`Espace`.
 
 Le volet `Filtres` propose des boutons de visibilite separes pour les bases abandonnees,
-les ressources vegetales, Ignitium et Star Tears. Le mode `Reseau` peut afficher toutes
-les familles, le mode `Ressources` affiche les trois types de ressources, et les modes
-`Teleporteurs` et `Joueurs` masquent les POI. `available` et `depleted` restent des etats visuels,
+les ressources vegetales, Ignitium et Star Tears. Chaque prereglage definit son propre
+jeu de familles visibles : `Reseau` les affiche toutes, `Exploration` masque le reseau
+cargo, `Recolte` se concentre sur les ressources et `Technique` ne garde que le joueur.
+Les boutons restent utilisables pour s'ecarter du prereglage, et cet ecart apparait alors
+comme un chip retirable. `available` et `depleted` restent des etats visuels,
 pas des filtres separes ; les acteurs de ressource epuises peuvent rester publies avec leur derniere
 position connue. Quand Ignitium et Star Tears partagent une position pendant la fenetre de fin de
 cycle, Star Tears est rendue au-dessus sans marquer artificiellement l'une des deux ressources comme

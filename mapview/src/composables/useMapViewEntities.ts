@@ -2,6 +2,11 @@ import { computed, type ComputedRef, type Ref } from "vue";
 
 import { formatRelativeAge, formatWorld } from "../lib/formatters";
 import type { Messages } from "../lang";
+import {
+    DEFAULT_MAP_PRESET,
+    PRESET_DEFINITIONS,
+    type MapPreset,
+} from "../lib/mapPresets";
 import type {
     ActiveFilterChip,
     CargoConnection,
@@ -20,7 +25,6 @@ import type {
     SelectionTone,
     StatusTone,
     Teleporter,
-    ViewMode,
 } from "../lib/types";
 
 interface UseMapViewEntitiesOptions {
@@ -28,7 +32,7 @@ interface UseMapViewEntitiesOptions {
     health: Ref<HealthResponse | null>;
     ui: ComputedRef<Messages>;
     entityVisibility: EntityVisibility;
-    viewMode: Ref<ViewMode>;
+    preset: Ref<MapPreset>;
     showAllLinks: Ref<boolean>;
     highlightOrphans: Ref<boolean>;
     userAnnotationsOnly: Ref<boolean>;
@@ -46,6 +50,12 @@ interface UseMapViewEntitiesOptions {
     lastUpdatedAt: Ref<number>;
     ruptureCurrentPhaseKey: ComputedRef<RupturePhaseKey>;
     ruptureHasLiveData: ComputedRef<boolean>;
+    /**
+     * Per-resource switch for observed plants, wired by the app to the catalog
+     * filters so Prickler and Prism Herb — live-only, absent from the export —
+     * are filtered from the same list as the plants the catalog knows.
+     */
+    plantResourceFilter: Ref<((resource: string) => boolean) | null>;
 }
 
 export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
@@ -54,7 +64,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         health,
         ui,
         entityVisibility,
-        viewMode,
+        preset,
         showAllLinks,
         highlightOrphans,
         userAnnotationsOnly,
@@ -70,16 +80,13 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         lastUpdatedAt,
         ruptureCurrentPhaseKey,
         ruptureHasLiveData,
+        plantResourceFilter,
     } = options;
 
     // Bare value: this feeds a stat card that already carries its own "last
     // update" label, so the prefixed variant would repeat it.
     const liveAgeValue = computed(() =>
         formatRelativeAge(lastUpdatedAt.value, now.value, ui.value.locale, "", "--"),
-    );
-
-    const isCargoViewMode = computed(
-        () => viewMode.value === "network" || viewMode.value === "resources",
     );
 
     const allCargoMarkers = computed<CargoMarker[]>(
@@ -136,7 +143,6 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
     });
 
     function isCargoMarkerAllowedByMode(marker: CargoMarker): boolean {
-        if (!isCargoViewMode.value) return false;
         if (marker.kind === "sender") return entityVisibility.sender;
         if (marker.kind === "receiver") return entityVisibility.receiver;
         return true;
@@ -155,15 +161,12 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
     );
 
     function isMissingEndpointKindVisible(kind: "sender" | "receiver"): boolean {
-        if (!isCargoViewMode.value) return false;
         return kind === "sender"
             ? entityVisibility.sender
             : entityVisibility.receiver;
     }
 
     const renderableCargoConnections = computed(() => {
-        if (!isCargoViewMode.value) return [];
-
         return allCargoConnections.value.filter(
             (connection) => {
                 const senderVisible = visibleCargoMarkerKeys.value.has(
@@ -208,27 +211,22 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
     }
 
     const visibleTeleporters = computed(() =>
-        allTeleporters.value.filter(() => {
-            if (!entityVisibility.teleporter) return false;
-            return (
-                viewMode.value === "network" || viewMode.value === "teleporters"
-            );
-        }),
+        allTeleporters.value.filter(() => entityVisibility.teleporter),
     );
 
     const visiblePlayers = computed(() =>
-        allPlayers.value.filter(() => {
-            if (!entityVisibility.player) return false;
-            return viewMode.value === "network" || viewMode.value === "players";
-        }),
+        allPlayers.value.filter(() => entityVisibility.player),
     );
 
     function isPoiKindVisible(poi: Poi): boolean {
         switch (poi.kind) {
             case "abandoned_base":
                 return entityVisibility.abandonedBase;
-            case "plant_resource":
-                return entityVisibility.plantResource;
+            case "plant_resource": {
+                if (!entityVisibility.plantResource) return false;
+                const filter = plantResourceFilter.value;
+                return filter ? filter(poi.resource ?? "") : true;
+            }
             case "ignitium":
                 return entityVisibility.ignitium;
             case "star_tears":
@@ -236,55 +234,38 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         }
     }
 
-    function isPoiAllowedByMode(poi: Poi): boolean {
-        if (viewMode.value === "network") {
-            return isPoiKindVisible(poi);
-        }
-        return viewMode.value === "resources"
-            && poi.kind !== "abandoned_base"
-            && isPoiKindVisible(poi);
-    }
-
+    // Presets write straight into `entityVisibility`, so a second mode-based
+    // mask on top of it would only be a way for the two to disagree.
     const visiblePois = computed<Poi[]>(() =>
-        allPois.value.filter(isPoiAllowedByMode),
+        allPois.value.filter(isPoiKindVisible),
     );
 
-    const entityFilterCounts = computed<Record<EntityToggleKey, number>>(() => ({
-        sender: isCargoViewMode.value
-            ? allCargoMarkers.value.filter((marker) => marker.kind === "sender")
-                  .length
-            : 0,
-        receiver: isCargoViewMode.value
-            ? allCargoMarkers.value.filter((marker) => marker.kind === "receiver")
-                  .length
-            : 0,
-        teleporter:
-            viewMode.value === "network" || viewMode.value === "teleporters"
-                ? allTeleporters.value.length
-                : 0,
-        player:
-            viewMode.value === "network" || viewMode.value === "players"
-                ? allPlayers.value.length
-                : 0,
-        abandonedBase:
-            viewMode.value === "network"
-                ? allPois.value.filter((poi) => poi.kind === "abandoned_base")
-                      .length
-                : 0,
-        plantResource:
-            viewMode.value === "network" || viewMode.value === "resources"
-                ? allPois.value.filter((poi) => poi.kind === "plant_resource")
-                      .length
-                : 0,
-        ignitium:
-            viewMode.value === "network" || viewMode.value === "resources"
-                ? allPois.value.filter((poi) => poi.kind === "ignitium").length
-                : 0,
-        starTears:
-            viewMode.value === "network" || viewMode.value === "resources"
-                ? allPois.value.filter((poi) => poi.kind === "star_tears").length
-                : 0,
-    }));
+    /** Observed plant resources, by the label the plugin publishes. */
+    const livePlantResourceCounts = computed<Record<string, number>>(() => {
+        const counts: Record<string, number> = {};
+        for (const poi of allPois.value) {
+            if (poi.kind !== "plant_resource") continue;
+            const resource = (poi.resource ?? "").trim();
+            if (!resource) continue;
+            counts[resource] = (counts[resource] ?? 0) + 1;
+        }
+        return counts;
+    });
+
+    const entityFilterCounts = computed<Record<EntityToggleKey, number>>(() => {
+        const poiCount = (kind: PoiKind) =>
+            allPois.value.filter((poi) => poi.kind === kind).length;
+        return {
+            sender: allCargoMarkers.value.filter((m) => m.kind === "sender").length,
+            receiver: allCargoMarkers.value.filter((m) => m.kind === "receiver").length,
+            teleporter: allTeleporters.value.length,
+            player: allPlayers.value.length,
+            abandonedBase: poiCount("abandoned_base"),
+            plantResource: poiCount("plant_resource"),
+            ignitium: poiCount("ignitium"),
+            starTears: poiCount("star_tears"),
+        };
+    });
 
     const selectedEntity = computed<SelectedEntity | null>(() => {
         if (!selectedKey.value || userAnnotationsOnly.value) return null;
@@ -342,7 +323,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
     });
 
     const orphanKeySet = computed(() => {
-        if (!highlightOrphans.value || !isCargoViewMode.value) {
+        if (!highlightOrphans.value) {
             return new Set<string>();
         }
 
@@ -463,7 +444,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             nextConnections = getRelatedConnections(
                 selectedCargo.value.unique_key,
             );
-        } else if (viewMode.value === "resources" || !showAllLinks.value) {
+        } else if (!showAllLinks.value) {
             nextConnections = hoveredCargoMarker.value
                 ? getRelatedConnections(hoveredCargoMarker.value.unique_key)
                 : [];
@@ -518,13 +499,11 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
     const activeFilterChips = computed<ActiveFilterChip[]>(() => {
         const chips: ActiveFilterChip[] = [];
 
-        if (viewMode.value !== "network") {
+        if (preset.value !== DEFAULT_MAP_PRESET) {
             chips.push({
-                id: "viewMode",
-                label: ui.value.format.modeChip(
-                    ui.value.viewModes[viewMode.value],
-                ),
-                clear: { kind: "viewMode" },
+                id: "preset",
+                label: ui.value.format.modeChip(ui.value.presets[preset.value].label),
+                clear: { kind: "preset" },
             });
         }
         if (!showAllLinks.value) {
@@ -556,11 +535,17 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             });
         }
 
+        // Only deviations from the preset are listed. A preset hiding the cargo
+        // network is its documented behaviour, not a filter the user set, and
+        // chipping it made "4 active filters" appear on a fresh preset click.
+        const presetEntities = PRESET_DEFINITIONS[preset.value].entities;
         for (const option of entityToggleOptions.value) {
-            if (entityVisibility[option.key]) continue;
+            if (entityVisibility[option.key] === presetEntities[option.key]) continue;
             chips.push({
                 id: `entity:${option.key}`,
-                label: ui.value.format.hiddenLabels(option.label),
+                label: entityVisibility[option.key]
+                    ? option.label
+                    : ui.value.format.hiddenLabels(option.label),
                 clear: { kind: "entity", key: option.key },
             });
         }
@@ -615,7 +600,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         return ui.value.format.mapMeta(
             formatWorld(cargo.value.world, ui.value.selection.world),
             cargo.value.generation,
-            ui.value.viewModes[viewMode.value],
+            ui.value.presets[preset.value].label,
         );
     });
 
@@ -836,6 +821,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         displayedTeleporters,
         displayedPlayers,
         displayedPois,
+        livePlantResourceCounts,
         entityFilterCounts,
         visibleEntityKeys,
         selectedEntity,

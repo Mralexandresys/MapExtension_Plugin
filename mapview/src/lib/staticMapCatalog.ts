@@ -28,12 +28,20 @@ export const STATIC_LAYER_KEYS: readonly StaticLayerKey[] = [
 /** Layers loaded and displayed as soon as the catalog is available. */
 export const DEFAULT_ENABLED_LAYERS: readonly StaticLayerKey[] = ["poi", "resource"];
 
-export type StaticResourceKind = "pcg" | "actor";
+export type StaticResourceKind = "pcg" | "actor" | "deposit";
 
-export const STATIC_RESOURCE_KINDS: readonly StaticResourceKind[] = ["pcg", "actor"];
+export const STATIC_RESOURCE_KINDS: readonly StaticResourceKind[] = [
+    "pcg",
+    "actor",
+    "deposit",
+];
 
 /** Resource representations shown by default. */
-export const DEFAULT_ENABLED_KINDS: readonly StaticResourceKind[] = ["pcg", "actor"];
+export const DEFAULT_ENABLED_KINDS: readonly StaticResourceKind[] = [
+    "pcg",
+    "actor",
+    "deposit",
+];
 
 export type StaticElementState =
     | "unknown"
@@ -57,6 +65,8 @@ export interface StaticResourceType {
     fr: string;
     counts: Partial<Record<StaticResourceKind, number>>;
     total: number;
+    /** Ore instances folded into the `deposit` markers, when the type has any. */
+    deposit_rocks?: number;
 }
 
 export interface StaticMapManifest {
@@ -80,6 +90,8 @@ interface RawResourceGroup {
     x: number[];
     y: number[];
     z: number[];
+    /** Rocks folded into each marker; `deposit` groups only. */
+    w?: number[];
 }
 
 interface RawResourcePart {
@@ -146,6 +158,11 @@ export interface StaticPointSeries {
     z: Int16Array;
     /** Per-point dynamic state, filled from live plugin observations. */
     state: Uint8Array;
+    /**
+     * Rocks represented by each point. Only `deposit` series carry one: an ore
+     * field is published as one marker per 80 m cell rather than one per rock.
+     */
+    weight: Uint16Array | null;
 }
 
 export interface StaticBox {
@@ -217,9 +234,12 @@ const RESOURCE_COLORS: Record<string, string> = {
 };
 
 const GROUP_COLORS: Record<string, string> = {
+    // One clearly separated hue per canonical POI family. `cave`/`poi_proxy`
+    // used to be two near-identical greys, and `obelisk`/`forgotten_engine` two
+    // near-identical purples.
     cave: "#94a3b8",
     abandoned_base: "#f59e0b",
-    forgotten_engine: "#a855f7",
+    forgotten_engine: "#fb7185",
     antenna: "#38bdf8",
     obelisk: "#c084fc",
     monument: "#e879f9",
@@ -230,7 +250,7 @@ const GROUP_COLORS: Record<string, string> = {
     spawn_region: "#3b82f6",
     resource_marker: "#eab308",
     deposit_socket: "#14b8a6",
-    poi_proxy: "#64748b",
+    poi_proxy: "#475569",
 };
 
 export const STATE_COLORS: Record<StaticElementState, string | null> = {
@@ -365,6 +385,7 @@ function decodeResourcePart(
             y,
             z,
             state: new Uint8Array(count),
+            weight: group.w ? Uint16Array.from(group.w) : null,
         };
     });
 }
@@ -440,6 +461,34 @@ export function resourceTypeLabel(
     const entry = manifest?.resource_types?.[typeId];
     if (!entry) return typeId;
     return lang === "fr" ? entry.fr : entry.en;
+}
+
+/**
+ * Resources the plugin observes live but the world export never contained, so
+ * the catalog cannot name them. Prickler and Prism Herb are ordinary plants the
+ * export missed; Glowcap is listed for the day the plugin starts publishing it.
+ */
+export const LIVE_ONLY_RESOURCE_LABELS: Record<string, { en: string; fr: string }> = {
+    prickler: { en: "Prickler", fr: "Piquant" },
+    prism_herb: { en: "Prism Herb", fr: "Herbe prismatique" },
+    glowcap: { en: "Glowcap", fr: "Champignon lumineux" },
+    plant: { en: "Plant", fr: "Plante" },
+};
+
+/**
+ * Resolves a plugin resource label to a filter id: the catalog type when the
+ * label is known, a slug of the label otherwise.
+ */
+export function resourceTypeIdFromLabel(
+    label: string,
+    index: Map<string, string>,
+): string {
+    const key = label.trim().toLowerCase();
+    if (!key) return "";
+    return (
+        index.get(key) ??
+        key.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+    );
 }
 
 /** Maps a plugin-provided resource label back to a catalog type id. */

@@ -14,6 +14,11 @@ import {
     type StaticPointSeries,
     type StaticResourceKind,
 } from "../lib/staticMapCatalog";
+import {
+    PRESET_DEFINITIONS,
+    RESOURCE_TYPES_HIDDEN_BY_DEFAULT,
+    type MapPreset,
+} from "../lib/mapPresets";
 import type {
     MapStaticFiltersModel,
     StaticFilterCategory,
@@ -22,12 +27,19 @@ import type {
     StaticFilterToggle,
 } from "../lib/types";
 
-const STORAGE_KEY = "mapview.static-filters.v1";
+const STORAGE_KEY = "mapview.static-filters.v2";
 const BUILDING_ACTOR_TYPE_FRAGMENTS = [
     "keycard",
     "coralion_egg",
     "spawner",
 ] as const;
+
+/** A resource observed live that the catalog does not describe. */
+export interface LiveResourceType {
+    en: string;
+    fr: string;
+    count: number;
+}
 
 export interface StaticFilterState {
     layers: Record<string, boolean>;
@@ -82,8 +94,15 @@ function mergeRecord(
 export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
     const state = reactive<StaticFilterState>(createDefaultState());
     const search = ref("");
+    /**
+     * Live plants share the catalog's per-type switches: the panel shows one
+     * list of plants whether a given one comes from the export or from the
+     * plugin, and Prickler or Prism Herb stop being all-or-nothing.
+     */
+    const liveResourceTypes = reactive<Record<string, LiveResourceType>>({});
 
     const stored = readStoredState();
+    const hasStoredState = stored !== null;
     if (stored) {
         mergeRecord(state.layers, stored.layers);
         mergeRecord(state.resourceCategories, stored.resourceCategories);
@@ -101,7 +120,8 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
             if (!value) return;
             for (const [typeId, entry] of Object.entries(value.resource_types)) {
                 if (state.resourceTypes[typeId] === undefined) {
-                    state.resourceTypes[typeId] = true;
+                    state.resourceTypes[typeId] =
+                        !RESOURCE_TYPES_HIDDEN_BY_DEFAULT.includes(typeId);
                 }
                 if (state.resourceCategories[entry.category] === undefined) {
                     state.resourceCategories[entry.category] = true;
@@ -183,6 +203,117 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         return isLayerEnabled("poi") && state.poiGroups[group] !== false;
     }
 
+    /**
+     * Registers the resource types currently observed live. Unknown ids default
+     * to visible, exactly like a catalog type appearing after an update.
+     */
+    function syncLiveResourceTypes(entries: Record<string, LiveResourceType>): void {
+        for (const key of Object.keys(liveResourceTypes)) {
+            if (!(key in entries)) delete liveResourceTypes[key];
+        }
+        for (const [key, value] of Object.entries(entries)) {
+            liveResourceTypes[key] = value;
+            if (state.resourceTypes[key] === undefined) {
+                state.resourceTypes[key] = true;
+            }
+        }
+    }
+
+    /**
+     * Live observations are drawn by the entity layer, so they answer to their
+     * resource type alone -- not to the catalog `resource` layer switch.
+     */
+    function isLiveResourceEnabled(typeId: string): boolean {
+        return !typeId || state.resourceTypes[typeId] !== false;
+    }
+
+    function resolveGroupSelection(
+        keys: readonly string[],
+        selection: "all" | "none" | readonly string[],
+    ): Record<string, boolean> {
+        const next: Record<string, boolean> = {};
+        for (const key of keys) {
+            next[key] =
+                selection === "all"
+                    ? true
+                    : selection === "none"
+                      ? false
+                      : selection.includes(key);
+        }
+        return next;
+    }
+
+    /**
+     * Overwrites the catalog filters with a preset. Presets are deliberately
+     * absolute rather than additive: their whole point is to give a predictable
+     * starting state, and the user can refine afterwards.
+     */
+    function applyPreset(preset: MapPreset, harvestResource: string | null): void {
+        const definition = PRESET_DEFINITIONS[preset];
+        const catalog = manifest.value;
+
+        for (const layer of STATIC_LAYER_KEYS) {
+            state.layers[layer] = definition.layers[layer];
+        }
+
+        Object.assign(
+            state.poiGroups,
+            resolveGroupSelection(
+                Object.keys(catalog?.poi_groups ?? {}),
+                definition.poiGroups,
+            ),
+        );
+
+        const categories = new Set<string>();
+        for (const entry of Object.values(catalog?.resource_types ?? {})) {
+            categories.add(entry.category);
+        }
+        Object.assign(
+            state.resourceCategories,
+            resolveGroupSelection([...categories], definition.resourceCategories),
+        );
+
+        const typeIds = new Set([
+            ...Object.keys(catalog?.resource_types ?? {}),
+            ...Object.keys(liveResourceTypes),
+        ]);
+        for (const typeId of typeIds) {
+            if (definition.singleResource) {
+                state.resourceTypes[typeId] = typeId === harvestResource;
+            } else {
+                state.resourceTypes[typeId] =
+                    !RESOURCE_TYPES_HIDDEN_BY_DEFAULT.includes(typeId);
+            }
+        }
+
+        for (const [layer, groups] of Object.entries(
+            catalog?.placement_groups ?? {},
+        )) {
+            const resolved = resolveGroupSelection(
+                Object.keys(groups),
+                definition.placementGroups,
+            );
+            for (const [group, enabled] of Object.entries(resolved)) {
+                state.placementGroups[`${layer}:${group}`] = enabled;
+            }
+        }
+
+        for (const kind of STATIC_RESOURCE_KINDS) {
+            state.resourceKinds[kind] = true;
+        }
+    }
+
+    /** Harvest mode: exactly one resource type is drawn at a time. */
+    function selectSingleResource(typeId: string | null): void {
+        for (const key of Object.keys(state.resourceTypes)) {
+            state.resourceTypes[key] = key === typeId;
+        }
+        for (const key of Object.keys(state.resourceCategories)) {
+            state.resourceCategories[key] = true;
+        }
+        state.layers.resource = typeId !== null;
+    }
+
     function toggleLayer(layer: StaticLayerKey): void {
         state.layers[layer] = !state.layers[layer];
     }
@@ -212,6 +343,9 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         const value = manifest.value;
         for (const layer of STATIC_LAYER_KEYS) state.layers[layer] = enabled;
         for (const kind of STATIC_RESOURCE_KINDS) state.resourceKinds[kind] = enabled;
+        for (const key of Object.keys(liveResourceTypes)) {
+            state.resourceTypes[key] = enabled;
+        }
         if (!value) return;
         for (const [typeId, entry] of Object.entries(value.resource_types)) {
             state.resourceTypes[typeId] = enabled;
@@ -259,6 +393,9 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
     return {
         state,
         search,
+        liveResourceTypes,
+        syncLiveResourceTypes,
+        isLiveResourceEnabled,
         enabledLayers,
         enabledKinds,
         activeLayerCount,
@@ -267,6 +404,9 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         isPlacementGroupEnabled,
         isPlacementVisible,
         isPoiGroupEnabled,
+        hasStoredState,
+        applyPreset,
+        selectSingleResource,
         isResourceTypeEnabled,
         resourceTypeCount,
         toggleLayer,
@@ -355,6 +495,23 @@ export function useStaticFiltersModel(options: {
             const bucket = byCategory.get(entry.category);
             if (bucket) bucket.push(option);
             else byCategory.set(entry.category, [option]);
+        }
+
+        // Plants the plugin reports but the export never had; they only exist
+        // once observed, and are listed next to the catalog plants.
+        for (const [typeId, entry] of Object.entries(filters.liveResourceTypes)) {
+            if (catalog?.resource_types?.[typeId]) continue;
+            const option: StaticFilterOption = {
+                key: typeId,
+                label: french ? entry.fr : entry.en,
+                count: entry.count,
+                enabled: filters.state.resourceTypes[typeId] !== false,
+                color: resourceColor(typeId),
+            };
+            if (!matchesSearch(option.label, option.key, needle)) continue;
+            const bucket = byCategory.get("plant");
+            if (bucket) bucket.push(option);
+            else byCategory.set("plant", [option]);
         }
 
         const resourceCategories: StaticFilterCategory[] = [...byCategory.entries()]

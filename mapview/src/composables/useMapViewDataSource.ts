@@ -11,13 +11,17 @@ import { fetchJson, normalizeEndpoint } from "../lib/api";
 import { VIEWER_CONTRACT_VERSION } from "../lib/viewerContract";
 import { applyLanguage, getMessages, resolveInitialLanguage } from "../lang";
 import type { Language } from "../lang";
+import {
+    DEFAULT_MAP_PRESET,
+    MAP_PRESETS,
+    type MapPreset,
+} from "../lib/mapPresets";
 import type {
     EntityVisibility,
     FilterSectionsOpen,
     HealthResponse,
     CargoResponse,
     RuptureCycleResponse,
-    ViewMode,
 } from "../lib/types";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:9000";
@@ -29,6 +33,22 @@ const LANGUAGE_OPTIONS: Language[] = ["en", "fr"];
 const DEFAULT_ICON_SCALE = 1;
 const MIN_ICON_SCALE = 0.75;
 const MAX_ICON_SCALE = 2;
+
+/** Older builds stored one of four view modes; map them onto the presets. */
+const LEGACY_VIEW_MODE_TO_PRESET: Record<string, MapPreset> = {
+    network: "network",
+    resources: "harvest",
+    teleporters: "network",
+    players: "network",
+};
+
+function resolvePreset(saved: PersistedPreferences): MapPreset {
+    if (saved.preset && MAP_PRESETS.includes(saved.preset)) return saved.preset;
+    if (saved.viewMode) {
+        return LEGACY_VIEW_MODE_TO_PRESET[saved.viewMode] ?? DEFAULT_MAP_PRESET;
+    }
+    return DEFAULT_MAP_PRESET;
+}
 
 function clampIconScale(value: unknown): number {
     const numericValue = typeof value === "number" ? value : Number(value);
@@ -59,7 +79,10 @@ interface PersistedPreferences {
     iconScale?: number;
     showAllLinks?: boolean;
     highlightOrphans?: boolean;
-    viewMode?: ViewMode;
+    preset?: MapPreset;
+    harvestResource?: string | null;
+    /** Legacy key: the four view modes became presets. */
+    viewMode?: string;
     lang?: Language;
     entityVisibility?: Partial<EntityVisibility>;
     filtersPanelCollapsed?: boolean;
@@ -82,7 +105,9 @@ export function useMapViewDataSource() {
     const iconScale = ref(DEFAULT_ICON_SCALE);
     const lastUpdatedAt = ref(0);
     const now = ref(Date.now());
-    const viewMode = ref<ViewMode>("network");
+    const preset = ref<MapPreset>(DEFAULT_MAP_PRESET);
+    /** Harvest preset draws one resource type at a time; null means none picked. */
+    const harvestResource = ref<string | null>(null);
     // Open on first run: the world catalog (241 POI and ~80k elements) was only
     // reachable through a 46px vertical rail, so most of the product was
     // invisible by default. The user's choice is persisted from then on.
@@ -92,7 +117,7 @@ export function useMapViewDataSource() {
     // its state through the count in its header, so nothing becomes hidden.
     const filterSectionsOpen = reactive<FilterSectionsOpen>({
         visibility: true,
-        mode: false,
+        harvest: true,
         behavior: false,
         catalog: false,
     });
@@ -169,11 +194,15 @@ export function useMapViewDataSource() {
             iconScale.value = clampIconScale(saved.iconScale);
             showAllLinks.value = saved.showAllLinks ?? true;
             highlightOrphans.value = saved.highlightOrphans ?? false;
-            viewMode.value = saved.viewMode || "network";
+            preset.value = resolvePreset(saved);
+            harvestResource.value =
+                typeof saved.harvestResource === "string"
+                    ? saved.harvestResource
+                    : null;
             filtersPanelCollapsed.value = saved.filtersPanelCollapsed ?? false;
             filterSectionsOpen.visibility =
                 saved.filterSectionsOpen?.visibility ?? true;
-            filterSectionsOpen.mode = saved.filterSectionsOpen?.mode ?? false;
+            filterSectionsOpen.harvest = saved.filterSectionsOpen?.harvest ?? true;
             filterSectionsOpen.behavior =
                 saved.filterSectionsOpen?.behavior ?? false;
             filterSectionsOpen.catalog =
@@ -211,7 +240,8 @@ export function useMapViewDataSource() {
                 iconScale: iconScale.value,
                 showAllLinks: showAllLinks.value,
                 highlightOrphans: highlightOrphans.value,
-                viewMode: viewMode.value,
+                preset: preset.value,
+                harvestResource: harvestResource.value,
                 lang: lang.value,
                 entityVisibility: { ...entityVisibility },
                 filtersPanelCollapsed: filtersPanelCollapsed.value,
@@ -323,7 +353,8 @@ export function useMapViewDataSource() {
             refreshIntervalMs: refreshIntervalMs.value,
             showAllLinks: showAllLinks.value,
             highlightOrphans: highlightOrphans.value,
-            viewMode: viewMode.value,
+            preset: preset.value,
+            harvestResource: harvestResource.value,
             lang: lang.value,
             entityVisibility: { ...entityVisibility },
             filtersPanelCollapsed: filtersPanelCollapsed.value,
@@ -374,7 +405,8 @@ export function useMapViewDataSource() {
         iconScale,
         lastUpdatedAt,
         now,
-        viewMode,
+        preset,
+        harvestResource,
         filtersPanelCollapsed,
         filterSectionsOpen,
         entityVisibility,

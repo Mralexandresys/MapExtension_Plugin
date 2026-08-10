@@ -8,6 +8,11 @@ import {
 } from "vue";
 
 import { formatRelativeAge } from "../lib/formatters";
+import {
+    DEFAULT_MAP_PRESET,
+    PRESET_DEFINITIONS,
+    type MapPreset,
+} from "../lib/mapPresets";
 import type {
     ActiveFilterClear,
     EntityToggleKey,
@@ -48,7 +53,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         iconScale,
         lastUpdatedAt,
         now,
-        viewMode,
+        preset,
+        harvestResource,
         entityVisibility,
         filtersPanelCollapsed,
         filterSectionsOpen,
@@ -186,12 +192,16 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         ruptureMarkerLabel,
     } = useRuptureTimeline(ruptureCycle, now, ui);
 
+    // Filled in by the app once the catalog filters exist; until then every
+    // observed plant is shown.
+    const plantResourceFilter = ref<((resource: string) => boolean) | null>(null);
+
     const entityState = useMapViewEntities({
         cargo,
         health,
         ui,
         entityVisibility,
-        viewMode,
+        preset,
         showAllLinks,
         highlightOrphans,
         userAnnotationsOnly,
@@ -207,6 +217,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         lastUpdatedAt,
         ruptureCurrentPhaseKey,
         ruptureHasLiveData,
+        plantResourceFilter,
     });
 
     const {
@@ -215,6 +226,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         displayedTeleporters,
         displayedPlayers,
         displayedPois,
+        livePlantResourceCounts,
         entityFilterCounts,
         visibleEntityKeys,
         selectedEntity,
@@ -236,20 +248,30 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         currentTimeLabel,
     } = entityState;
 
+    /** Applies the live-entity half of a preset. The catalog half lives in
+     *  `useStaticMapFilters.applyPreset`, called from App.vue. */
+    function applyPresetEntities(next: MapPreset): void {
+        const definition = PRESET_DEFINITIONS[next];
+        for (const key of Object.keys(entityVisibility) as EntityToggleKey[]) {
+            entityVisibility[key] = definition.entities[key];
+        }
+    }
+
+    function setPreset(next: MapPreset): void {
+        preset.value = next;
+        applyPresetEntities(next);
+        showAllLinks.value = true;
+        highlightOrphans.value = false;
+        focusMode.value = false;
+    }
+
+    /** Back to the current preset's own defaults, not to "everything on". */
     function clearFilters(): void {
         showAllLinks.value = true;
         highlightOrphans.value = false;
         userAnnotationsOnly.value = false;
         focusMode.value = false;
-        viewMode.value = "network";
-        entityVisibility.sender = true;
-        entityVisibility.receiver = true;
-        entityVisibility.teleporter = true;
-        entityVisibility.player = true;
-        entityVisibility.abandonedBase = true;
-        entityVisibility.plantResource = true;
-        entityVisibility.ignitium = true;
-        entityVisibility.starTears = true;
+        applyPresetEntities(preset.value);
     }
 
     function clearSelection(): void {
@@ -266,8 +288,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     /** Undoes a single active filter from its chip, without touching the rest. */
     function clearFilterChip(clear: ActiveFilterClear): void {
         switch (clear.kind) {
-            case "viewMode":
-                viewMode.value = "network";
+            case "preset":
+                setPreset(DEFAULT_MAP_PRESET);
                 return;
             case "showAllLinks":
                 showAllLinks.value = true;
@@ -282,7 +304,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
                 focusMode.value = false;
                 return;
             case "entity":
-                entityVisibility[clear.key] = true;
+                entityVisibility[clear.key] =
+                    PRESET_DEFINITIONS[preset.value].entities[clear.key];
                 return;
         }
     }
@@ -465,7 +488,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         highlightOrphans,
         userAnnotationsOnly,
         focusMode,
-        viewMode,
+        preset,
+        harvestResource,
         autoRefresh,
         refreshIntervalMs,
         iconScale,
@@ -500,6 +524,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         displayedTeleporters,
         displayedPlayers,
         displayedPois,
+        livePlantResourceCounts,
+        plantResourceFilter,
         selectedEntity,
         orphanKeySet,
         focusKeys,
@@ -542,6 +568,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         canCenterOnPlayer,
         centerOnPlayer,
         toggleFocusMode,
+        setPreset,
+        applyPresetEntities,
         clearFilters,
         clearFilterChip,
         toggleFiltersPanel,

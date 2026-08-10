@@ -1,4 +1,5 @@
 import type { Language, Messages } from "../lang";
+import type { MapPreset } from "./mapPresets";
 
 export type CargoKind = "sender" | "receiver";
 export type EntityToggleKey =
@@ -10,7 +11,6 @@ export type EntityToggleKey =
     | "plantResource"
     | "ignitium"
     | "starTears";
-export type ViewMode = "network" | "resources" | "teleporters" | "players";
 export type StatusTone = "loading" | "online" | "stale" | "offline";
 export type SelectionTone =
     | "sender"
@@ -316,12 +316,13 @@ export interface MapSelectionPanelModel {
 
 /** What clicking an active-filter chip undoes. */
 export type ActiveFilterClear =
-    | { kind: "viewMode" }
+    | { kind: "preset" }
     | { kind: "showAllLinks" }
     | { kind: "highlightOrphans" }
     | { kind: "userAnnotationsOnly" }
     | { kind: "focusMode" }
-    | { kind: "entity"; key: EntityToggleKey };
+    | { kind: "entity"; key: EntityToggleKey }
+    | { kind: "poiGroup"; key: string };
 
 export interface ActiveFilterChip {
     id: string;
@@ -329,7 +330,17 @@ export interface ActiveFilterChip {
     clear: ActiveFilterClear;
 }
 
-export type FilterSectionKey = "visibility" | "mode" | "behavior" | "catalog";
+export interface HarvestOption {
+    id: string;
+    label: string;
+    category: string;
+    count: number;
+    /** Above the point threshold: too numerous to read as individual markers. */
+    common: boolean;
+    color: string;
+}
+
+export type FilterSectionKey = "visibility" | "harvest" | "behavior" | "catalog";
 
 export type FilterSectionsOpen = Record<FilterSectionKey, boolean>;
 
@@ -338,7 +349,11 @@ export interface MapFiltersPanelModel {
     sectionsOpen: FilterSectionsOpen;
     ui: Messages;
     activeFilterChips: ActiveFilterChip[];
-    viewMode: ViewMode;
+    preset: MapPreset;
+    harvestResource: string | null;
+    harvestOptions: HarvestOption[];
+    /** Catalog elements actually drawn, as opposed to merely loaded. */
+    staticVisibleCount: number;
     entityToggleOptions: Array<{
         key: EntityToggleKey;
         label: string;

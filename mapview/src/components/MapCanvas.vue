@@ -20,6 +20,12 @@ import type {
 } from '../lib/types';
 import { mapToWorld, resolveMapProjection } from '../lib/mapProjection';
 import {
+  POI_SYMBOL_GROUPS,
+  POI_SYMBOL_VIEWBOX,
+  poiSymbol,
+  poiSymbolId,
+} from '../lib/mapMarkers';
+import {
   groupColor,
   type StaticPlacement,
   type StaticPointSeries,
@@ -84,7 +90,11 @@ const TELEPORTER_ICON_HALF = TELEPORTER_ICON_SIZE / 2;
 const TELEPORTER_HITBOX_SIZE = 36;
 const TELEPORTER_HITBOX_HALF = TELEPORTER_HITBOX_SIZE / 2;
 const POI_HITBOX_SIZE = 32;
+const POI_SYMBOL_SIZE = 20;
+const POI_SYMBOL_HALF = POI_SYMBOL_SIZE / 2;
 const POI_HITBOX_HALF = POI_HITBOX_SIZE / 2;
+/** Gap between a POI symbol and the name drawn under it once selected. */
+const POI_LABEL_OFFSET = 5;
 const TILE_SOURCE_WIDTH = 9019;
 const TILE_SOURCE_HEIGHT = 11691;
 const TILE_SIZE = 2048;
@@ -923,6 +933,19 @@ defineExpose({
       preserveAspectRatio="xMidYMid meet"
       @dblclick="emit('clear-selection')"
     >
+      <defs>
+        <template v-for="group in POI_SYMBOL_GROUPS" :key="group">
+          <symbol :id="poiSymbolId(group)" :viewBox="POI_SYMBOL_VIEWBOX">
+            <path class="poi-symbol-body" :d="poiSymbol(group).body" />
+            <path
+              v-if="poiSymbol(group).detail"
+              class="poi-symbol-detail"
+              :class="poiSymbol(group).detailMode"
+              :d="poiSymbol(group).detail"
+            />
+          </symbol>
+        </template>
+      </defs>
       <defs v-html="teleporterSymbolMarkup"></defs>
       <g :transform="transform">
 
@@ -990,11 +1013,26 @@ defineExpose({
               :height="POI_HITBOX_SIZE"
               rx="4"
             />
-            <path
-              class="static-poi-pin"
-              :d="`M ${poi.map.x} ${poi.map.y + 9} L ${poi.map.x - 7} ${poi.map.y - 3} A 7 7 0 1 1 ${poi.map.x + 7} ${poi.map.y - 3} Z`"
+            <!-- One silhouette per family, shared with the filter chips through
+                 lib/mapMarkers.ts so the filter list doubles as the legend. -->
+            <use
+              class="static-poi-symbol"
+              :href="`#${poiSymbolId(poi.group)}`"
+              :x="poi.map.x - POI_SYMBOL_HALF"
+              :y="poi.map.y - POI_SYMBOL_HALF"
+              :width="POI_SYMBOL_SIZE"
+              :height="POI_SYMBOL_SIZE"
             />
-            <circle class="static-poi-core" :cx="poi.map.x" :cy="poi.map.y - 4" r="2.6" />
+            <!-- Abandoned bases are known by their name, not by their icon, so
+                 the selected POI spells it out on the map itself. -->
+            <text
+              v-if="staticSelection?.key === poi.key && staticPoiLabel(poi)"
+              class="static-poi-label"
+              :x="poi.map.x"
+              :y="poi.map.y + POI_SYMBOL_HALF + POI_LABEL_OFFSET"
+              text-anchor="middle"
+              dominant-baseline="hanging"
+            >{{ staticPoiLabel(poi) }}</text>
           </g>
         </g>
 
@@ -1308,26 +1346,56 @@ defineExpose({
     stroke: none;
 }
 
-:deep(.map-marker.static-poi .static-poi-pin) {
-    fill: var(--static-poi-color, #94a3b8);
+:deep(.map-marker.static-poi .static-poi-symbol) {
+    color: var(--static-poi-color, #94a3b8);
+    opacity: 0.92;
+}
+
+:deep(.poi-symbol-body) {
+    fill: currentColor;
     stroke: rgba(8, 14, 26, 0.85);
-    stroke-width: 1.2;
-    opacity: 0.9;
+    stroke-width: 1.1;
+    stroke-linejoin: round;
+    paint-order: stroke fill;
 }
 
-:deep(.map-marker.static-poi .static-poi-core) {
+:deep(.poi-symbol-detail.fill) {
     fill: #0b1220;
+    stroke: none;
 }
 
-:deep(.map-marker.static-poi:hover .static-poi-pin),
-:deep(.map-marker.static-poi:focus-visible .static-poi-pin) {
+:deep(.poi-symbol-detail.stroke) {
+    fill: none;
+    stroke: rgba(8, 14, 26, 0.9);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+:deep(.map-marker.static-poi:hover .static-poi-symbol),
+:deep(.map-marker.static-poi:focus-visible .static-poi-symbol) {
     opacity: 1;
 }
 
-:deep(.map-marker.static-poi.active .static-poi-pin) {
+:deep(.map-marker.static-poi.active .static-poi-symbol) {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px currentColor);
+}
+
+:deep(.map-marker.static-poi.active .poi-symbol-body) {
     stroke: #22d3ee;
-    stroke-width: 2;
-    opacity: 1;
+    stroke-width: 1.8;
+}
+
+:deep(.map-marker.static-poi .static-poi-label) {
+    font-size: 11px;
+    font-weight: 600;
+    fill: #e2e8f0;
+    stroke: rgba(8, 14, 26, 0.9);
+    stroke-width: 3;
+    stroke-linejoin: round;
+    paint-order: stroke fill;
+    pointer-events: none;
 }
 
 :deep(.base-map) {

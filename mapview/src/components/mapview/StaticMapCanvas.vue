@@ -140,6 +140,15 @@ function ensureBuffer(width: number, height: number): void {
   pixels = new Uint32Array(imageData.data.buffer);
 }
 
+/**
+ * Marker size for one deposit cell. Logarithmic: rock counts span 1 to ~3 000
+ * and a linear scale would turn the densest fields into screen-wide blocks.
+ */
+function depositSize(dotSize: number, rocks: number): number {
+  const growth = 1 + Math.log10(Math.max(1, rocks)) * 0.7;
+  return Math.max(dotSize, Math.min(24, Math.round(dotSize * growth)));
+}
+
 function drawResources(transform: DeviceTransform): void {
   if (!context || !pixels || !imageData) return;
 
@@ -157,23 +166,29 @@ function drawResources(transform: DeviceTransform): void {
 
   for (const entry of visibleSeries.value) {
     const base = packedColor(entry.color);
-    const { x, y, state, count } = entry;
+    const { x, y, state, count, weight } = entry;
 
     for (let index = 0; index < count; index += 1) {
+      // A deposit marker stands for every rock in its cell, so it is drawn
+      // larger the denser the ore field is: a 3 000 rock titanium field must not
+      // look like a single hydrobulb.
+      const size = weight ? depositSize(dotSize, weight[index]) : dotSize;
+      const offsetHalf = weight ? Math.floor(size / 2) : half;
+
       const px = (x[index] * ax + bx) | 0;
-      if (px < -dotSize || px >= width + dotSize) continue;
+      if (px < -size || px >= width + size) continue;
       const py = (y[index] * ay + by) | 0;
-      if (py < -dotSize || py >= height + dotSize) continue;
+      if (py < -size || py >= height + size) continue;
 
       let color = base;
       const observed = state[index];
       if (observed === 2) color = depleted;
       else if (observed === 1) color = available;
 
-      const startX = Math.max(0, px - half);
-      const endX = Math.min(width - 1, px - half + dotSize - 1);
-      const startY = Math.max(0, py - half);
-      const endY = Math.min(height - 1, py - half + dotSize - 1);
+      const startX = Math.max(0, px - offsetHalf);
+      const endX = Math.min(width - 1, px - offsetHalf + size - 1);
+      const startY = Math.max(0, py - offsetHalf);
+      const endY = Math.min(height - 1, py - offsetHalf + size - 1);
 
       for (let row = startY; row <= endY; row += 1) {
         const offset = row * width;

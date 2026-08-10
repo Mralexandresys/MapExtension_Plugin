@@ -41,11 +41,20 @@ JSONP_CALLBACK = "SRMAPDATA"
 POSITION_SCALE_CM = 10.0  # stored unit = 1 decimetre
 ALTITUDE_SCALE_CM = 100.0  # altitudes stored in metres
 SORT_CELL = 2000  # 200 m locality blocks, keeps delta values small
-RESOURCE_KINDS = ("pcg", "actor")
+RESOURCE_KINDS = ("pcg", "actor", "deposit")
 RAW_KIND_TO_KIND = {
     "resource_point": "pcg",
     "resource_actor": "actor",
 }
+
+# Ore fields are exported as one HISM instance per rock: 150 732 titanium rocks,
+# 80 936 goethite, 16 952 wolfram. Drawing them one by one is unreadable and
+# titanium/wolfram/calcium have no point or actor representation at all, so they
+# were simply missing from the catalog. Instances are binned into square cells
+# and published as one "deposit" marker per cell, positioned on the centroid of
+# the rocks it covers and carrying their count.
+DEPOSIT_CELL_CM = 8000.0  # 80 m
+DEPOSIT_CATEGORIES = ("mineral",)
 
 # Placement category -> (layer, group). Groups drive the filter tree.
 PLACEMENT_LAYERS: dict[str, tuple[str, str]] = {
@@ -76,8 +85,11 @@ POI_TYPE_TO_GROUP = {
     "ECrPointOfInterestType::OrbitalLander": "orbital_lander",
 }
 
-# Canonical resource ids are derived from the export, but the export display
-# names are localized in French only, so English labels are supplied here.
+# Canonical resource ids are derived from the export. Display names come from
+# the game item tables embedded in the dump (`item.item_name`), so the catalog
+# matches what the player reads in game; the tables below only cover resources
+# whose export carries no item metadata, plus the few names the item table gets
+# wrong ("Polufruit").
 RESOURCE_ALIASES = {
     "golden_balloon_skylisk": "skylisk",
     "gold_fruit_tree_lowlands": "gold_fruit",
@@ -89,38 +101,28 @@ RESOURCE_ALIASES = {
 }
 
 RESOURCE_LABELS_EN = {
-    "titanium": "Titanium Ore",
-    "goethite": "Goethite Ore",
-    "wolfram": "Tungsten Ore",
-    "sulphur": "Sulphur Ore",
-    "calcium": "Calcium Ore",
-    "quartz": "Quartz Ore",
-    "helium_3": "Helium-3",
     "unknown_ore": "Unknown Ore",
-    "hydrobulb": "Hydrobulb",
-    "polifruit": "Polifruit",
-    "serpent_root": "Serpent Root",
     "nootka_lupine": "Nootka Lupine",
     "thornfruit": "Thornfruit",
-    "purplant": "Purplant",
-    "oxallop": "Oxallop",
     "sikkim_rhubarb": "Sikkim Rhubarb",
     "aggressive_plant": "Aggressive Plant",
     "gold_fruit": "Gold Fruit",
-    "soulheart": "Soulheart",
-    "coralion_egg": "Coralion Egg",
-    "fox_egg": "Fox Egg",
-    "skylisk": "Skylisk",
+    # The item table spells it "Polufruit"; the in-game UI and the wiki do not.
+    "polifruit": "Polifruit",
+    # `soulheart` is the asset id, "Sulheart" the displayed name.
+    "soulheart": "Sulheart",
 }
 
 RESOURCE_LABELS_FR = {
+    "unknown_ore": "Minerai inconnu",
+    "nootka_lupine": "Lupin de Nootka",
+    "thornfruit": "Ronce-fruit",
+    "sikkim_rhubarb": "Rhubarbe du Sikkim",
     "aggressive_plant": "Plante agressive",
     "gold_fruit": "Fruit d'or",
-    "nootka_lupine": "Lupin de Nootka",
-    "sikkim_rhubarb": "Rhubarbe du Sikkim",
+    "polifruit": "Polyfruit",
     "soulheart": "Cœur d'âme",
-    "thornfruit": "Ronce-fruit",
-    "unknown_ore": "Minerai inconnu",
+    # The item table leaves the English name in the French column.
     "skylisk": "Viande de skylisk",
 }
 
@@ -164,17 +166,18 @@ def quantize(value: float | None, scale: float) -> int:
     return int(round(value / scale))
 
 
-def sort_key(point: tuple[int, int, int]) -> tuple[int, int, int, int]:
-    x, y, _z = point
+def sort_key(point: tuple[int, ...]) -> tuple[int, int, int, int]:
+    x, y = point[0], point[1]
     return (y // SORT_CELL, x // SORT_CELL, x, y)
 
 
-def delta_encode(points: list[tuple[int, int, int]]) -> dict[str, list[int]]:
+def delta_encode(points: list[tuple[int, ...]]) -> dict[str, list[int]]:
     xs: list[int] = []
     ys: list[int] = []
     zs: list[int] = []
     previous_x = previous_y = previous_z = 0
-    for x, y, z in points:
+    for point in points:
+        x, y, z = point[0], point[1], point[2]
         xs.append(x - previous_x)
         ys.append(y - previous_y)
         zs.append(z - previous_z)
@@ -201,18 +204,23 @@ def build_resources(path: Path) -> tuple[dict[str, list[dict[str, Any]]], dict[s
 
     # (category, type, kind) -> list of quantized points
     buckets: dict[tuple[str, str, str], list[tuple[int, int, int]]] = defaultdict(list)
+    # (category, type) -> cell -> [sum_x_cm, sum_y_cm, sum_z_cm, rocks]
+    deposit_cells: dict[tuple[str, str], dict[tuple[int, int], list[float]]] = defaultdict(
+        lambda: defaultdict(lambda: [0.0, 0.0, 0.0, 0.0])
+    )
     type_labels: dict[str, dict[str, str]] = {}
+    type_items: dict[str, dict[str, str]] = {}
     type_category: dict[str, str] = {}
     total = 0
-    skipped_hism = 0
+    hism_binned = 0
+    hism_dropped = 0
 
     for entry in read_jsonl(path):
         total += 1
         raw_kind = entry.get("kind")
         kind = RAW_KIND_TO_KIND.get(raw_kind) if isinstance(raw_kind, str) else None
-        if kind is None:
-            if raw_kind == "resource_hism_instance":
-                skipped_hism += 1
+        is_hism = raw_kind == "resource_hism_instance"
+        if kind is None and not is_hism:
             continue
 
         position = entry.get("position_cm") or {}
@@ -223,12 +231,34 @@ def build_resources(path: Path) -> tuple[dict[str, list[dict[str, Any]]], dict[s
 
         category = CATEGORY_ALIASES.get(entry.get("category") or "unknown", entry.get("category") or "unknown")
         type_id = canonical_resource_id(entry.get("resource_id"))
-        type_category.setdefault(type_id, category)
 
+        item_name = ((entry.get("item") or {}).get("item_name")) or {}
+        if type_id not in type_items and item_name.get("source"):
+            type_items[type_id] = {
+                "en": item_name["source"].strip(),
+                "fr": (item_name.get("localized") or item_name["source"]).strip(),
+            }
         localized = (entry.get("display_name") or "").strip()
         if localized and type_id not in type_labels:
             type_labels[type_id] = {"fr": localized}
 
+        if is_hism:
+            # Plants are already published one point per harvestable spawn; only
+            # ore fields need the per-rock instances folded into deposits.
+            if category not in DEPOSIT_CATEGORIES:
+                hism_dropped += 1
+                continue
+            type_category.setdefault(type_id, category)
+            cell = (int(x_cm // DEPOSIT_CELL_CM), int(y_cm // DEPOSIT_CELL_CM))
+            accumulator = deposit_cells[(category, type_id)][cell]
+            accumulator[0] += x_cm
+            accumulator[1] += y_cm
+            accumulator[2] += position.get("z") or 0.0
+            accumulator[3] += 1.0
+            hism_binned += 1
+            continue
+
+        type_category.setdefault(type_id, category)
         point = (
             quantize(x_cm, POSITION_SCALE_CM),
             quantize(y_cm, POSITION_SCALE_CM),
@@ -237,10 +267,14 @@ def build_resources(path: Path) -> tuple[dict[str, list[dict[str, Any]]], dict[s
 
         buckets[(category, type_id, kind)].append(point)
 
-    log(f"resources: {total} rows, {skipped_hism} HISM instances excluded")
+    log(
+        f"resources: {total} rows, {hism_binned} HISM instances binned into deposits, "
+        f"{hism_dropped} HISM instances excluded"
+    )
 
     groups_by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
     counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    deposit_rocks: dict[str, int] = defaultdict(int)
 
     for (category, type_id, kind), points in sorted(buckets.items()):
         if not points:
@@ -257,17 +291,58 @@ def build_resources(path: Path) -> tuple[dict[str, list[dict[str, Any]]], dict[s
         )
         counts[type_id][kind] += len(points)
 
+    deposit_index = RESOURCE_KINDS.index("deposit")
+    for (category, type_id), cells in sorted(deposit_cells.items()):
+        # One marker per cell, on the centroid of its rocks rather than on the
+        # cell centre, so a deposit straddling a boundary still reads correctly.
+        rows: list[tuple[int, int, int, int]] = []
+        for sum_x, sum_y, sum_z, rocks in cells.values():
+            if rocks <= 0:
+                continue
+            rows.append(
+                (
+                    quantize(sum_x / rocks, POSITION_SCALE_CM),
+                    quantize(sum_y / rocks, POSITION_SCALE_CM),
+                    quantize(sum_z / rocks, ALTITUDE_SCALE_CM),
+                    int(rocks),
+                )
+            )
+        if not rows:
+            continue
+        rows.sort(key=sort_key)
+        groups_by_category[category].append(
+            {
+                "t": type_id,
+                "k": deposit_index,
+                "n": len(rows),
+                **delta_encode(rows),
+                "w": [row[3] for row in rows],
+            }
+        )
+        counts[type_id]["deposit"] += len(rows)
+        deposit_rocks[type_id] += sum(row[3] for row in rows)
+        log(f"  deposits {type_id}: {sum(row[3] for row in rows)} rocks -> {len(rows)} markers")
+
     types: dict[str, dict[str, Any]] = {}
     for type_id, kind_counts in counts.items():
-        english = RESOURCE_LABELS_EN.get(type_id, humanize(type_id))
-        french = RESOURCE_LABELS_FR.get(type_id) or type_labels.get(type_id, {}).get("fr") or english
-        types[type_id] = {
+        item = type_items.get(type_id, {})
+        english = RESOURCE_LABELS_EN.get(type_id) or item.get("en") or humanize(type_id)
+        french = (
+            RESOURCE_LABELS_FR.get(type_id)
+            or item.get("fr")
+            or type_labels.get(type_id, {}).get("fr")
+            or english
+        )
+        entry_types: dict[str, Any] = {
             "category": type_category.get(type_id, "unknown"),
             "en": english,
             "fr": french,
             "counts": {kind: kind_counts.get(kind, 0) for kind in RESOURCE_KINDS if kind_counts.get(kind)},
             "total": sum(kind_counts.values()),
         }
+        if deposit_rocks.get(type_id):
+            entry_types["deposit_rocks"] = deposit_rocks[type_id]
+        types[type_id] = entry_types
 
     return groups_by_category, types
 

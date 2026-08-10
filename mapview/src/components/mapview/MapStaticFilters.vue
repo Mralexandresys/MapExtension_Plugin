@@ -9,6 +9,8 @@ import type {
 
 const props = defineProps<{
     model: MapStaticFiltersModel;
+    /** Raw export layers are only meaningful in the Technical preset. */
+    developerMode: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -75,7 +77,7 @@ function handleSearch(event: Event): void {
                 {{ model.error }}
             </p>
 
-            <div class="chip-group static-chip-group">
+            <div v-if="props.developerMode" class="chip-group static-chip-group">
                 <button
                     v-for="layer in model.layers"
                     :key="layer.key"
@@ -90,29 +92,10 @@ function handleSearch(event: Event): void {
                 </button>
             </div>
 
-            <div v-if="model.poiGroups.length" class="static-subsection">
-                <h4>{{ model.ui.staticFilters.poiTitle }}</h4>
-                <div class="chip-group static-chip-group">
-                    <button
-                        v-for="group in model.poiGroups"
-                        :key="group.key"
-                        class="chip-button"
-                        :class="{ active: group.enabled, muted: !group.enabled }"
-                        type="button"
-                        :style="optionStyle(group)"
-                        :aria-pressed="group.enabled"
-                        @click="emit('toggle', { scope: 'poiGroup', key: group.key })"
-                    >
-                        <span class="static-option-label">
-                            <span class="static-swatch" aria-hidden="true"></span>
-                            {{ group.label }}
-                        </span>
-                        <strong class="filter-option-count">{{ group.count }}</strong>
-                    </button>
-                </div>
-            </div>
-
-            <div v-if="model.representations.length" class="static-subsection">
+            <div
+                v-if="props.developerMode && model.representations.length"
+                class="static-subsection"
+            >
                 <h4>{{ model.ui.staticFilters.representationTitle }}</h4>
                 <p class="static-hint">{{ model.ui.staticFilters.representationHelp }}</p>
                 <div class="chip-group static-chip-group">
@@ -191,7 +174,7 @@ function handleSearch(event: Event): void {
             </div>
 
             <div
-                v-for="section in model.placementSections"
+                v-for="section in props.developerMode ? model.placementSections : []"
                 :key="section.layer"
                 class="static-subsection"
             >

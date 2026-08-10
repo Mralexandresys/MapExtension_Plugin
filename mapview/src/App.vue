@@ -23,13 +23,25 @@ import {
     useStaticMapFilters,
 } from "./composables/useStaticMapFilters";
 import { useUserAnnotations } from "./composables/useUserAnnotations";
+import {
+    COMMON_RESOURCE_POINT_THRESHOLD,
+    PRESET_DEFINITIONS,
+    RESOURCE_TYPES_HIDDEN_BY_DEFAULT,
+    type MapPreset,
+} from "./lib/mapPresets";
 import { resolveMapProjection, worldToMap } from "./lib/mapProjection";
-import type {
-    StaticPlacement,
-    StaticPointSeries,
+import {
+    LIVE_ONLY_RESOURCE_LABELS,
+    resourceColor,
+    resourceTypeIdFromLabel,
+    type StaticPlacement,
+    type StaticPointSeries,
 } from "./lib/staticMapCatalog";
 import type {
+    ActiveFilterChip,
+    ActiveFilterClear,
     DetailRow,
+    HarvestOption,
     MapCanvasHandle,
     MapCanvasToolbarModel,
     MapControlDockModel,
@@ -55,7 +67,8 @@ const {
     highlightOrphans,
     userAnnotationsOnly,
     focusMode,
-    viewMode,
+    preset,
+    harvestResource,
     autoRefresh,
     refreshIntervalMs,
     iconScale,
@@ -85,6 +98,8 @@ const {
     displayedTeleporters,
     displayedPlayers,
     displayedPois,
+    livePlantResourceCounts,
+    plantResourceFilter,
     selectedEntity,
     orphanKeySet,
     focusKeys,
@@ -127,6 +142,7 @@ const {
     canCenterOnPlayer,
     centerOnPlayer,
     toggleFocusMode,
+    setPreset,
     clearFilters,
     clearFilterChip,
     toggleFiltersPanel,
@@ -243,6 +259,39 @@ watch(
     { immediate: true },
 );
 
+function livePlantTypeId(resource: string): string {
+    return resourceTypeIdFromLabel(resource, staticData.resourceLabelIndex.value);
+}
+
+// Observed plants answer to the same per-type switches as the catalog, so the
+// ones the export never contained (Prickler, Prism Herb) get a filter of their
+// own instead of hiding behind the single "plant resources" toggle.
+plantResourceFilter.value = (resource: string) =>
+    staticFilters.isLiveResourceEnabled(livePlantTypeId(resource));
+
+watch(
+    livePlantResourceCounts,
+    (counts) => {
+        const entries: Record<
+            string,
+            { en: string; fr: string; count: number }
+        > = {};
+        for (const [resource, count] of Object.entries(counts)) {
+            const typeId = livePlantTypeId(resource);
+            if (!typeId) continue;
+            const known = LIVE_ONLY_RESOURCE_LABELS[typeId];
+            const existing = entries[typeId];
+            entries[typeId] = {
+                en: known?.en ?? resource,
+                fr: known?.fr ?? resource,
+                count: (existing?.count ?? 0) + count,
+            };
+        }
+        staticFilters.syncLiveResourceTypes(entries);
+    },
+    { immediate: true, deep: true },
+);
+
 // Live observations are folded into the catalog instead of adding a second
 // marker at the same spot.
 watch(
@@ -271,6 +320,111 @@ const staticLoadedCount = computed(
         staticData.placements.value.length +
         staticData.pois.value.length,
 );
+
+// A preset is only meaningful once the manifest tells us which groups exist.
+// Applied on first run (or after the schema bump); afterwards the user's own
+// refinements are what persist.
+watch(
+    staticData.manifest,
+    (value) => {
+        if (!value || staticFilters.hasStoredState) return;
+        staticFilters.applyPreset(preset.value, harvestResource.value);
+    },
+    { immediate: true },
+);
+
+/** Harvest picker entries: rare resources first, commons flagged apart. */
+const harvestOptions = computed<HarvestOption[]>(() => {
+    const catalog = staticData.manifest.value;
+    if (!catalog) return [];
+    return Object.entries(catalog.resource_types)
+        .filter(([typeId]) => !RESOURCE_TYPES_HIDDEN_BY_DEFAULT.includes(typeId))
+        .map(([typeId, entry]) => ({
+            id: typeId,
+            label: lang.value === "fr" ? entry.fr : entry.en,
+            category: entry.category,
+            count: entry.total,
+            common: entry.total >= COMMON_RESOURCE_POINT_THRESHOLD,
+            color: resourceColor(typeId),
+        }))
+        .sort(
+            (a, b) =>
+                Number(a.common) - Number(b.common) ||
+                a.label.localeCompare(b.label),
+        );
+});
+
+/**
+ * Catalog elements actually drawn. `loadedCount` counts what was fetched, which
+ * made the panel advertise 57 483 while a preset was drawing 241 POI.
+ */
+const staticVisibleCount = computed(() => {
+    let total = 0;
+    for (const entry of staticData.series.value) {
+        if (isStaticSeriesVisible(entry)) total += entry.count;
+    }
+    for (const entry of staticData.placements.value) {
+        if (isStaticPlacementVisible(entry)) total += 1;
+    }
+    for (const entry of staticData.poiViews.value) {
+        if (isStaticPoiVisible(entry)) total += 1;
+    }
+    return total;
+});
+
+// "Abandoned bases" existed twice: a live toggle reading 0 and a catalog POI
+// group holding the 29 canonical entries. One control now drives both.
+watch(
+    () => staticFilters.isPoiGroupEnabled("abandoned_base"),
+    (enabled) => {
+        entityVisibility.abandonedBase = enabled;
+    },
+    { immediate: true },
+);
+
+/** Whether a preset wants a given landmark group visible. */
+function presetWantsPoiGroup(group: string): boolean {
+    const selection = PRESET_DEFINITIONS[preset.value].poiGroups;
+    if (selection === "all") return true;
+    if (selection === "none") return false;
+    return selection.includes(group);
+}
+
+// Landmark groups are filters like any other: hiding the obelisks has to show
+// up in the active-filter chips, not leave the panel claiming nothing is set.
+const landmarkFilterChips = computed<ActiveFilterChip[]>(() => {
+    const groups = staticFiltersModel.value?.poiGroups ?? [];
+    return groups
+        .filter((group) => group.enabled !== presetWantsPoiGroup(group.key))
+        .map((group) => ({
+            id: `poiGroup:${group.key}`,
+            label: group.enabled
+                ? group.label
+                : ui.value.format.hiddenLabels(group.label),
+            clear: { kind: "poiGroup" as const, key: group.key },
+        }));
+});
+
+function handleClearChip(clear: ActiveFilterClear): void {
+    if (clear.kind === "poiGroup") {
+        if (staticFilters.isPoiGroupEnabled(clear.key) !== presetWantsPoiGroup(clear.key)) {
+            staticFilters.togglePoiGroup(clear.key);
+        }
+        return;
+    }
+    clearFilterChip(clear);
+}
+
+function handlePresetChange(next: MapPreset): void {
+    setPreset(next);
+    staticFilters.applyPreset(next, harvestResource.value);
+    clearAllSelection();
+}
+
+function handleHarvestSelect(typeId: string | null): void {
+    harvestResource.value = typeId;
+    staticFilters.selectSingleResource(typeId);
+}
 
 const staticFiltersModel = useStaticFiltersModel({
     manifest: staticData.manifest,
@@ -347,6 +501,12 @@ function staticDetailRows(selection: StaticSelection): DetailRow[] {
             rows.push({
                 label: messages.details.representation,
                 value: messages.representations[selection.representation],
+            });
+        }
+        if (selection.weight !== undefined) {
+            rows.push({
+                label: messages.details.depositRocks,
+                value: String(selection.weight),
             });
         }
         rows.push({
@@ -507,10 +667,14 @@ const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     collapsed: filtersPanelCollapsed.value,
     sectionsOpen: { ...filterSectionsOpen },
     ui: ui.value,
-    activeFilterChips: activeFilterChips.value,
-    viewMode: viewMode.value,
+    activeFilterChips: [...activeFilterChips.value, ...landmarkFilterChips.value],
+    preset: preset.value,
+    harvestResource: harvestResource.value,
+    harvestOptions: harvestOptions.value,
+    staticVisibleCount: staticVisibleCount.value,
     entityToggleOptions: entityToggleOptions.value,
     entityVisibility: readonly(entityVisibility),
+    developerMode: PRESET_DEFINITIONS[preset.value].developerMode,
     showAllLinks: showAllLinks.value,
     highlightOrphans: highlightOrphans.value,
     userAnnotationsOnly: userAnnotationsOnly.value,
@@ -664,13 +828,14 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @toggle-collapse="toggleFiltersPanel"
                 @toggle-section="toggleFilterSection"
                 @clear="clearFilters"
-                @clear-chip="clearFilterChip"
+                @clear-chip="handleClearChip"
                 @toggle-entity="toggleEntity"
-                @update:view-mode="viewMode = $event"
                 @update:show-all-links="showAllLinks = $event"
                 @update:highlight-orphans="highlightOrphans = $event"
                 @update:user-annotations-only="userAnnotationsOnly = $event"
                 @toggle-focus="toggleFocusMode"
+                @update:preset="handlePresetChange"
+                @update:harvest-resource="handleHarvestSelect"
                 @static-toggle="handleStaticFilterToggle"
                 @update:static-search="staticFilters.search.value = $event"
                 @static-show-all="staticFilters.setAll(true)"
