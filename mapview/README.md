@@ -67,11 +67,27 @@ Le viewer charge un catalogue compact pre-genere depuis `public/map-data/`. Il c
 
 Dans la couche `building`, le frontend rend uniquement les placements dont l'`actorType` contient `KeyCard`, `Coralion_Egg` ou `Spawner`, sans distinction de casse. Les couches `zone` et `technical` conservent tous leurs placements.
 
-Le volet `Filtres` s'ouvre sur un prereglage, puis sur des sections repliables : `Sur la carte`,
-ressource recoltee (mode Recolte uniquement), comportement et catalogue du monde. Les choix sont
+Le volet `Filtres` s'ouvre sur un prereglage, puis sur des onglets : `Carte`, `Recolte` (mode Recolte
+uniquement), `Catalogue` (masque en prereglage `Reseau`) et `Options`. Un seul onglet est affiche a la
+fois, donc chaque liste dispose de toute la hauteur du volet au lieu d'une pile de sections repliables.
+Chaque en-tete d'onglet porte son propre resume (elements actifs sur total, ressource choisie, elements
+dessines), afin qu'un onglet hors ecran continue d'annoncer les filtres actifs qu'il contient. L'onglet
+courant est persiste avec les autres preferences (`filterTab`), et les choix de filtres restent
 persistants sous la cle `mapview.static-filters.v2`.
 
-La section `Sur la carte` regroupe en trois familles de sens ce qui etait auparavant reparti entre
+Chaque entree de liste est une ligne pleine largeur : case d'etat, icone de legende, libelle et
+compteur (groupe par milliers selon la locale, un libelle tronque garde son nom complet en infobulle).
+Chaque groupe propose `Tout` / `Aucun`, qui rejouent les bascules individuelles du groupe. Une
+categorie du catalogue active dont certains types sont masques affiche un tiret plutot qu'une coche :
+elle n'est ni tout affiche ni tout masque. Dans l'onglet `Catalogue`, le champ de recherche reste
+epingle pendant que les listes defilent et ne filtre que les listes du catalogue.
+
+La barre d'onglets se parcourt aux fleches, `Home` et `End`, comme un `tablist` standard. L'en-tete du
+volet ne garde qu'un compteur de filtres actifs et `Reinitialiser` : la liste de chips retirables a ete
+supprimee, chaque filtre s'annulant desormais depuis la ligne qui l'a pose (prereglage, onglet `Carte`
+ou onglet `Options`).
+
+L'onglet `Carte` regroupe en trois familles de sens ce qui etait auparavant reparti entre
 la visibilite des entites live et le catalogue :
 
 | Famille | Contenu |
@@ -86,10 +102,10 @@ controle : le compteur vient du catalogue (valeur canonique) et l'etat live s'y 
 deux controles qui se contredisaient.
 
 Chaque repere possede une silhouette propre definie une seule fois dans `src/lib/mapMarkers.ts`,
-emise en `<symbol>` par `MapCanvas.vue` et reprise a l'identique dans les chips du volet : la liste
+emise en `<symbol>` par `MapCanvas.vue` et reprise a l'identique dans les lignes du volet : la liste
 des filtres sert donc aussi de legende et ne peut pas diverger de la carte.
 
-Le compteur du `Catalogue du monde` indique le nombre d'elements reellement dessines, pas le nombre
+Le resume de l'onglet `Catalogue` indique le nombre d'elements reellement dessines, pas le nombre
 charge. Les couches brutes de l'export (representations PCG/acteur, placements, zones, elements
 techniques) ne sont listees qu'en prereglage `Technique`.
 
@@ -102,7 +118,7 @@ Les quatre prereglages repondent chacun a une question de joueur et pilotent d'u
 | `Recolte` | Ou est la ressource que je collecte maintenant ? | Une seule ressource a la fois + grottes |
 | `Technique` | Que contient l'export brut ? | Placements, zones, sockets et proxies (mode developpeur) |
 
-Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` (12 sockets `BP_OreSocket` que les donnees disponibles ne permettent pas d'attribuer avec fiabilite) reste masque. Les chips de filtres actifs ne listent que les ecarts par rapport au prereglage courant.
+Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` (12 sockets `BP_OreSocket` que les donnees disponibles ne permettent pas d'attribuer avec fiabilite) reste masque. Le compteur de filtres actifs de l'en-tete ne compte que les ecarts par rapport au prereglage courant.
 
 ### Zones et elements de generation
 
@@ -153,7 +169,7 @@ indetermines.
 La qualite se lit directement sur la carte, sans ouvrir le panneau : le marqueur
 garde la couleur de son minerai et la qualite joue sur sa luminosite et sa taille
 (pur = plus clair et plus gros, impur = plus sombre et plus petit). Elle est aussi
-filtrable, section `Qualite du filon` du catalogue, ce qui permet de n'afficher que
+filtrable, groupe `Qualite du filon` de l'onglet `Catalogue`, ce qui permet de n'afficher que
 les filons purs. Le panneau de selection continue d'indiquer la valeur exacte.
 
 Les libelles EN/FR viennent des tables d'items du jeu embarquees dans l'export
@@ -213,8 +229,8 @@ Le volet `Filtres` propose des boutons de visibilite separes pour les bases aban
 les ressources vegetales, Ignitium et Star Tears. Chaque prereglage definit son propre
 jeu de familles visibles : `Reseau` les affiche toutes, `Exploration` masque le reseau
 cargo, `Recolte` se concentre sur les ressources et `Technique` ne garde que le joueur.
-Les boutons restent utilisables pour s'ecarter du prereglage, et cet ecart apparait alors
-comme un chip retirable. `available` et `depleted` restent des etats visuels,
+Les boutons restent utilisables pour s'ecarter du prereglage, et cet ecart est alors
+compte dans l'en-tete du volet. `available` et `depleted` restent des etats visuels,
 pas des filtres separes ; les acteurs de ressource epuises peuvent rester publies avec leur derniere
 position connue. Quand Ignitium et Star Tears partagent une position pendant la fenetre de fin de
 cycle, Star Tears est rendue au-dessus sans marquer artificiellement l'une des deux ressources comme

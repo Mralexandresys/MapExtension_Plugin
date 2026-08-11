@@ -39,7 +39,6 @@ import {
 } from "./lib/staticMapCatalog";
 import type {
     ActiveFilterChip,
-    ActiveFilterClear,
     DetailRow,
     HarvestOption,
     MapCanvasHandle,
@@ -76,7 +75,7 @@ const {
     hoveredKey,
     controlSettingsOpen,
     ruptureDetailsOpen,
-    filterSectionsOpen,
+    filterTab,
     detailsPanelExpanded,
     filtersPanelCollapsed,
     shortcutsOpen,
@@ -136,7 +135,7 @@ const {
     toggleControlSettings,
     toggleRuptureDetails,
     closeRuptureDetails,
-    toggleFilterSection,
+    setFilterTab,
     toggleDetailsPanel,
     centerSelection,
     canCenterOnPlayer,
@@ -144,7 +143,6 @@ const {
     toggleFocusMode,
     setPreset,
     clearFilters,
-    clearFilterChip,
     toggleFiltersPanel,
     toggleEntity,
     resetMapView,
@@ -405,16 +403,6 @@ const landmarkFilterChips = computed<ActiveFilterChip[]>(() => {
         }));
 });
 
-function handleClearChip(clear: ActiveFilterClear): void {
-    if (clear.kind === "poiGroup") {
-        if (staticFilters.isPoiGroupEnabled(clear.key) !== presetWantsPoiGroup(clear.key)) {
-            staticFilters.togglePoiGroup(clear.key);
-        }
-        return;
-    }
-    clearFilterChip(clear);
-}
-
 function handlePresetChange(next: MapPreset): void {
     setPreset(next);
     staticFilters.applyPreset(next, harvestResource.value);
@@ -666,9 +654,10 @@ const selectionPanel = computed<MapSelectionPanelModel>(() => {
 
 const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     collapsed: filtersPanelCollapsed.value,
-    sectionsOpen: { ...filterSectionsOpen },
+    activeTab: filterTab.value,
     ui: ui.value,
-    activeFilterChips: [...activeFilterChips.value, ...landmarkFilterChips.value],
+    activeFilterCount:
+        activeFilterChips.value.length + landmarkFilterChips.value.length,
     preset: preset.value,
     harvestResource: harvestResource.value,
     harvestOptions: harvestOptions.value,
@@ -828,9 +817,8 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
             <MapFiltersPanel
                 :panel="filtersPanel"
                 @toggle-collapse="toggleFiltersPanel"
-                @toggle-section="toggleFilterSection"
+                @update:tab="setFilterTab"
                 @clear="clearFilters"
-                @clear-chip="handleClearChip"
                 @toggle-entity="toggleEntity"
                 @update:show-all-links="showAllLinks = $event"
                 @update:highlight-orphans="highlightOrphans = $event"

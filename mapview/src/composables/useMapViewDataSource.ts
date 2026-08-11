@@ -18,7 +18,7 @@ import {
 } from "../lib/mapPresets";
 import type {
     EntityVisibility,
-    FilterSectionsOpen,
+    FilterTabKey,
     HealthResponse,
     CargoResponse,
     RuptureCycleResponse,
@@ -30,6 +30,7 @@ const MIN_REFRESH_INTERVAL_MS = 500;
 const MAX_REFRESH_INTERVAL_MS = 60000;
 const STORAGE_KEY = "starrupture-mapview:v3";
 const LANGUAGE_OPTIONS: Language[] = ["en", "fr"];
+const FILTER_TABS: FilterTabKey[] = ["map", "harvest", "catalog", "behavior"];
 const DEFAULT_ICON_SCALE = 1;
 const MIN_ICON_SCALE = 0.75;
 const MAX_ICON_SCALE = 2;
@@ -86,7 +87,9 @@ interface PersistedPreferences {
     lang?: Language;
     entityVisibility?: Partial<EntityVisibility>;
     filtersPanelCollapsed?: boolean;
-    filterSectionsOpen?: Partial<FilterSectionsOpen>;
+    filterTab?: FilterTabKey;
+    /** Legacy key: the collapsible sections became tabs. */
+    filterSectionsOpen?: Record<string, boolean>;
     /** Legacy: the rupture timeline is now a header strip with no compact mode. */
     ruptureCompact?: boolean;
 }
@@ -113,14 +116,9 @@ export function useMapViewDataSource() {
     // invisible by default. The user's choice is persisted from then on.
     const filtersPanelCollapsed = ref(false);
 
-    // Only the entity toggles start open. Every other section still advertises
-    // its state through the count in its header, so nothing becomes hidden.
-    const filterSectionsOpen = reactive<FilterSectionsOpen>({
-        visibility: true,
-        harvest: true,
-        behavior: false,
-        catalog: false,
-    });
+    // One tab at a time, so each list gets the full height of the sidebar
+    // instead of a few scrollable rows at the bottom of a stack of sections.
+    const filterTab = ref<FilterTabKey>("map");
 
     const entityVisibility = reactive<EntityVisibility>({
         sender: true,
@@ -200,13 +198,9 @@ export function useMapViewDataSource() {
                     ? saved.harvestResource
                     : null;
             filtersPanelCollapsed.value = saved.filtersPanelCollapsed ?? false;
-            filterSectionsOpen.visibility =
-                saved.filterSectionsOpen?.visibility ?? true;
-            filterSectionsOpen.harvest = saved.filterSectionsOpen?.harvest ?? true;
-            filterSectionsOpen.behavior =
-                saved.filterSectionsOpen?.behavior ?? false;
-            filterSectionsOpen.catalog =
-                saved.filterSectionsOpen?.catalog ?? false;
+            filterTab.value = FILTER_TABS.includes(saved.filterTab as FilterTabKey)
+                ? (saved.filterTab as FilterTabKey)
+                : "map";
             if (saved.lang && LANGUAGE_OPTIONS.includes(saved.lang as Language)) {
                 lang.value = saved.lang as Language;
             }
@@ -245,7 +239,7 @@ export function useMapViewDataSource() {
                 lang: lang.value,
                 entityVisibility: { ...entityVisibility },
                 filtersPanelCollapsed: filtersPanelCollapsed.value,
-                filterSectionsOpen: { ...filterSectionsOpen },
+                filterTab: filterTab.value,
             }),
         );
     }
@@ -358,7 +352,7 @@ export function useMapViewDataSource() {
             lang: lang.value,
             entityVisibility: { ...entityVisibility },
             filtersPanelCollapsed: filtersPanelCollapsed.value,
-            filterSectionsOpen: { ...filterSectionsOpen },
+            filterTab: filterTab.value,
         }),
         savePreferences,
         { deep: true },
@@ -408,7 +402,7 @@ export function useMapViewDataSource() {
         preset,
         harvestResource,
         filtersPanelCollapsed,
-        filterSectionsOpen,
+        filterTab,
         entityVisibility,
         status,
         ui,

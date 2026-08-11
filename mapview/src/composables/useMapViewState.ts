@@ -14,9 +14,8 @@ import {
     type MapPreset,
 } from "../lib/mapPresets";
 import type {
-    ActiveFilterClear,
     EntityToggleKey,
-    FilterSectionKey,
+    FilterTabKey,
     MapCanvasHandle,
     ShortcutItem,
     StatusTone,
@@ -57,7 +56,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         harvestResource,
         entityVisibility,
         filtersPanelCollapsed,
-        filterSectionsOpen,
+        filterTab,
         status,
         ui,
         languageOptions,
@@ -285,31 +284,6 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         entityVisibility[key] = !entityVisibility[key];
     }
 
-    /** Undoes a single active filter from its chip, without touching the rest. */
-    function clearFilterChip(clear: ActiveFilterClear): void {
-        switch (clear.kind) {
-            case "preset":
-                setPreset(DEFAULT_MAP_PRESET);
-                return;
-            case "showAllLinks":
-                showAllLinks.value = true;
-                return;
-            case "highlightOrphans":
-                highlightOrphans.value = false;
-                return;
-            case "userAnnotationsOnly":
-                userAnnotationsOnly.value = false;
-                return;
-            case "focusMode":
-                focusMode.value = false;
-                return;
-            case "entity":
-                entityVisibility[clear.key] =
-                    PRESET_DEFINITIONS[preset.value].entities[clear.key];
-                return;
-        }
-    }
-
     function selectEntity(key: string): void {
         selectedKey.value = key;
         detailsPanelExpanded.value = false;
@@ -356,8 +330,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         ruptureDetailsOpen.value = false;
     }
 
-    function toggleFilterSection(key: FilterSectionKey): void {
-        filterSectionsOpen[key] = !filterSectionsOpen[key];
+    function setFilterTab(key: FilterTabKey): void {
+        filterTab.value = key;
     }
 
     function toggleDetailsPanel(): void {
@@ -497,7 +471,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         hoveredKey,
         controlSettingsOpen,
         ruptureDetailsOpen,
-        filterSectionsOpen,
+        filterTab,
         detailsPanelExpanded,
         filtersPanelCollapsed,
         shortcutsOpen,
@@ -562,7 +536,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         toggleControlSettings,
         toggleRuptureDetails,
         closeRuptureDetails,
-        toggleFilterSection,
+        setFilterTab,
         toggleDetailsPanel,
         centerSelection,
         canCenterOnPlayer,
@@ -571,7 +545,6 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         setPreset,
         applyPresetEntities,
         clearFilters,
-        clearFilterChip,
         toggleFiltersPanel,
         toggleEntity,
         resetMapView,

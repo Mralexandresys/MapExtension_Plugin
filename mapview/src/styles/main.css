@@ -157,7 +157,7 @@ h3,
     /* Width of the filters sidebar, and the left inset the centred overlays must
        respect. Without it the map toolbar centres on the whole stage and lands
        visibly off-centre over the actually visible map. */
-    --sidebar-width: min(320px, calc(100% - 420px));
+    --sidebar-width: min(392px, calc(100% - 420px));
     --sidebar-inset: 46px;
 }
 
@@ -731,6 +731,225 @@ textarea:focus-visible,
 
 
 
+/* ── Filter lists ────────────────────────────────────────────────────────
+   Shared by the filters sidebar and the world catalog: one readable line per
+   filter (state box, legend icon, label, count) instead of a wrapped chip
+   grid, plus the group header that carries its counter and bulk actions. */
+
+.filter-group {
+    display: grid;
+    gap: 6px;
+}
+
+.filter-group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 22px;
+}
+
+.filter-group-head h4 {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9fb2d4;
+}
+
+.filter-group-count {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--dim);
+}
+
+.filter-group-actions {
+    flex: 0 0 auto;
+    display: inline-flex;
+    gap: 4px;
+}
+
+.group-action {
+    min-height: 20px;
+    padding: 1px 7px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.group-action:hover {
+    color: var(--text);
+    background: rgba(34, 211, 238, 0.12);
+    border-color: var(--border-strong);
+}
+
+.filter-rows {
+    display: grid;
+    gap: 3px;
+}
+
+.filter-row {
+    display: grid;
+    grid-template-columns: 16px auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 38px;
+    padding: 4px 10px;
+    border: 1px solid transparent;
+    border-left: 2px solid transparent;
+    background: rgba(255, 255, 255, 0.028);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.84rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.14s, border-color 0.14s, opacity 0.14s;
+}
+
+/* Rows without a legend icon keep the label aligned with the ones that have. */
+.filter-row.no-icon {
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+}
+
+.filter-row:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: var(--border);
+}
+
+.filter-row.active {
+    background: var(--accent-soft);
+    border-color: rgba(34, 211, 238, 0.28);
+    border-left-color: var(--accent);
+}
+
+.filter-row:not(.active) {
+    color: var(--muted);
+}
+
+/* Checkbox affordance: the row is a toggle, and used to only differ by a
+   background tint that was easy to miss on a busy map. */
+.filter-row-check {
+    width: 16px;
+    height: 16px;
+    position: relative;
+    border: 1px solid rgba(168, 190, 221, 0.55);
+    background: rgba(8, 14, 26, 0.6);
+    transition: background 0.14s, border-color 0.14s;
+}
+
+.filter-row.active .filter-row-check {
+    border-color: var(--accent);
+    background: var(--accent);
+}
+
+.filter-row.active .filter-row-check::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 0;
+    width: 5px;
+    height: 10px;
+    border: solid #06202b;
+    border-width: 0 2px 2px 0;
+    transform: rotate(42deg);
+}
+
+/* Partial selection: a master switch that is on while some of its children are
+   off is neither state, and a plain tick used to claim "everything shown". */
+.filter-row.mixed .filter-row-check::after {
+    left: 2px;
+    top: 6px;
+    width: 10px;
+    height: 0;
+    border: 0;
+    border-top: 2px solid #06202b;
+    transform: none;
+}
+
+.filter-row.radio .filter-row-check {
+    border-radius: 999px;
+}
+
+.filter-row.radio.active .filter-row-check::after {
+    left: 3px;
+    top: 3px;
+    width: 8px;
+    height: 8px;
+    border: 0;
+    border-radius: 999px;
+    background: #06202b;
+    transform: none;
+}
+
+.filter-row-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Full sentences rather than entity names: let them wrap instead of clipping. */
+.filter-row.wrap {
+    padding: 8px 10px;
+}
+
+.filter-row.wrap .filter-row-label {
+    overflow: visible;
+    white-space: normal;
+    line-height: 1.35;
+}
+
+.filter-row-count {
+    flex: 0 0 auto;
+    min-width: 2.5rem;
+    padding: 2px 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #dbe6ff;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    line-height: 1.3;
+}
+
+.filter-row.active .filter-row-count {
+    background: rgba(34, 211, 238, 0.18);
+}
+
+/* "Enabled but nothing to show" used to look exactly like "enabled with
+   results", so a filter listing 0 elements read as active content. */
+.filter-row.empty .filter-row-label {
+    opacity: 0.45;
+}
+
+.filter-row.empty .filter-row-count {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--dim);
+}
+
+.filter-row-swatch {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 auto;
+    background: var(--swatch, #64748b);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
 .quick-filter-group {
     display: flex;
     flex-wrap: wrap;
@@ -862,7 +1081,7 @@ textarea:focus-visible,
     }
 
     .map-stage {
-        --sidebar-width: min(300px, calc(100% - 380px));
+        --sidebar-width: min(356px, calc(100% - 380px));
     }
 
 }
@@ -875,7 +1094,7 @@ textarea:focus-visible,
     }
 
     .map-stage {
-        --sidebar-width: min(280px, calc(100% - 400px));
+        --sidebar-width: min(324px, calc(100% - 340px));
     }
 
     .panel-top-row,

@@ -340,15 +340,15 @@ export interface HarvestOption {
     color: string;
 }
 
-export type FilterSectionKey = "visibility" | "harvest" | "behavior" | "catalog";
-
-export type FilterSectionsOpen = Record<FilterSectionKey, boolean>;
+/** The filters sidebar shows exactly one of these at a time. */
+export type FilterTabKey = "map" | "harvest" | "catalog" | "behavior";
 
 export interface MapFiltersPanelModel {
     collapsed: boolean;
-    sectionsOpen: FilterSectionsOpen;
+    activeTab: FilterTabKey;
     ui: Messages;
-    activeFilterChips: ActiveFilterChip[];
+    /** How many filters deviate from the preset; drives the header line only. */
+    activeFilterCount: number;
     preset: MapPreset;
     harvestResource: string | null;
     harvestOptions: HarvestOption[];

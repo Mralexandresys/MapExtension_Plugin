@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
 import type {
     MapStaticFiltersModel,
+    StaticFilterCategory,
     StaticFilterOption,
     StaticFilterToggle,
 } from "../../lib/types";
@@ -30,24 +31,69 @@ function toggleExpanded(key: string): void {
     expandedCategories.value[key] = !isExpanded(key);
 }
 
-function optionStyle(option: StaticFilterOption): Record<string, string> {
-    return { "--static-swatch": option.color ?? "#64748b" };
+function swatchStyle(option: StaticFilterOption): Record<string, string> {
+    return { "--swatch": option.color ?? "#64748b" };
 }
 
 function handleSearch(event: Event): void {
     emit("update:search", (event.target as HTMLInputElement).value);
 }
+
+function groupCount(options: StaticFilterOption[]): string {
+    const enabled = options.filter((option) => option.enabled).length;
+    return props.model.ui.filters.groupCount(enabled, options.length);
+}
+
+/** Catalog counts run into five digits; raw they read as one long number. */
+function formatCount(value: number): string {
+    return value.toLocaleString(props.model.ui.locale);
+}
+
+// A category is a master switch over its types: on with a few types turned off
+// is neither "everything shown" nor "nothing shown", and a plain tick claimed
+// the first. Mixed rows carry a dash instead.
+function isMixed(category: StaticFilterCategory): boolean {
+    if (!category.enabled || category.types.length === 0) return false;
+    return category.types.some((type) => !type.enabled);
+}
+
+/** No bulk endpoint per group: replay the toggles not already in that state. */
+function setOptionGroup(
+    options: StaticFilterOption[],
+    enabled: boolean,
+    toggle: (option: StaticFilterOption) => StaticFilterToggle,
+): void {
+    for (const option of options) {
+        if (option.enabled !== enabled) emit("toggle", toggle(option));
+    }
+}
+
+function setResourceTypes(category: StaticFilterCategory, enabled: boolean): void {
+    setOptionGroup(category.types, enabled, (option) => ({
+        scope: "resourceType",
+        key: option.key,
+    }));
+}
+
+// Only the resource and placement lists honour the search; when both come back
+// empty the remaining groups make it look like the search did nothing.
+const searchHasNoMatch = computed(
+    () =>
+        props.model.search.trim().length > 0 &&
+        props.model.resourceCategories.length === 0 &&
+        (!props.developerMode || props.model.placementSections.length === 0),
+);
 </script>
 
 <template>
     <div class="static-filters">
-        <!-- Title and loaded count live in the collapsible section header. -->
-        <p v-if="!model.available" class="static-hint">
+        <p v-if="!model.available" class="filter-section-help">
             {{ model.ui.staticFilters.unavailable }}
         </p>
 
         <template v-if="model.available">
-            <div class="static-filters-toolbar">
+            <!-- Search and bulk actions stay in reach while the lists scroll. -->
+            <div class="static-toolbar">
                 <label class="static-search-field">
                     <span class="sr-only">
                         {{ model.ui.staticFilters.searchLabel }}
@@ -70,148 +116,296 @@ function handleSearch(event: Event): void {
                 </div>
             </div>
 
-            <p v-if="model.loading" class="static-hint">
+            <p v-if="model.loading" class="filter-section-help">
                 {{ model.ui.staticFilters.loading }}
             </p>
-            <p v-else-if="model.error" class="static-hint static-error">
+            <p v-else-if="model.error" class="filter-section-help static-error">
                 {{ model.error }}
             </p>
+            <p v-else-if="searchHasNoMatch" class="filter-section-help static-nomatch">
+                {{ model.ui.staticFilters.noMatch }}
+            </p>
 
-            <div v-if="props.developerMode" class="chip-group static-chip-group">
-                <button
-                    v-for="layer in model.layers"
-                    :key="layer.key"
-                    class="chip-button"
-                    :class="{ active: layer.enabled, muted: !layer.enabled }"
-                    type="button"
-                    :aria-pressed="layer.enabled"
-                    @click="emit('toggle', { scope: 'layer', key: layer.key })"
-                >
-                    <span class="static-option-label">{{ layer.label }}</span>
-                    <strong class="filter-option-count">{{ layer.count }}</strong>
-                </button>
-            </div>
+            <section v-if="props.developerMode && model.layers.length" class="filter-group">
+                <header class="filter-group-head">
+                    <h4>{{ model.ui.staticFilters.layersTitle }}</h4>
+                    <span class="filter-group-count">{{ groupCount(model.layers) }}</span>
+                    <span class="filter-group-actions">
+                        <button
+                            class="group-action"
+                            type="button"
+                            @click="setOptionGroup(model.layers, true, (option) => ({ scope: 'layer', key: option.key }))"
+                        >
+                            {{ model.ui.filters.selectAll }}
+                        </button>
+                        <button
+                            class="group-action"
+                            type="button"
+                            @click="setOptionGroup(model.layers, false, (option) => ({ scope: 'layer', key: option.key }))"
+                        >
+                            {{ model.ui.filters.selectNone }}
+                        </button>
+                    </span>
+                </header>
+                <div class="filter-rows">
+                    <button
+                        v-for="layer in model.layers"
+                        :key="layer.key"
+                        class="filter-row no-icon"
+                        :class="{ active: layer.enabled, empty: layer.count === 0 }"
+                        type="button"
+                        :aria-pressed="layer.enabled"
+                        @click="emit('toggle', { scope: 'layer', key: layer.key })"
+                    >
+                        <span class="filter-row-check" aria-hidden="true"></span>
+                        <span class="filter-row-label" :title="layer.label">
+                            {{ layer.label }}
+                        </span>
+                        <span class="filter-row-count">{{ formatCount(layer.count) }}</span>
+                    </button>
+                </div>
+            </section>
 
-            <div
+            <section
                 v-if="props.developerMode && model.representations.length"
-                class="static-subsection"
+                class="filter-group"
             >
-                <h4>{{ model.ui.staticFilters.representationTitle }}</h4>
-                <p class="static-hint">{{ model.ui.staticFilters.representationHelp }}</p>
-                <div class="chip-group static-chip-group">
+                <header class="filter-group-head">
+                    <h4>{{ model.ui.staticFilters.representationTitle }}</h4>
+                    <span class="filter-group-count">
+                        {{ groupCount(model.representations) }}
+                    </span>
+                </header>
+                <p class="filter-section-help">
+                    {{ model.ui.staticFilters.representationHelp }}
+                </p>
+                <div class="filter-rows">
                     <button
                         v-for="representation in model.representations"
                         :key="representation.key"
-                        class="chip-button"
+                        class="filter-row no-icon"
                         :class="{
                             active: representation.enabled,
-                            muted: !representation.enabled,
+                            empty: representation.count === 0,
                         }"
                         type="button"
                         :aria-pressed="representation.enabled"
                         @click="emit('toggle', { scope: 'representation', key: representation.key })"
                     >
-                        <span class="static-option-label">{{ representation.label }}</span>
-                        <strong class="filter-option-count">{{ representation.count }}</strong>
+                        <span class="filter-row-check" aria-hidden="true"></span>
+                        <span class="filter-row-label" :title="representation.label">
+                            {{ representation.label }}
+                        </span>
+                        <span class="filter-row-count">
+                            {{ formatCount(representation.count) }}
+                        </span>
                     </button>
                 </div>
-            </div>
+            </section>
 
-            <div v-if="model.resourceCategories.length" class="static-subsection">
-                <h4>{{ model.ui.staticFilters.resourcesTitle }}</h4>
+            <section v-if="model.resourceCategories.length" class="filter-group">
+                <header class="filter-group-head">
+                    <h4>{{ model.ui.staticFilters.resourcesTitle }}</h4>
+                    <span class="filter-group-count">
+                        {{ groupCount(model.resourceCategories) }}
+                    </span>
+                    <span class="filter-group-actions">
+                        <button
+                            class="group-action"
+                            type="button"
+                            @click="setOptionGroup(model.resourceCategories, true, (option) => ({ scope: 'resourceCategory', key: option.key }))"
+                        >
+                            {{ model.ui.filters.selectAll }}
+                        </button>
+                        <button
+                            class="group-action"
+                            type="button"
+                            @click="setOptionGroup(model.resourceCategories, false, (option) => ({ scope: 'resourceCategory', key: option.key }))"
+                        >
+                            {{ model.ui.filters.selectNone }}
+                        </button>
+                    </span>
+                </header>
+
                 <div
                     v-for="category in model.resourceCategories"
                     :key="category.key"
                     class="static-category"
+                    :class="{ open: isExpanded(category.key) }"
                 >
                     <div class="static-category-head">
                         <button
-                            class="chip-button static-category-toggle"
-                            :class="{ active: category.enabled, muted: !category.enabled }"
+                            class="filter-row no-icon"
+                            :class="{
+                                active: category.enabled,
+                                mixed: isMixed(category),
+                                empty: category.count === 0,
+                            }"
                             type="button"
-                            :aria-pressed="category.enabled"
+                            :aria-pressed="isMixed(category) ? 'mixed' : category.enabled"
                             @click="emit('toggle', { scope: 'resourceCategory', key: category.key })"
                         >
-                            <span class="static-option-label">{{ category.label }}</span>
-                            <strong class="filter-option-count">{{ category.count }}</strong>
+                            <span class="filter-row-check" aria-hidden="true"></span>
+                            <span class="filter-row-label" :title="category.label">
+                                {{ category.label }}
+                            </span>
+                            <span class="filter-row-count">
+                                {{ formatCount(category.count) }}
+                            </span>
                         </button>
                         <button
-                            class="button subtle small static-expand"
+                            class="static-expand"
                             type="button"
                             :aria-expanded="isExpanded(category.key)"
+                            :title="
+                                isExpanded(category.key)
+                                    ? model.ui.staticFilters.collapse
+                                    : model.ui.staticFilters.expand
+                            "
                             :aria-label="`${category.label} - ${
                                 isExpanded(category.key)
-                                    ? model.ui.staticFilters.hideAll
-                                    : model.ui.staticFilters.showAll
+                                    ? model.ui.staticFilters.collapse
+                                    : model.ui.staticFilters.expand
                             }`"
                             @click="toggleExpanded(category.key)"
                         >
-                            <span aria-hidden="true">
-                                {{ isExpanded(category.key) ? "-" : "+" }}
-                            </span>
+                            <span
+                                class="collapse-arrow"
+                                :class="isExpanded(category.key) ? 'down' : 'right'"
+                                aria-hidden="true"
+                            ></span>
                         </button>
                     </div>
 
-                    <div v-if="isExpanded(category.key)" class="chip-group static-chip-group nested">
-                        <button
-                            v-for="type in category.types"
-                            :key="type.key"
-                            class="chip-button"
-                            :class="{ active: type.enabled, muted: !type.enabled }"
-                            type="button"
-                            :style="optionStyle(type)"
-                            :aria-pressed="type.enabled"
-                            @click="emit('toggle', { scope: 'resourceType', key: type.key })"
-                        >
-                            <span class="static-option-label">
-                                <span class="static-swatch" aria-hidden="true"></span>
-                                {{ type.label }}
+                    <div v-if="isExpanded(category.key)" class="static-nested">
+                        <div class="filter-group-head static-nested-head">
+                            <h4>{{ category.label }}</h4>
+                            <span class="filter-group-count">
+                                {{ groupCount(category.types) }}
                             </span>
-                            <strong class="filter-option-count">{{ type.count }}</strong>
-                        </button>
+                            <span class="filter-group-actions">
+                                <button
+                                    class="group-action"
+                                    type="button"
+                                    @click="setResourceTypes(category, true)"
+                                >
+                                    {{ model.ui.filters.selectAll }}
+                                </button>
+                                <button
+                                    class="group-action"
+                                    type="button"
+                                    @click="setResourceTypes(category, false)"
+                                >
+                                    {{ model.ui.filters.selectNone }}
+                                </button>
+                            </span>
+                        </div>
+
+                        <div class="filter-rows">
+                            <button
+                                v-for="type in category.types"
+                                :key="type.key"
+                                class="filter-row"
+                                :class="{ active: type.enabled, empty: type.count === 0 }"
+                                type="button"
+                                :style="swatchStyle(type)"
+                                :aria-pressed="type.enabled"
+                                @click="emit('toggle', { scope: 'resourceType', key: type.key })"
+                            >
+                                <span class="filter-row-check" aria-hidden="true"></span>
+                                <span class="filter-row-swatch" aria-hidden="true"></span>
+                                <span class="filter-row-label" :title="type.label">
+                                    {{ type.label }}
+                                </span>
+                                <span class="filter-row-count">
+                                    {{ formatCount(type.count) }}
+                                </span>
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div>
+            </section>
 
             <!-- Ore quality applies across every ore, so it sits beside the
                  resource list rather than inside one of its categories. -->
-            <div v-if="model.orePurities.length" class="static-subsection">
-                <h4>{{ model.ui.staticFilters.purityTitle }}</h4>
-                <p class="static-hint">{{ model.ui.staticFilters.purityHelp }}</p>
-                <div class="chip-group static-chip-group">
+            <section v-if="model.orePurities.length" class="filter-group">
+                <header class="filter-group-head">
+                    <h4>{{ model.ui.staticFilters.purityTitle }}</h4>
+                    <span class="filter-group-count">
+                        {{ groupCount(model.orePurities) }}
+                    </span>
+                    <span class="filter-group-actions">
+                        <button
+                            class="group-action"
+                            type="button"
+                            @click="setOptionGroup(model.orePurities, true, (option) => ({ scope: 'orePurity', key: option.key }))"
+                        >
+                            {{ model.ui.filters.selectAll }}
+                        </button>
+                        <button
+                            class="group-action"
+                            type="button"
+                            @click="setOptionGroup(model.orePurities, false, (option) => ({ scope: 'orePurity', key: option.key }))"
+                        >
+                            {{ model.ui.filters.selectNone }}
+                        </button>
+                    </span>
+                </header>
+                <p class="filter-section-help">{{ model.ui.staticFilters.purityHelp }}</p>
+                <div class="filter-rows">
                     <button
                         v-for="purity in model.orePurities"
                         :key="purity.key"
-                        class="chip-button"
-                        :class="{ active: purity.enabled, muted: !purity.enabled }"
+                        class="filter-row"
+                        :class="{ active: purity.enabled, empty: purity.count === 0 }"
                         type="button"
-                        :style="optionStyle(purity)"
+                        :style="swatchStyle(purity)"
                         :aria-pressed="purity.enabled"
                         @click="emit('toggle', { scope: 'orePurity', key: purity.key })"
                     >
-                        <span class="static-option-label">
-                            <span class="static-swatch" aria-hidden="true"></span>
+                        <span class="filter-row-check" aria-hidden="true"></span>
+                        <span class="filter-row-swatch" aria-hidden="true"></span>
+                        <span class="filter-row-label" :title="purity.label">
                             {{ purity.label }}
                         </span>
-                        <strong class="filter-option-count">{{ purity.count }}</strong>
+                        <span class="filter-row-count">{{ formatCount(purity.count) }}</span>
                     </button>
                 </div>
-            </div>
+            </section>
 
-            <div
+            <section
                 v-for="section in props.developerMode ? model.placementSections : []"
                 :key="section.layer"
-                class="static-subsection"
+                class="filter-group"
             >
-                <h4>{{ section.title }}</h4>
-                <div class="chip-group static-chip-group">
+                <header class="filter-group-head">
+                    <h4>{{ section.title }}</h4>
+                    <span class="filter-group-count">{{ groupCount(section.options) }}</span>
+                    <span class="filter-group-actions">
+                        <button
+                            class="group-action"
+                            type="button"
+                            @click="setOptionGroup(section.options, true, (option) => ({ scope: 'placementGroup', key: option.key, layer: section.layer }))"
+                        >
+                            {{ model.ui.filters.selectAll }}
+                        </button>
+                        <button
+                            class="group-action"
+                            type="button"
+                            @click="setOptionGroup(section.options, false, (option) => ({ scope: 'placementGroup', key: option.key, layer: section.layer }))"
+                        >
+                            {{ model.ui.filters.selectNone }}
+                        </button>
+                    </span>
+                </header>
+                <div class="filter-rows">
                     <button
                         v-for="option in section.options"
                         :key="option.key"
-                        class="chip-button"
-                        :class="{ active: option.enabled, muted: !option.enabled }"
+                        class="filter-row"
+                        :class="{ active: option.enabled, empty: option.count === 0 }"
                         type="button"
-                        :style="optionStyle(option)"
+                        :style="swatchStyle(option)"
                         :aria-pressed="option.enabled"
                         @click="
                             emit('toggle', {
@@ -221,14 +415,15 @@ function handleSearch(event: Event): void {
                             })
                         "
                     >
-                        <span class="static-option-label">
-                            <span class="static-swatch" aria-hidden="true"></span>
+                        <span class="filter-row-check" aria-hidden="true"></span>
+                        <span class="filter-row-swatch" aria-hidden="true"></span>
+                        <span class="filter-row-label" :title="option.label">
                             {{ option.label }}
                         </span>
-                        <strong class="filter-option-count">{{ option.count }}</strong>
+                        <span class="filter-row-count">{{ formatCount(option.count) }}</span>
                     </button>
                 </div>
-            </div>
+            </section>
         </template>
     </div>
 </template>
@@ -236,12 +431,21 @@ function handleSearch(event: Event): void {
 <style scoped>
 .static-filters {
     display: grid;
-    gap: 10px;
+    align-content: start;
+    gap: 14px;
 }
 
-.static-filters-toolbar {
+/* Sticky inside the scrolling tab body: with ~80k catalog elements the search
+   used to scroll out of reach after the first category. */
+.static-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     display: grid;
-    gap: 8px;
+    gap: 6px;
+    padding: 12px 0 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgb(13, 21, 38);
 }
 
 .static-search-field {
@@ -251,106 +455,78 @@ function handleSearch(event: Event): void {
 
 .static-search {
     width: 100%;
+    min-height: 34px;
     padding: 7px 10px;
-    border-radius: 10px;
     border: 1px solid var(--border);
     background: rgba(8, 14, 26, 0.6);
     color: inherit;
     font: inherit;
 }
 
-
 .static-bulk-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-}
-
-.static-subsection {
-    display: grid;
     gap: 6px;
 }
 
-.static-subsection h4 {
+.filter-section-help {
     margin: 0;
+    color: var(--muted);
     font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #9fb2d4;
-}
-
-.static-hint {
-    margin: 0;
-    font-size: 0.76rem;
-    color: #8fa3c6;
 }
 
 .static-error {
     color: #fca5a5;
 }
 
-.static-chip-group {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 6px;
-}
-
-.static-chip-group.nested {
-    padding-left: 10px;
-}
-
-.static-chip-group .chip-button {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    text-align: left;
-}
-
-.static-option-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.static-swatch {
-    width: 10px;
-    height: 10px;
-    flex: 0 0 auto;
-    border-radius: 3px;
-    background: var(--static-swatch, #64748b);
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+.static-nomatch {
+    color: var(--amber);
 }
 
 .static-category {
     display: grid;
-    gap: 6px;
+    gap: 3px;
+}
+
+.static-category + .static-category {
+    margin-top: 3px;
 }
 
 .static-category-head {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px;
-    align-items: center;
+    grid-template-columns: minmax(0, 1fr) 34px;
+    gap: 3px;
+    align-items: stretch;
 }
 
 .static-expand {
-    min-width: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.028);
+    color: var(--muted);
+    cursor: pointer;
+    transition: background 0.14s, color 0.14s, border-color 0.14s;
 }
 
-.filter-option-count {
-    flex: 0 0 auto;
-    min-width: 2.25rem;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-    color: #dbe6ff;
-    text-align: center;
-    font-size: 0.76rem;
-    line-height: 1.2;
+.static-expand:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: var(--border);
+    color: var(--text);
+}
+
+/* Indented and rule-marked, so a type row is never mistaken for a category. */
+.static-nested {
+    display: grid;
+    gap: 6px;
+    margin: 3px 0 6px 12px;
+    padding-left: 10px;
+    border-left: 1px solid rgba(34, 211, 238, 0.24);
+}
+
+.static-nested-head h4 {
+    color: var(--dim);
 }
 </style>

@@ -508,7 +508,9 @@ export function useStaticFiltersModel(options: {
                 enabled: filters.state.poiGroups[group] !== false,
                 color: groupColor(group),
             }))
-            .filter((option) => matchesSearch(option.label, option.key, needle))
+            // Deliberately not filtered by `needle`: the search box lives in the
+            // catalog tab, while these landmarks are listed in the map tab, and
+            // typing there used to silently shorten a list on another tab.
             .sort((left, right) => right.count - left.count);
 
         const byCategory = new Map<string, StaticFilterOption[]>();

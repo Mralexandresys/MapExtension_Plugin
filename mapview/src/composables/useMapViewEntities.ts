@@ -540,6 +540,10 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         // chipping it made "4 active filters" appear on a fresh preset click.
         const presetEntities = PRESET_DEFINITIONS[preset.value].entities;
         for (const option of entityToggleOptions.value) {
+            // `abandonedBase` is driven by the `abandoned_base` landmark, which
+            // already contributes its own entry; counting both listed
+            // "Abandoned bases" twice as soon as they were hidden.
+            if (option.key === "abandonedBase") continue;
             if (entityVisibility[option.key] === presetEntities[option.key]) continue;
             chips.push({
                 id: `entity:${option.key}`,
