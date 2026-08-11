@@ -5,10 +5,13 @@ import {
     DEFAULT_ENABLED_KINDS,
     DEFAULT_ENABLED_LAYERS,
     groupColor,
+    orePurityColor,
     resourceColor,
     STATIC_LAYER_KEYS,
+    STATIC_ORE_PURITY_LEVELS,
     STATIC_RESOURCE_KINDS,
     type StaticLayerKey,
+    type StaticOrePurity,
     type StaticMapManifest,
     type StaticPlacement,
     type StaticPointSeries,
@@ -47,6 +50,8 @@ export interface StaticFilterState {
     resourceTypes: Record<string, boolean>;
     resourceKinds: Record<string, boolean>;
     poiGroups: Record<string, boolean>;
+    /** Ore quality of extractor deposits, keyed by purity level. */
+    orePurities: Record<string, boolean>;
     /** Keyed by `${layer}:${group}`. */
     placementGroups: Record<string, boolean>;
 }
@@ -60,12 +65,15 @@ function createDefaultState(): StaticFilterState {
     for (const kind of STATIC_RESOURCE_KINDS) {
         resourceKinds[kind] = DEFAULT_ENABLED_KINDS.includes(kind);
     }
+    const orePurities: Record<string, boolean> = {};
+    for (const level of STATIC_ORE_PURITY_LEVELS) orePurities[level] = true;
     return {
         layers,
         resourceCategories: {},
         resourceTypes: {},
         resourceKinds,
         poiGroups: {},
+        orePurities,
         placementGroups: {},
     };
 }
@@ -109,6 +117,7 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         mergeRecord(state.resourceTypes, stored.resourceTypes);
         mergeRecord(state.resourceKinds, stored.resourceKinds);
         mergeRecord(state.poiGroups, stored.poiGroups);
+        mergeRecord(state.orePurities, stored.orePurities);
         mergeRecord(state.placementGroups, stored.placementGroups);
     }
 
@@ -180,6 +189,20 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         if (series.layer !== "resource") return true;
         if (state.resourceKinds[series.kind] === false) return false;
         return isResourceTypeEnabled(series.group, series.category);
+    }
+
+    /**
+     * Ore quality is a per-point attribute of the deposit series, so it is
+     * filtered point by point by the renderer and the hit-test rather than by
+     * dropping a whole series.
+     */
+    function isOrePurityVisible(code: number): boolean {
+        const level = STATIC_ORE_PURITY_LEVELS[code] ?? "unknown";
+        return state.orePurities[level] !== false;
+    }
+
+    function toggleOrePurity(level: StaticOrePurity): void {
+        state.orePurities[level] = state.orePurities[level] === false;
     }
 
     function isPlacementGroupEnabled(layer: StaticLayerKey, group: string): boolean {
@@ -346,6 +369,9 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         for (const key of Object.keys(liveResourceTypes)) {
             state.resourceTypes[key] = enabled;
         }
+        for (const level of STATIC_ORE_PURITY_LEVELS) {
+            state.orePurities[level] = enabled;
+        }
         if (!value) return;
         for (const [typeId, entry] of Object.entries(value.resource_types)) {
             state.resourceTypes[typeId] = enabled;
@@ -370,6 +396,7 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
             state.resourceCategories[key] = true;
         }
         for (const key of Object.keys(state.poiGroups)) state.poiGroups[key] = true;
+        Object.assign(state.orePurities, defaults.orePurities);
         for (const key of Object.keys(state.placementGroups)) {
             state.placementGroups[key] = true;
         }
@@ -401,6 +428,8 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         activeLayerCount,
         isLayerEnabled,
         isSeriesVisible,
+        isOrePurityVisible,
+        toggleOrePurity,
         isPlacementGroupEnabled,
         isPlacementVisible,
         isPoiGroupEnabled,
@@ -547,6 +576,26 @@ export function useStaticFiltersModel(options: {
             }),
         ).filter((option) => option.count > 0);
 
+        // Ore quality of the extractor deposits, summed over every ore that
+        // carries one. Absent when no deposit is in the catalog.
+        const purityCounts: Partial<Record<StaticOrePurity, number>> = {};
+        for (const entry of Object.values(catalog?.resource_types ?? {})) {
+            for (const [level, count] of Object.entries(entry.purity_counts ?? {})) {
+                const key = level as StaticOrePurity;
+                purityCounts[key] = (purityCounts[key] ?? 0) + count;
+            }
+        }
+
+        const orePurities: StaticFilterOption[] = STATIC_ORE_PURITY_LEVELS.map(
+            (level) => ({
+                key: level,
+                label: messages.purities[level],
+                count: purityCounts[level] ?? 0,
+                enabled: filters.state.orePurities[level] !== false,
+                color: orePurityColor(level),
+            }),
+        ).filter((option) => option.count > 0);
+
         const sectionTitles: Record<string, string> = {
             building: messages.buildingsTitle,
             zone: messages.zonesTitle,
@@ -583,6 +632,7 @@ export function useStaticFiltersModel(options: {
             poiGroups,
             resourceCategories,
             representations,
+            orePurities,
             placementSections,
         };
     });
@@ -608,6 +658,9 @@ export function applyStaticFilterToggle(
             return;
         case "representation":
             filters.toggleResourceKind(toggle.key as StaticResourceKind);
+            return;
+        case "orePurity":
+            filters.toggleOrePurity(toggle.key as StaticOrePurity);
             return;
         case "placementGroup":
             filters.togglePlacementGroup(

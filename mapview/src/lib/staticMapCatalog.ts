@@ -36,6 +36,15 @@ export const STATIC_RESOURCE_KINDS: readonly StaticResourceKind[] = [
     "deposit",
 ];
 
+export type StaticOrePurity = "unknown" | "impure" | "normal" | "pure";
+
+export const STATIC_ORE_PURITY_LEVELS: readonly StaticOrePurity[] = [
+    "unknown",
+    "impure",
+    "normal",
+    "pure",
+];
+
 /** Resource representations shown by default. */
 export const DEFAULT_ENABLED_KINDS: readonly StaticResourceKind[] = [
     "pcg",
@@ -65,8 +74,7 @@ export interface StaticResourceType {
     fr: string;
     counts: Partial<Record<StaticResourceKind, number>>;
     total: number;
-    /** Ore instances folded into the `deposit` markers, when the type has any. */
-    deposit_rocks?: number;
+    purity_counts?: Partial<Record<StaticOrePurity, number>>;
 }
 
 export interface StaticMapManifest {
@@ -90,8 +98,8 @@ interface RawResourceGroup {
     x: number[];
     y: number[];
     z: number[];
-    /** Rocks folded into each marker; `deposit` groups only. */
-    w?: number[];
+    /** Per-point index into `STATIC_ORE_PURITY_LEVELS`; extractor deposits only. */
+    p?: number[];
 }
 
 interface RawResourcePart {
@@ -158,11 +166,8 @@ export interface StaticPointSeries {
     z: Int16Array;
     /** Per-point dynamic state, filled from live plugin observations. */
     state: Uint8Array;
-    /**
-     * Rocks represented by each point. Only `deposit` series carry one: an ore
-     * field is published as one marker per 80 m cell rather than one per rock.
-     */
-    weight: Uint16Array | null;
+    /** Ore purity inferred from an explicit mesh marker near each extractor socket. */
+    purity: Uint8Array | null;
 }
 
 export interface StaticBox {
@@ -249,7 +254,6 @@ const GROUP_COLORS: Record<string, string> = {
     exclusion_zone: "#ef4444",
     spawn_region: "#3b82f6",
     resource_marker: "#eab308",
-    deposit_socket: "#14b8a6",
     poi_proxy: "#475569",
 };
 
@@ -266,6 +270,38 @@ export const STATE_CODES: readonly StaticElementState[] = [
     "depleted",
     "permanently_depleted",
 ];
+
+/**
+ * Ore quality palette. A deposit keeps the hue of its ore so the map still
+ * reads by resource; quality is carried by brightness and marker size, and
+ * these swatches label the filter chips.
+ */
+const ORE_PURITY_COLORS: Record<StaticOrePurity, string> = {
+    unknown: "#64748b",
+    impure: "#b45309",
+    normal: "#cbd5e1",
+    pure: "#67e8f9",
+};
+
+/** Brightness applied to the ore colour, per quality level. */
+export const ORE_PURITY_BRIGHTNESS: Record<StaticOrePurity, number> = {
+    unknown: 0.7,
+    impure: 0.55,
+    normal: 1,
+    pure: 1.6,
+};
+
+/** Extra pixels added to the marker, per quality level. */
+export const ORE_PURITY_SIZE_BONUS: Record<StaticOrePurity, number> = {
+    unknown: 2,
+    impure: 2,
+    normal: 3,
+    pure: 5,
+};
+
+export function orePurityColor(level: StaticOrePurity): string {
+    return ORE_PURITY_COLORS[level] ?? ORE_PURITY_COLORS.unknown;
+}
 
 function hashColor(identifier: string): string {
     let hash = 0;
@@ -385,7 +421,7 @@ function decodeResourcePart(
             y,
             z,
             state: new Uint8Array(count),
-            weight: group.w ? Uint16Array.from(group.w) : null,
+            purity: group.p ? Uint8Array.from(group.p) : null,
         };
     });
 }

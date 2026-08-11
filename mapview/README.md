@@ -102,7 +102,7 @@ Les quatre prereglages repondent chacun a une question de joueur et pilotent d'u
 | `Recolte` | Ou est la ressource que je collecte maintenant ? | Une seule ressource a la fois + grottes |
 | `Technique` | Que contient l'export brut ? | Placements, zones, sockets et proxies (mode developpeur) |
 
-Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` (389 sockets `BP_OreSocket`, minerai non identifie) reste masque. Les chips de filtres actifs ne listent que les ecarts par rapport au prereglage courant.
+Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` (12 sockets `BP_OreSocket` que les donnees disponibles ne permettent pas d'attribuer avec fiabilite) reste masque. Les chips de filtres actifs ne listent que les ecarts par rapport au prereglage courant.
 
 ### Zones et elements de generation
 
@@ -123,7 +123,10 @@ points utiles a la lecture de la generation :
 | Filtre Map View | Categorie exportee | Role |
 |---|---|---|
 | `Marqueurs de ressources` | `resource_spawn_marker` | Point fixe servant de centre ou d'ancrage a une generation de ressource. |
-| `Sockets de depots` | `resource_deposit_socket` | Emplacement fixe prevu pour accueillir un gisement de minerai. |
+
+Les `resource_deposit_socket` ne figurent plus dans cette couche technique : ils
+sont exposes comme ressources `deposit` dans la couche Minerais afin d'etre
+visibles et filtrables avec le minerai correspondant.
 
 `WorldSpawnerRegionExcluder` n'est pas present comme categorie dans le catalogue
 exporte et n'est donc pas affiche. Les cellules World Partition et les Data Layers
@@ -133,25 +136,25 @@ zone statique dessinee sur la carte.
 
 ### Gisements de minerai
 
-Le titane, le wolfram et le calcium n'existent dans l'export que sous forme
-d'instances HISM, une par rocher : 150 732 rochers de titane, 80 936 de goethite,
-16 952 de wolfram. Ils etaient donc simplement absents du catalogue. Le builder
-les regroupe desormais par cellules de 80 m et publie un marqueur par cellule,
-place sur le centroide des rochers qu'il couvre et portant leur nombre. C'est la
-troisieme representation de ressource, `deposit`, a cote de `pcg` et `actor` :
+Les zones de minerai qui demandent d'y placer un batiment sont publiees comme
+points `deposit`, un par `resource_deposit_socket`. Elles sont distinctes des
+rochers HISM minables a la main, qui ne sont pas affiches. Les classes de socket
+identifient directement la goethite, le soufre et l'helium-3 ; le type des sockets
+generiques est determine par le minerai HISM le plus proche, sans publier ce
+minerai sur la carte.
 
-| Ressource | Rochers | Marqueurs |
-|---|---|---|
-| `titanium` | 150 732 | 234 |
-| `goethite` | 80 936 | 439 |
-| `wolfram` | 16 952 | 95 |
-| `sulphur` | 4 111 | 65 |
-| `calcium` | 2 726 | 116 |
-| `helium_3` | 1 258 | 40 |
+Chaque filon porte une qualite, les trois niveaux de `EOrePurityLevel` cote jeu :
+`Impure`, `Normale` ou `Pure`. Elle est determinee par le mesh de purete explicite
+le plus proche du meme minerai. Quand l'export ne fournit aucun marqueur de qualite
+suffisamment proche, la valeur reste `Inconnue` afin de ne pas inventer une
+information : sur les 660 filons, 95 sont impurs, 118 normaux, 164 purs et 283
+indetermines.
 
-Le marqueur grossit avec la densite du gisement (echelle logarithmique) et le
-panneau de selection indique le nombre de rochers regroupes. Les instances HISM
-de plantes restent exclues : elles doublonnent les points de recolte deja publies.
+La qualite se lit directement sur la carte, sans ouvrir le panneau : le marqueur
+garde la couleur de son minerai et la qualite joue sur sa luminosite et sa taille
+(pur = plus clair et plus gros, impur = plus sombre et plus petit). Elle est aussi
+filtrable, section `Qualite du filon` du catalogue, ce qui permet de n'afficher que
+les filons purs. Le panneau de selection continue d'indiquer la valeur exacte.
 
 Les libelles EN/FR viennent des tables d'items du jeu embarquees dans l'export
 (`item.item_name`), donc le catalogue affiche les noms officiels : `Minerai de

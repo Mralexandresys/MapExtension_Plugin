@@ -67,6 +67,7 @@ const props = defineProps<{
   staticSelection?: StaticSelection | null;
   staticSeriesVisible?: (entry: StaticPointSeries) => boolean;
   staticPlacementVisible?: (entry: StaticPlacement) => boolean;
+  staticOrePurityVisible?: (code: number) => boolean;
   staticPoiVisible?: (entry: StaticMapPoiView) => boolean;
   staticPick?: (x: number, y: number, radius: number) => StaticSelection | null;
   staticDescribe?: (selection: StaticSelection) => { title: string; lines: string[] };
@@ -723,6 +724,10 @@ const staticSeriesVisible = computed(() => props.staticSeriesVisible ?? noStatic
 const staticPlacementVisible = computed(
   () => props.staticPlacementVisible ?? noStaticPlacement,
 );
+const allOrePurities = () => true;
+const staticOrePurityVisible = computed(
+  () => props.staticOrePurityVisible ?? allOrePurities,
+);
 const visibleStaticPois = computed(() => {
   const entries = props.staticPois ?? [];
   const isVisible = props.staticPoiVisible;
@@ -916,6 +921,7 @@ defineExpose({
       :placements="staticPlacementList"
       :is-series-visible="staticSeriesVisible"
       :is-placement-visible="staticPlacementVisible"
+      :is-ore-purity-visible="staticOrePurityVisible"
       :projection="projection"
       :map-scale="mapScale"
       :map-translate-x="mapTranslateX"

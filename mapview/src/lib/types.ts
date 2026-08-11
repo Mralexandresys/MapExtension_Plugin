@@ -377,6 +377,7 @@ export type StaticFilterScope =
     | "resourceCategory"
     | "resourceType"
     | "representation"
+    | "orePurity"
     | "placementGroup";
 
 export interface StaticFilterToggle {
@@ -415,6 +416,8 @@ export interface MapStaticFiltersModel {
     poiGroups: StaticFilterOption[];
     resourceCategories: StaticFilterCategory[];
     representations: StaticFilterOption[];
+    /** Ore quality of the extractor deposits; empty when none are loaded. */
+    orePurities: StaticFilterOption[];
     placementSections: StaticFilterPlacementSection[];
 }
 

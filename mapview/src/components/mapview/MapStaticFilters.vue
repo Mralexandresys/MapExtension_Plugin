@@ -173,6 +173,31 @@ function handleSearch(event: Event): void {
                 </div>
             </div>
 
+            <!-- Ore quality applies across every ore, so it sits beside the
+                 resource list rather than inside one of its categories. -->
+            <div v-if="model.orePurities.length" class="static-subsection">
+                <h4>{{ model.ui.staticFilters.purityTitle }}</h4>
+                <p class="static-hint">{{ model.ui.staticFilters.purityHelp }}</p>
+                <div class="chip-group static-chip-group">
+                    <button
+                        v-for="purity in model.orePurities"
+                        :key="purity.key"
+                        class="chip-button"
+                        :class="{ active: purity.enabled, muted: !purity.enabled }"
+                        type="button"
+                        :style="optionStyle(purity)"
+                        :aria-pressed="purity.enabled"
+                        @click="emit('toggle', { scope: 'orePurity', key: purity.key })"
+                    >
+                        <span class="static-option-label">
+                            <span class="static-swatch" aria-hidden="true"></span>
+                            {{ purity.label }}
+                        </span>
+                        <strong class="filter-option-count">{{ purity.count }}</strong>
+                    </button>
+                </div>
+            </div>
+
             <div
                 v-for="section in props.developerMode ? model.placementSections : []"
                 :key="section.layer"

@@ -46,15 +46,17 @@ RAW_KIND_TO_KIND = {
     "resource_point": "pcg",
     "resource_actor": "actor",
 }
-
-# Ore fields are exported as one HISM instance per rock: 150 732 titanium rocks,
-# 80 936 goethite, 16 952 wolfram. Drawing them one by one is unreadable and
-# titanium/wolfram/calcium have no point or actor representation at all, so they
-# were simply missing from the catalog. Instances are binned into square cells
-# and published as one "deposit" marker per cell, positioned on the centroid of
-# the rocks it covers and carrying their count.
-DEPOSIT_CELL_CM = 8000.0  # 80 m
-DEPOSIT_CATEGORIES = ("mineral",)
+ORE_PURITY_LEVELS = ("unknown", "impure", "normal", "pure")
+ORE_LOOKUP_CELL_CM = 5000.0
+ORE_LOOKUP_MAX_RADIUS = 20
+ORE_SOCKET_RESOURCE_MAX_CM = 2500.0
+ORE_SOCKET_PURITY_MAX_CM = 8000.0
+GENERIC_ORE_SOCKET_RESOURCES = {"titanium", "wolfram", "calcium"}
+ORE_SOCKET_RESOURCES = {
+    "BP_GoethiteOreSocket_C": "goethite",
+    "BP_SulphurSocket_C": "sulphur",
+    "BP_HeliumSocket_C": "helium_3",
+}
 
 # Placement category -> (layer, group). Groups drive the filter tree.
 PLACEMENT_LAYERS: dict[str, tuple[str, str]] = {
@@ -72,7 +74,7 @@ PLACEMENT_LAYERS: dict[str, tuple[str, str]] = {
     "resource_exclusion_zone": ("zone", "exclusion_zone"),
     "world_spawn_region": ("zone", "spawn_region"),
     "resource_spawn_marker": ("technical", "resource_marker"),
-    "resource_deposit_socket": ("technical", "deposit_socket"),
+
     "point_of_interest": ("technical", "poi_proxy"),
 }
 
@@ -171,6 +173,60 @@ def sort_key(point: tuple[int, ...]) -> tuple[int, int, int, int]:
     return (y // SORT_CELL, x // SORT_CELL, x, y)
 
 
+def ore_purity(static_mesh_path: str | None) -> str:
+    """Return an explicit ore purity token, without guessing ambiguous meshes."""
+    separated = CAMEL_BOUNDARY.sub("_", static_mesh_path or "")
+    tokens = {token.lower() for token in NON_ALNUM.split(separated) if token}
+    matches = [level for level in ORE_PURITY_LEVELS[1:] if level in tokens]
+    return matches[0] if len(matches) == 1 else "unknown"
+
+
+def nearest_ore(
+    cells: dict[tuple[int, int], list[tuple[float, float, str]]],
+    x_cm: float,
+    y_cm: float,
+) -> tuple[float, str] | None:
+    cell_x = math.floor(x_cm / ORE_LOOKUP_CELL_CM)
+    cell_y = math.floor(y_cm / ORE_LOOKUP_CELL_CM)
+    best: tuple[float, str] | None = None
+    for radius in range(ORE_LOOKUP_MAX_RADIUS + 1):
+        for offset_x in range(-radius, radius + 1):
+            for offset_y in range(-radius, radius + 1):
+                if radius and max(abs(offset_x), abs(offset_y)) != radius:
+                    continue
+                for ore_x, ore_y, resource_id in cells.get((cell_x + offset_x, cell_y + offset_y), []):
+                    distance_squared = (ore_x - x_cm) ** 2 + (ore_y - y_cm) ** 2
+                    if best is None or distance_squared < best[0]:
+                        best = (distance_squared, resource_id)
+        if best is not None and math.sqrt(best[0]) <= max(1, radius) * ORE_LOOKUP_CELL_CM:
+            break
+    return best
+
+
+def nearest_ore_purity(
+    cells: dict[tuple[str, int, int], list[tuple[float, float, str]]],
+    resource_id: str,
+    x_cm: float,
+    y_cm: float,
+) -> tuple[float, str] | None:
+    cell_x = math.floor(x_cm / ORE_LOOKUP_CELL_CM)
+    cell_y = math.floor(y_cm / ORE_LOOKUP_CELL_CM)
+    best: tuple[float, str] | None = None
+    for radius in range(ORE_LOOKUP_MAX_RADIUS + 1):
+        for offset_x in range(-radius, radius + 1):
+            for offset_y in range(-radius, radius + 1):
+                if radius and max(abs(offset_x), abs(offset_y)) != radius:
+                    continue
+                key = (resource_id, cell_x + offset_x, cell_y + offset_y)
+                for ore_x, ore_y, purity in cells.get(key, []):
+                    distance_squared = (ore_x - x_cm) ** 2 + (ore_y - y_cm) ** 2
+                    if best is None or distance_squared < best[0]:
+                        best = (distance_squared, purity)
+        if best is not None and math.sqrt(best[0]) <= max(1, radius) * ORE_LOOKUP_CELL_CM:
+            break
+    return best
+
+
 def delta_encode(points: list[tuple[int, ...]]) -> dict[str, list[int]]:
     xs: list[int] = []
     ys: list[int] = []
@@ -199,20 +255,21 @@ def log(message: str) -> None:
 # ── Resources ─────────────────────────────────────────────────────────────────
 
 
-def build_resources(path: Path) -> tuple[dict[str, list[dict[str, Any]]], dict[str, dict[str, Any]]]:
+def build_resources(
+    path: Path,
+    placements_path: Path,
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, dict[str, Any]]]:
     """Return per-category delta-encoded groups plus the resource type table."""
 
-    # (category, type, kind) -> list of quantized points
-    buckets: dict[tuple[str, str, str], list[tuple[int, int, int]]] = defaultdict(list)
-    # (category, type) -> cell -> [sum_x_cm, sum_y_cm, sum_z_cm, rocks]
-    deposit_cells: dict[tuple[str, str], dict[tuple[int, int], list[float]]] = defaultdict(
-        lambda: defaultdict(lambda: [0.0, 0.0, 0.0, 0.0])
-    )
+    # (category, type, kind) -> quantized points plus an ore-purity code.
+    buckets: dict[tuple[str, str, str], list[tuple[int, int, int, int]]] = defaultdict(list)
     type_labels: dict[str, dict[str, str]] = {}
     type_items: dict[str, dict[str, str]] = {}
     type_category: dict[str, str] = {}
+    ore_cells: dict[tuple[int, int], list[tuple[float, float, str]]] = defaultdict(list)
+    purity_cells: dict[tuple[str, int, int], list[tuple[float, float, str]]] = defaultdict(list)
     total = 0
-    hism_binned = 0
+    hism_indexed = 0
     hism_dropped = 0
 
     for entry in read_jsonl(path):
@@ -242,20 +299,20 @@ def build_resources(path: Path) -> tuple[dict[str, list[dict[str, Any]]], dict[s
         if localized and type_id not in type_labels:
             type_labels[type_id] = {"fr": localized}
 
+        # HISM meshes are hand-mineable rocks, not the extractor deposits shown
+        # in the viewer. Keep only a lightweight spatial index so each ore socket
+        # can inherit its resource and any explicit nearby purity marker.
         if is_hism:
-            # Plants are already published one point per harvestable spawn; only
-            # ore fields need the per-rock instances folded into deposits.
-            if category not in DEPOSIT_CATEGORIES:
+            if category != "mineral":
                 hism_dropped += 1
                 continue
-            type_category.setdefault(type_id, category)
-            cell = (int(x_cm // DEPOSIT_CELL_CM), int(y_cm // DEPOSIT_CELL_CM))
-            accumulator = deposit_cells[(category, type_id)][cell]
-            accumulator[0] += x_cm
-            accumulator[1] += y_cm
-            accumulator[2] += position.get("z") or 0.0
-            accumulator[3] += 1.0
-            hism_binned += 1
+            cell_x = math.floor(x_cm / ORE_LOOKUP_CELL_CM)
+            cell_y = math.floor(y_cm / ORE_LOOKUP_CELL_CM)
+            ore_cells[(cell_x, cell_y)].append((x_cm, y_cm, type_id))
+            purity = ore_purity(entry.get("static_mesh_path"))
+            if purity != "unknown":
+                purity_cells[(type_id, cell_x, cell_y)].append((x_cm, y_cm, purity))
+            hism_indexed += 1
             continue
 
         type_category.setdefault(type_id, category)
@@ -263,65 +320,74 @@ def build_resources(path: Path) -> tuple[dict[str, list[dict[str, Any]]], dict[s
             quantize(x_cm, POSITION_SCALE_CM),
             quantize(y_cm, POSITION_SCALE_CM),
             quantize(position.get("z"), ALTITUDE_SCALE_CM),
+            ORE_PURITY_LEVELS.index("unknown"),
         )
-
         buckets[(category, type_id, kind)].append(point)
 
+    socket_count = 0
+    for entry in read_jsonl(placements_path):
+        if entry.get("category") != "resource_deposit_socket":
+            continue
+        position = entry.get("position_cm") or {}
+        x_cm = position.get("x")
+        y_cm = position.get("y")
+        if x_cm is None or y_cm is None:
+            continue
+
+        resource_id = ORE_SOCKET_RESOURCES.get(entry.get("actor_type") or "")
+        if resource_id is None:
+            nearest = nearest_ore(ore_cells, x_cm, y_cm)
+            if (
+                nearest is None
+                or math.sqrt(nearest[0]) > ORE_SOCKET_RESOURCE_MAX_CM
+                or nearest[1] not in GENERIC_ORE_SOCKET_RESOURCES
+            ):
+                resource_id = "unknown_ore"
+            else:
+                resource_id = nearest[1]
+
+        purity = "unknown"
+        nearest_purity = nearest_ore_purity(purity_cells, resource_id, x_cm, y_cm)
+        if nearest_purity is not None and math.sqrt(nearest_purity[0]) <= ORE_SOCKET_PURITY_MAX_CM:
+            purity = nearest_purity[1]
+
+        type_category.setdefault(resource_id, "mineral")
+        buckets[("mineral", resource_id, "deposit")].append(
+            (
+                quantize(x_cm, POSITION_SCALE_CM),
+                quantize(y_cm, POSITION_SCALE_CM),
+                quantize(position.get("z"), ALTITUDE_SCALE_CM),
+                ORE_PURITY_LEVELS.index(purity),
+            )
+        )
+        socket_count += 1
+
     log(
-        f"resources: {total} rows, {hism_binned} HISM instances binned into deposits, "
-        f"{hism_dropped} HISM instances excluded"
+        f"resources: {total} rows, {hism_indexed} mineral HISM instances indexed but not published, "
+        f"{hism_dropped} plant HISM instances excluded, {socket_count} extractor deposits published"
     )
 
     groups_by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
     counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    deposit_rocks: dict[str, int] = defaultdict(int)
+    purity_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     for (category, type_id, kind), points in sorted(buckets.items()):
         if not points:
             continue
         points.sort(key=sort_key)
         encoded = delta_encode(points)
-        groups_by_category[category].append(
-            {
-                "t": type_id,
-                "k": RESOURCE_KINDS.index(kind),
-                "n": len(points),
-                **encoded,
-            }
-        )
+        group: dict[str, Any] = {
+            "t": type_id,
+            "k": RESOURCE_KINDS.index(kind),
+            "n": len(points),
+            **encoded,
+        }
+        if kind == "deposit":
+            group["p"] = [point[3] for point in points]
+            for point in points:
+                purity_counts[type_id][ORE_PURITY_LEVELS[point[3]]] += 1
+        groups_by_category[category].append(group)
         counts[type_id][kind] += len(points)
-
-    deposit_index = RESOURCE_KINDS.index("deposit")
-    for (category, type_id), cells in sorted(deposit_cells.items()):
-        # One marker per cell, on the centroid of its rocks rather than on the
-        # cell centre, so a deposit straddling a boundary still reads correctly.
-        rows: list[tuple[int, int, int, int]] = []
-        for sum_x, sum_y, sum_z, rocks in cells.values():
-            if rocks <= 0:
-                continue
-            rows.append(
-                (
-                    quantize(sum_x / rocks, POSITION_SCALE_CM),
-                    quantize(sum_y / rocks, POSITION_SCALE_CM),
-                    quantize(sum_z / rocks, ALTITUDE_SCALE_CM),
-                    int(rocks),
-                )
-            )
-        if not rows:
-            continue
-        rows.sort(key=sort_key)
-        groups_by_category[category].append(
-            {
-                "t": type_id,
-                "k": deposit_index,
-                "n": len(rows),
-                **delta_encode(rows),
-                "w": [row[3] for row in rows],
-            }
-        )
-        counts[type_id]["deposit"] += len(rows)
-        deposit_rocks[type_id] += sum(row[3] for row in rows)
-        log(f"  deposits {type_id}: {sum(row[3] for row in rows)} rocks -> {len(rows)} markers")
 
     types: dict[str, dict[str, Any]] = {}
     for type_id, kind_counts in counts.items():
@@ -340,8 +406,12 @@ def build_resources(path: Path) -> tuple[dict[str, list[dict[str, Any]]], dict[s
             "counts": {kind: kind_counts.get(kind, 0) for kind in RESOURCE_KINDS if kind_counts.get(kind)},
             "total": sum(kind_counts.values()),
         }
-        if deposit_rocks.get(type_id):
-            entry_types["deposit_rocks"] = deposit_rocks[type_id]
+        if purity_counts.get(type_id):
+            entry_types["purity_counts"] = {
+                level: purity_counts[type_id].get(level, 0)
+                for level in ORE_PURITY_LEVELS
+                if purity_counts[type_id].get(level)
+            }
         types[type_id] = entry_types
 
     return groups_by_category, types
@@ -560,7 +630,10 @@ def main() -> int:
         )
         log(f"{part_id}: {len(payload['rows'])} rows -> {size / 1024:.0f} KiB")
 
-    resource_groups, resource_types = build_resources(source / "map_v2_resources.jsonl")
+    resource_groups, resource_types = build_resources(
+        source / "map_v2_resources.jsonl",
+        source / "map_v2_placements.jsonl",
+    )
     for category, groups in sorted(resource_groups.items()):
         part_id = f"resources-{category}"
         count = sum(group["n"] for group in groups)

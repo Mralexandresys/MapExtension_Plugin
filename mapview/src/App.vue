@@ -460,6 +460,7 @@ function pickStatic(
         radius,
         isStaticSeriesVisible,
         isStaticPlacementVisible,
+        staticFilters.isOrePurityVisible,
     );
 }
 
@@ -503,10 +504,10 @@ function staticDetailRows(selection: StaticSelection): DetailRow[] {
                 value: messages.representations[selection.representation],
             });
         }
-        if (selection.weight !== undefined) {
+        if (selection.purity) {
             rows.push({
-                label: messages.details.depositRocks,
-                value: String(selection.weight),
+                label: messages.details.purity,
+                value: messages.purities[selection.purity],
             });
         }
         rows.push({
@@ -772,6 +773,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 :static-selection="staticSelection"
                 :static-series-visible="isStaticSeriesVisible"
                 :static-placement-visible="isStaticPlacementVisible"
+                :static-ore-purity-visible="staticFilters.isOrePurityVisible"
                 :static-poi-visible="isStaticPoiVisible"
                 :static-pick="pickStatic"
                 :static-describe="describeStatic"

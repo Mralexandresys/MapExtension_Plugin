@@ -138,7 +138,7 @@ python3 tools/build_map_data.py
 
 `analyse_map/` is a strictly local, ignored input and must not be committed. The generated `mapview/public/map-data/*.js` files are build inputs and must be committed because CI does not have the raw exports.
 
-The format uses integer world decimetres, metre altitudes, dictionary/group indexes, locality sorting, and delta-encoded coordinate arrays. Multi-mesh HISM duplicates are merged within 50 cm; PCG points covered by nearby HISM instances are tagged separately so the viewer can hide them by default. Placements are split into building, zone, and technical parts, and supported box shapes retain a projected ground footprint.
+The format uses integer world decimetres, metre altitudes, dictionary/group indexes, locality sorting, and delta-encoded coordinate arrays. Hand-mineable HISM rocks are not published. Instead, each `resource_deposit_socket` becomes one `deposit` resource point for an extractor building; specialized socket classes provide the resource, while generic sockets use the nearest mineral HISM solely for classification. An optional parallel array carries purity inferred from the nearest explicit same-resource mesh marker (`unknown`, `impure`, `normal`, or `pure`). Placements are split into building, zone, and technical parts, and supported box shapes retain a projected ground footprint.
 
 The files contain compact JSON wrapped as `SRMAPDATA(<payload>);`. This JSONP wrapper is intentional: browsers commonly block `fetch()` from a page opened through `file://`, while classic relative `<script src>` loading remains available. Do not replace it with `fetch()` unless the distribution model changes to an HTTP-served viewer.
 

@@ -218,6 +218,9 @@ export const en = {
         resourcesTitle: "Resources",
         representationTitle: "Representation",
         representationHelp: "Choose which source the displayed points come from.",
+        purityTitle: "Ore quality",
+        purityHelp:
+            "Quality of the extractor deposits. Brighter and larger markers are purer.",
         buildingsTitle: "Buildings",
         zonesTitle: "Zones",
         technicalTitle: "Technical elements",
@@ -237,7 +240,7 @@ export const en = {
         representations: {
             pcg: "Precomputed PCG points",
             actor: "Actors and anchors",
-            deposit: "Grouped deposits",
+            deposit: "Extractor deposits",
         },
         groups: {
             cave: "Caves",
@@ -252,8 +255,13 @@ export const en = {
             exclusion_zone: "Exclusion zones",
             spawn_region: "World spawn regions",
             resource_marker: "Resource markers",
-            deposit_socket: "Deposit sockets",
             poi_proxy: "POI proxies",
+        },
+        purities: {
+            unknown: "Unknown",
+            impure: "Impure",
+            normal: "Normal",
+            pure: "Pure",
         },
         states: {
             unknown: "Unknown state",
@@ -265,7 +273,7 @@ export const en = {
             catalog: "Static catalog",
             resource: "Resource",
             representation: "Representation",
-            depositRocks: "Rocks in deposit",
+            purity: "Ore quality",
             altitude: "Altitude",
             actorType: "Actor type",
             label: "Label",

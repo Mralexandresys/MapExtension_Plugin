@@ -217,6 +217,9 @@ export const fr = {
         resourcesTitle: "Ressources",
         representationTitle: "Type de representation",
         representationHelp: "Choisis la source des points affiches.",
+        purityTitle: "Qualite du filon",
+        purityHelp:
+            "Qualite des filons pour extracteurs. Plus le marqueur est clair et gros, plus le filon est pur.",
         buildingsTitle: "Batiments",
         zonesTitle: "Zones",
         technicalTitle: "Elements techniques",
@@ -236,7 +239,7 @@ export const fr = {
         representations: {
             pcg: "Points PCG precalcules",
             actor: "Acteurs et ancres",
-            deposit: "Gisements regroupes",
+            deposit: "Filons pour extracteurs",
         },
         groups: {
             cave: "Grottes",
@@ -251,8 +254,13 @@ export const fr = {
             exclusion_zone: "Zones d'exclusion",
             spawn_region: "Regions de spawn monde",
             resource_marker: "Marqueurs de ressources",
-            deposit_socket: "Sockets de depots",
             poi_proxy: "Proxies de POI",
+        },
+        purities: {
+            unknown: "Inconnue",
+            impure: "Impure",
+            normal: "Normale",
+            pure: "Pure",
         },
         states: {
             unknown: "Etat inconnu",
@@ -264,7 +272,7 @@ export const fr = {
             catalog: "Catalogue statique",
             resource: "Ressource",
             representation: "Representation",
-            depositRocks: "Rochers dans le gisement",
+            purity: "Qualite du filon",
             altitude: "Altitude",
             actorType: "Type d'acteur",
             label: "Libelle",

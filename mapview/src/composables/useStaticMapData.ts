@@ -8,12 +8,14 @@ import {
     STATE_CODES,
     type StaticElementState,
     type StaticLayerKey,
+    STATIC_ORE_PURITY_LEVELS,
     type StaticManifestPart,
     type StaticMapManifest,
     type StaticPlacement,
     type StaticPoi,
     type StaticPointSeries,
     type StaticResourceKind,
+    type StaticOrePurity,
 } from "../lib/staticMapCatalog";
 import type { Poi, Point2D } from "../lib/types";
 
@@ -36,8 +38,7 @@ export interface StaticSelection {
     seriesKey?: string;
     index?: number;
     representation?: StaticResourceKind;
-    /** Rocks folded into the marker, for `deposit` points. */
-    weight?: number;
+    purity?: StaticOrePurity;
     category?: string;
     actorType?: string;
     label?: string;
@@ -166,6 +167,7 @@ export function useStaticMapData(projection: Ref<MapProjectionConstants>) {
         radius: number,
         indexes = matchIndexes,
         cellSize = MATCH_CELL_DM,
+        accept?: (position: number) => boolean,
     ): number {
         const index = pointIndexFor(entry, indexes, cellSize);
         const baseX = Math.floor(x / cellSize);
@@ -179,6 +181,7 @@ export function useStaticMapData(projection: Ref<MapProjectionConstants>) {
                 const bucket = index.get(`${baseX + offsetX},${baseY + offsetY}`);
                 if (!bucket) continue;
                 for (const position of bucket) {
+                    if (accept && !accept(position)) continue;
                     const deltaX = entry.x[position] - x;
                     const deltaY = entry.y[position] - y;
                     const distance = deltaX * deltaX + deltaY * deltaY;
@@ -251,12 +254,14 @@ export function useStaticMapData(projection: Ref<MapProjectionConstants>) {
         radius: number,
         isSeriesVisible: (entry: StaticPointSeries) => boolean,
         isPlacementVisible: (entry: StaticPlacement) => boolean,
+        isOrePurityVisible?: (code: number) => boolean,
     ): StaticSelection | null {
         let best: StaticSelection | null = null;
         let bestDistance = radius * radius;
 
         for (const entry of series.value) {
             if (!isSeriesVisible(entry)) continue;
+            const purity = entry.purity;
             const position = findClosestInSeries(
                 entry,
                 x,
@@ -264,6 +269,9 @@ export function useStaticMapData(projection: Ref<MapProjectionConstants>) {
                 Math.sqrt(bestDistance),
                 pickIndexes,
                 PICK_CELL_DM,
+                purity && isOrePurityVisible
+                    ? (candidate) => isOrePurityVisible(purity[candidate])
+                    : undefined,
             );
             if (position < 0) continue;
 
@@ -279,7 +287,9 @@ export function useStaticMapData(projection: Ref<MapProjectionConstants>) {
                 group: entry.group,
                 category: entry.category,
                 representation: entry.kind,
-                weight: entry.weight ? entry.weight[position] : undefined,
+                purity: entry.purity
+                    ? STATIC_ORE_PURITY_LEVELS[entry.purity[position]] ?? "unknown"
+                    : undefined,
                 seriesKey: entry.key,
                 index: position,
                 x: entry.x[position],

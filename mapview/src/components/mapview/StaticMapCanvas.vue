@@ -6,7 +6,10 @@ import {
   type MapProjectionConstants,
 } from '../../lib/mapProjection';
 import {
+  ORE_PURITY_BRIGHTNESS,
+  ORE_PURITY_SIZE_BONUS,
   STATE_COLORS,
+  STATIC_ORE_PURITY_LEVELS,
   groupColor,
   type StaticPlacement,
   type StaticPointSeries,
@@ -24,6 +27,8 @@ const props = defineProps<{
   placements: StaticPlacement[];
   isSeriesVisible: (entry: StaticPointSeries) => boolean;
   isPlacementVisible: (entry: StaticPlacement) => boolean;
+  /** Ore quality lives per point, so deposits are filtered inside the loop. */
+  isOrePurityVisible: (code: number) => boolean;
   projection: MapProjectionConstants;
   mapScale: number;
   mapTranslateX: number;
@@ -140,14 +145,29 @@ function ensureBuffer(width: number, height: number): void {
   pixels = new Uint32Array(imageData.data.buffer);
 }
 
-/**
- * Marker size for one deposit cell. Logarithmic: rock counts span 1 to ~3 000
- * and a linear scale would turn the densest fields into screen-wide blocks.
- */
-function depositSize(dotSize: number, rocks: number): number {
-  const growth = 1 + Math.log10(Math.max(1, rocks)) * 0.7;
-  return Math.max(dotSize, Math.min(24, Math.round(dotSize * growth)));
+
+/** Scales a packed BGRA colour channel-wise, keeping it inside 0-255. */
+function scaleColor(packed: number, factor: number): number {
+  const red = Math.min(255, Math.round((packed & 0xff) * factor));
+  const green = Math.min(255, Math.round(((packed >> 8) & 0xff) * factor));
+  const blue = Math.min(255, Math.round(((packed >> 16) & 0xff) * factor));
+  return (255 << 24) | (blue << 16) | (green << 8) | red;
 }
+
+/**
+ * One packed colour per quality level for a given ore. The hue stays the ore's
+ * own, so the map still reads by resource, and quality shows as brightness.
+ */
+function purityPalette(color: string): number[] {
+  const base = packedColor(color);
+  return STATIC_ORE_PURITY_LEVELS.map((level) =>
+    scaleColor(base, ORE_PURITY_BRIGHTNESS[level]),
+  );
+}
+
+const puritySizeBonus = STATIC_ORE_PURITY_LEVELS.map(
+  (level) => ORE_PURITY_SIZE_BONUS[level],
+);
 
 function drawResources(transform: DeviceTransform): void {
   if (!context || !pixels || !imageData) return;
@@ -166,21 +186,25 @@ function drawResources(transform: DeviceTransform): void {
 
   for (const entry of visibleSeries.value) {
     const base = packedColor(entry.color);
-    const { x, y, state, count, weight } = entry;
+    const { x, y, state, count, purity } = entry;
+    // Extractor deposits are the handful of spots a base is built around: they
+    // are drawn larger than a plant dot, and their ore quality is legible
+    // without opening the selection panel.
+    const palette = purity ? purityPalette(entry.color) : null;
 
     for (let index = 0; index < count; index += 1) {
-      // A deposit marker stands for every rock in its cell, so it is drawn
-      // larger the denser the ore field is: a 3 000 rock titanium field must not
-      // look like a single hydrobulb.
-      const size = weight ? depositSize(dotSize, weight[index]) : dotSize;
-      const offsetHalf = weight ? Math.floor(size / 2) : half;
+      const level = purity ? purity[index] : 0;
+      if (purity && !props.isOrePurityVisible(level)) continue;
+
+      const size = purity ? dotSize + puritySizeBonus[level] : dotSize;
+      const offsetHalf = purity ? Math.floor(size / 2) : half;
 
       const px = (x[index] * ax + bx) | 0;
       if (px < -size || px >= width + size) continue;
       const py = (y[index] * ay + by) | 0;
       if (py < -size || py >= height + size) continue;
 
-      let color = base;
+      let color = palette ? palette[level] : base;
       const observed = state[index];
       if (observed === 2) color = depleted;
       else if (observed === 1) color = available;
