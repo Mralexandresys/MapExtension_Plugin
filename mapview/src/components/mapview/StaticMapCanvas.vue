@@ -9,6 +9,8 @@ import {
   ORE_PURITY_BRIGHTNESS,
   ORE_PURITY_SIZE_BONUS,
   STATE_COLORS,
+  STATIC_ORE_CONFIDENCE_INFERRED,
+  STATIC_ORE_CONFIDENCE_LEVELS,
   STATIC_ORE_PURITY_LEVELS,
   groupColor,
   type StaticPlacement,
@@ -169,6 +171,20 @@ const puritySizeBonus = STATIC_ORE_PURITY_LEVELS.map(
   (level) => ORE_PURITY_SIZE_BONUS[level],
 );
 
+/**
+ * Deposits whose purity rests on an inferred join are drawn hollow. The colour
+ * still carries the quality, but a solid marker would claim a certainty the
+ * export explicitly does not have.
+ */
+const INFERRED_CONFIDENCE_CODES = new Set(
+  STATIC_ORE_CONFIDENCE_INFERRED.map((level) =>
+    STATIC_ORE_CONFIDENCE_LEVELS.indexOf(level),
+  ),
+);
+
+/** Map background, punched through the middle of an inferred deposit. */
+const INFERRED_HOLE_COLOR = packedColor('#0b1220');
+
 function drawResources(transform: DeviceTransform): void {
   if (!context || !pixels || !imageData) return;
 
@@ -186,7 +202,7 @@ function drawResources(transform: DeviceTransform): void {
 
   for (const entry of visibleSeries.value) {
     const base = packedColor(entry.color);
-    const { x, y, state, count, purity } = entry;
+    const { x, y, state, count, purity, confidence } = entry;
     // Extractor deposits are the handful of spots a base is built around: they
     // are drawn larger than a plant dot, and their ore quality is legible
     // without opening the selection panel.
@@ -218,6 +234,24 @@ function drawResources(transform: DeviceTransform): void {
         const offset = row * width;
         for (let column = startX; column <= endX; column += 1) {
           pixels[offset + column] = color;
+        }
+      }
+
+      if (
+        confidence &&
+        size >= 3 &&
+        INFERRED_CONFIDENCE_CODES.has(confidence[index])
+      ) {
+        const inset = size >= 5 ? 2 : 1;
+        const holeStartX = Math.max(0, px - offsetHalf + inset);
+        const holeEndX = Math.min(width - 1, px - offsetHalf + size - 1 - inset);
+        const holeStartY = Math.max(0, py - offsetHalf + inset);
+        const holeEndY = Math.min(height - 1, py - offsetHalf + size - 1 - inset);
+        for (let row = holeStartY; row <= holeEndY; row += 1) {
+          const offset = row * width;
+          for (let column = holeStartX; column <= holeEndX; column += 1) {
+            pixels[offset + column] = INFERRED_HOLE_COLOR;
+          }
         }
       }
     }

@@ -52,6 +52,27 @@ export const DEFAULT_ENABLED_KINDS: readonly StaticResourceKind[] = [
     "deposit",
 ];
 
+/**
+ * How the purity of an extractor deposit was established. `exact` is read from
+ * the only physical material the resource has; the others come from joining the
+ * socket to the nearest exported collision anchor, the collision triangles the
+ * game ray-traces being absent from the export.
+ */
+export type StaticOreConfidence = "exact" | "high" | "medium" | "low";
+
+export const STATIC_ORE_CONFIDENCE_LEVELS: readonly StaticOreConfidence[] = [
+    "exact",
+    "high",
+    "medium",
+    "low",
+];
+
+/** Below this, the purity shown rests on a join the export flags as weak. */
+export const STATIC_ORE_CONFIDENCE_INFERRED: readonly StaticOreConfidence[] = [
+    "medium",
+    "low",
+];
+
 export type StaticElementState =
     | "unknown"
     | "available"
@@ -75,6 +96,17 @@ export interface StaticResourceType {
     counts: Partial<Record<StaticResourceKind, number>>;
     total: number;
     purity_counts?: Partial<Record<StaticOrePurity, number>>;
+    purity_confidence_counts?: Partial<Record<StaticOreConfidence, number>>;
+    /** Extractor buildable on this ore; deposits only. */
+    extractor?: string;
+}
+
+/** An extractor buildable on ore veins, as published by the catalog. */
+export interface StaticExtractor {
+    en: string;
+    fr: string;
+    count: number;
+    resources: string[];
 }
 
 export interface StaticMapManifest {
@@ -85,6 +117,9 @@ export interface StaticMapManifest {
     altitude_scale_cm: number;
     resource_kinds: StaticResourceKind[];
     resource_types: Record<string, StaticResourceType>;
+    /** Absent from catalogs built before the ore vein export existed. */
+    extractors?: Record<string, StaticExtractor>;
+    purity_confidence_levels?: StaticOreConfidence[];
     poi_groups: Record<string, number>;
     placement_groups: Record<string, Record<string, number>>;
     parts: StaticManifestPart[];
@@ -100,6 +135,8 @@ interface RawResourceGroup {
     z: number[];
     /** Per-point index into `STATIC_ORE_PURITY_LEVELS`; extractor deposits only. */
     p?: number[];
+    /** Per-point index into `STATIC_ORE_CONFIDENCE_LEVELS`; omitted when all exact. */
+    c?: number[];
 }
 
 interface RawResourcePart {
@@ -166,8 +203,10 @@ export interface StaticPointSeries {
     z: Int16Array;
     /** Per-point dynamic state, filled from live plugin observations. */
     state: Uint8Array;
-    /** Ore purity inferred from an explicit mesh marker near each extractor socket. */
+    /** Ore purity of each extractor deposit; null on every other series. */
     purity: Uint8Array | null;
+    /** How that purity was established, per point; null when all are exact. */
+    confidence: Uint8Array | null;
 }
 
 export interface StaticBox {
@@ -319,6 +358,18 @@ export function groupColor(group: string): string {
     return GROUP_COLORS[group] ?? hashColor(group);
 }
 
+/** One hue per extractor buildable on a vein, keyed by the catalog's ids. */
+const EXTRACTOR_COLORS: Record<string, string> = {
+    MechanicalDrill: "#f59e0b",
+    LaserDrill: "#ef4444",
+    GasExtractor: "#38bdf8",
+    AcidExtractor: "#a3e635",
+};
+
+export function extractorColor(extractorId: string): string {
+    return EXTRACTOR_COLORS[extractorId] ?? hashColor(extractorId);
+}
+
 // ── JSONP loading ─────────────────────────────────────────────────────────────
 
 type JsonpPayload = { id: string } & Record<string, unknown>;
@@ -422,6 +473,7 @@ function decodeResourcePart(
             z,
             state: new Uint8Array(count),
             purity: group.p ? Uint8Array.from(group.p) : null,
+            confidence: group.c ? Uint8Array.from(group.c) : null,
         };
     });
 }

@@ -4,6 +4,7 @@ import type { Language, Messages } from "../lang";
 import {
     DEFAULT_ENABLED_KINDS,
     DEFAULT_ENABLED_LAYERS,
+    extractorColor,
     groupColor,
     orePurityColor,
     resourceColor,
@@ -52,6 +53,8 @@ export interface StaticFilterState {
     poiGroups: Record<string, boolean>;
     /** Ore quality of extractor deposits, keyed by purity level. */
     orePurities: Record<string, boolean>;
+    /** Extractor buildable on the deposit, keyed by extractor id. */
+    extractors: Record<string, boolean>;
     /** Keyed by `${layer}:${group}`. */
     placementGroups: Record<string, boolean>;
 }
@@ -74,6 +77,7 @@ function createDefaultState(): StaticFilterState {
         resourceKinds,
         poiGroups: {},
         orePurities,
+        extractors: {},
         placementGroups: {},
     };
 }
@@ -118,6 +122,7 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         mergeRecord(state.resourceKinds, stored.resourceKinds);
         mergeRecord(state.poiGroups, stored.poiGroups);
         mergeRecord(state.orePurities, stored.orePurities);
+        mergeRecord(state.extractors, stored.extractors);
         mergeRecord(state.placementGroups, stored.placementGroups);
     }
 
@@ -134,6 +139,11 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
                 }
                 if (state.resourceCategories[entry.category] === undefined) {
                     state.resourceCategories[entry.category] = true;
+                }
+            }
+            for (const extractor of Object.keys(value.extractors ?? {})) {
+                if (state.extractors[extractor] === undefined) {
+                    state.extractors[extractor] = true;
                 }
             }
             for (const group of Object.keys(value.poi_groups ?? {})) {
@@ -188,7 +198,24 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         if (!isLayerEnabled(series.layer)) return false;
         if (series.layer !== "resource") return true;
         if (state.resourceKinds[series.kind] === false) return false;
+        if (series.kind === "deposit") {
+            const extractor = resourceExtractor(series.group);
+            if (extractor && !isExtractorEnabled(extractor)) return false;
+        }
         return isResourceTypeEnabled(series.group, series.category);
+    }
+
+    /** Which extractor a deposit takes, as published by the catalog. */
+    function resourceExtractor(typeId: string): string | undefined {
+        return manifest.value?.resource_types?.[typeId]?.extractor;
+    }
+
+    function isExtractorEnabled(extractorId: string): boolean {
+        return state.extractors[extractorId] !== false;
+    }
+
+    function toggleExtractor(extractorId: string): void {
+        state.extractors[extractorId] = state.extractors[extractorId] === false;
     }
 
     /**
@@ -373,6 +400,9 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
             state.orePurities[level] = enabled;
         }
         if (!value) return;
+        for (const extractor of Object.keys(value.extractors ?? {})) {
+            state.extractors[extractor] = enabled;
+        }
         for (const [typeId, entry] of Object.entries(value.resource_types)) {
             state.resourceTypes[typeId] = enabled;
             state.resourceCategories[entry.category] = enabled;
@@ -397,6 +427,7 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         }
         for (const key of Object.keys(state.poiGroups)) state.poiGroups[key] = true;
         Object.assign(state.orePurities, defaults.orePurities);
+        for (const key of Object.keys(state.extractors)) state.extractors[key] = true;
         for (const key of Object.keys(state.placementGroups)) {
             state.placementGroups[key] = true;
         }
@@ -429,6 +460,9 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         isLayerEnabled,
         isSeriesVisible,
         isOrePurityVisible,
+        isExtractorEnabled,
+        toggleExtractor,
+        resourceExtractor,
         toggleOrePurity,
         isPlacementGroupEnabled,
         isPlacementVisible,
@@ -578,6 +612,22 @@ export function useStaticFiltersModel(options: {
             }),
         ).filter((option) => option.count > 0);
 
+        // One row per extractor buildable on the loaded veins. The count is the
+        // number of deposits that extractor can be placed on, so it answers
+        // "where can I put a laser drill?" directly.
+        const extractors: StaticFilterOption[] = Object.entries(
+            catalog?.extractors ?? {},
+        )
+            .map(([id, entry]) => ({
+                key: id,
+                label: french ? entry.fr : entry.en,
+                count: entry.count,
+                enabled: filters.state.extractors[id] !== false,
+                color: extractorColor(id),
+            }))
+            .filter((option) => matchesSearch(option.label, option.key, needle))
+            .sort((left, right) => right.count - left.count);
+
         // Ore quality of the extractor deposits, summed over every ore that
         // carries one. Absent when no deposit is in the catalog.
         const purityCounts: Partial<Record<StaticOrePurity, number>> = {};
@@ -635,6 +685,7 @@ export function useStaticFiltersModel(options: {
             resourceCategories,
             representations,
             orePurities,
+            extractors,
             placementSections,
         };
     });
@@ -660,6 +711,9 @@ export function applyStaticFilterToggle(
             return;
         case "representation":
             filters.toggleResourceKind(toggle.key as StaticResourceKind);
+            return;
+        case "extractor":
+            filters.toggleExtractor(toggle.key);
             return;
         case "orePurity":
             filters.toggleOrePurity(toggle.key as StaticOrePurity);

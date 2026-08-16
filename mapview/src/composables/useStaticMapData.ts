@@ -8,6 +8,7 @@ import {
     STATE_CODES,
     type StaticElementState,
     type StaticLayerKey,
+    STATIC_ORE_CONFIDENCE_LEVELS,
     STATIC_ORE_PURITY_LEVELS,
     type StaticManifestPart,
     type StaticMapManifest,
@@ -15,6 +16,7 @@ import {
     type StaticPoi,
     type StaticPointSeries,
     type StaticResourceKind,
+    type StaticOreConfidence,
     type StaticOrePurity,
 } from "../lib/staticMapCatalog";
 import type { Poi, Point2D } from "../lib/types";
@@ -39,6 +41,8 @@ export interface StaticSelection {
     index?: number;
     representation?: StaticResourceKind;
     purity?: StaticOrePurity;
+    /** How that purity was established; absent outside extractor deposits. */
+    purityConfidence?: StaticOreConfidence;
     category?: string;
     actorType?: string;
     label?: string;
@@ -289,6 +293,12 @@ export function useStaticMapData(projection: Ref<MapProjectionConstants>) {
                 representation: entry.kind,
                 purity: entry.purity
                     ? STATIC_ORE_PURITY_LEVELS[entry.purity[position]] ?? "unknown"
+                    : undefined,
+                purityConfidence: entry.purity
+                    ? entry.confidence
+                        ? STATIC_ORE_CONFIDENCE_LEVELS[entry.confidence[position]] ??
+                          "exact"
+                        : "exact"
                     : undefined,
                 seriesKey: entry.key,
                 index: position,

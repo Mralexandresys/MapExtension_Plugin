@@ -65,6 +65,7 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
   - `analyse_map/map_v2_placements.jsonl` — very large placement, volume, and technical-actor export.
   - `analyse_map/map_v2_pois.geojson` — canonical point-of-interest export.
   - `analyse_map/map_v2_catalog.json` — map metadata, data layers, and rupture rules.
+  - `analyse_map/map_v2_ore_veins.jsonl` — the 660 extractor ore veins, with their exact socket transform, resource, purity, extractor and the confidence of the purity join. Authoritative for the `deposit` points when present; the build falls back to joining sockets to nearby ore meshes when it is absent, which leaves 283 veins at unknown quality.
 - Run `python3 tools/build_map_data.py` from the repository root. It regenerates the versioned build inputs in `mapview/public/map-data/`: `manifest.js`, `resources-*.js`, `placements-*.js`, and `pois.js`.
 - Coordinates are compacted to world decimetres, with altitudes in metres, then grouped and delta-encoded. Keep projection assumptions synchronized with `map_state_types.h` and `mapview`.
 - After regenerating data, validate/package the viewer with `cd mapview && pnpm run check && pnpm run build`.

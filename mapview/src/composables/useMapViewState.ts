@@ -37,7 +37,17 @@ function isTypingTarget(target: EventTarget | null): boolean {
     );
 }
 
-export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
+/**
+ * @param hasCatalogSelection Reads whether a static catalog element is
+ * selected. That selection lives in the app shell, next to the catalog data,
+ * but its details panel is the same one live entities use: without this the
+ * `Details` button and the `E` shortcut stayed dead on a catalog element and
+ * its extra rows could not be reached at all.
+ */
+export function useMapViewState(
+    mapCanvasRef: Ref<MapCanvasHandle | null>,
+    hasCatalogSelection: () => boolean = () => false,
+) {
     const {
         DEFAULT_ENDPOINT,
         cargo,
@@ -314,7 +324,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     }
 
     function openPanel(): void {
-        if (!selectedEntity.value) return;
+        if (!selectedEntity.value && !hasCatalogSelection()) return;
         detailsPanelExpanded.value = true;
     }
 
@@ -335,7 +345,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     }
 
     function toggleDetailsPanel(): void {
-        if (!selectedEntity.value) return;
+        if (!selectedEntity.value && !hasCatalogSelection()) return;
         detailsPanelExpanded.value = !detailsPanelExpanded.value;
     }
 

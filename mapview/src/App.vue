@@ -149,7 +149,9 @@ const {
     openShortcuts,
     closeShortcuts,
     dismissViewerUpdate,
-} = useMapViewState(mapCanvasRef);
+    // Read lazily: `staticSelection` is declared with the catalog data below,
+    // and this only runs on a user interaction.
+} = useMapViewState(mapCanvasRef, () => staticSelection.value !== null);
 
 // ── Annotations ───────────────────────────────────────────────────────────────
 
@@ -496,6 +498,30 @@ function staticDetailRows(selection: StaticSelection): DetailRow[] {
             rows.push({
                 label: messages.details.purity,
                 value: messages.purities[selection.purity],
+            });
+        }
+        // Which machine goes on this vein, and how solid the quality above is.
+        // Three quarters of the deposits carry a purity joined to a nearby
+        // collision anchor rather than read off the socket itself.
+        const extractorId = staticFilters.resourceExtractor(selection.group);
+        const extractor = extractorId
+            ? staticData.manifest.value?.extractors?.[extractorId]
+            : undefined;
+        if (extractor) {
+            rows.push({
+                label: messages.extractorTitle,
+                value: lang.value === "fr" ? extractor.fr : extractor.en,
+            });
+        }
+        if (selection.purityConfidence) {
+            const inferred = selection.purityConfidence !== "exact";
+            rows.push({
+                label: messages.confidenceTitle,
+                value: inferred
+                    ? `${messages.confidences[selection.purityConfidence]} - ${
+                          messages.confidenceInferredNote
+                      }`
+                    : messages.confidences[selection.purityConfidence],
             });
         }
         rows.push({

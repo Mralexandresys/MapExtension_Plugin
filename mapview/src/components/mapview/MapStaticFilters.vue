@@ -326,6 +326,57 @@ const searchHasNoMatch = computed(
                 </div>
             </section>
 
+            <!-- Which machine goes on the vein. Filtering by it answers "where
+                 can I put a laser drill?" without reading each ore in turn. -->
+            <section v-if="model.extractors.length" class="filter-group">
+                <header class="filter-group-head">
+                    <h4>{{ model.ui.staticFilters.extractorTitle }}</h4>
+                    <span class="filter-group-count">
+                        {{ groupCount(model.extractors) }}
+                    </span>
+                    <span class="filter-group-actions">
+                        <button
+                            class="group-action"
+                            type="button"
+                            @click="setOptionGroup(model.extractors, true, (option) => ({ scope: 'extractor', key: option.key }))"
+                        >
+                            {{ model.ui.filters.selectAll }}
+                        </button>
+                        <button
+                            class="group-action"
+                            type="button"
+                            @click="setOptionGroup(model.extractors, false, (option) => ({ scope: 'extractor', key: option.key }))"
+                        >
+                            {{ model.ui.filters.selectNone }}
+                        </button>
+                    </span>
+                </header>
+                <p class="filter-section-help">
+                    {{ model.ui.staticFilters.extractorHelp }}
+                </p>
+                <div class="filter-rows">
+                    <button
+                        v-for="extractor in model.extractors"
+                        :key="extractor.key"
+                        class="filter-row"
+                        :class="{ active: extractor.enabled, empty: extractor.count === 0 }"
+                        type="button"
+                        :style="swatchStyle(extractor)"
+                        :aria-pressed="extractor.enabled"
+                        @click="emit('toggle', { scope: 'extractor', key: extractor.key })"
+                    >
+                        <span class="filter-row-check" aria-hidden="true"></span>
+                        <span class="filter-row-swatch" aria-hidden="true"></span>
+                        <span class="filter-row-label" :title="extractor.label">
+                            {{ extractor.label }}
+                        </span>
+                        <span class="filter-row-count">
+                            {{ formatCount(extractor.count) }}
+                        </span>
+                    </button>
+                </div>
+            </section>
+
             <!-- Ore quality applies across every ore, so it sits beside the
                  resource list rather than inside one of its categories. -->
             <section v-if="model.orePurities.length" class="filter-group">

@@ -118,7 +118,7 @@ Les quatre prereglages repondent chacun a une question de joueur et pilotent d'u
 | `Recolte` | Ou est la ressource que je collecte maintenant ? | Une seule ressource a la fois + grottes |
 | `Technique` | Que contient l'export brut ? | Placements, zones, sockets et proxies (mode developpeur) |
 
-Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` (12 sockets `BP_OreSocket` que les donnees disponibles ne permettent pas d'attribuer avec fiabilite) reste masque. Le compteur de filtres actifs de l'en-tete ne compte que les ecarts par rapport au prereglage courant.
+Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` ne porte plus aucun filon depuis que l'export dedie attribue les 12 sockets `BP_OreSocket` restants au wolfram ; il ne subsiste que pour les acteurs de minerai non identifies, et reste masque. Le compteur de filtres actifs de l'en-tete ne compte que les ecarts par rapport au prereglage courant.
 
 ### Zones et elements de generation
 
@@ -153,18 +153,36 @@ zone statique dessinee sur la carte.
 ### Gisements de minerai
 
 Les zones de minerai qui demandent d'y placer un batiment sont publiees comme
-points `deposit`, un par `resource_deposit_socket`. Elles sont distinctes des
-rochers HISM minables a la main, qui ne sont pas affiches. Les classes de socket
-identifient directement la goethite, le soufre et l'helium-3 ; le type des sockets
-generiques est determine par le minerai HISM le plus proche, sans publier ce
-minerai sur la carte.
+points `deposit`, un par filon. Elles sont distinctes des rochers HISM minables a
+la main, qui ne sont pas affiches.
+
+Ces 660 filons viennent de l'export dedie `analyse_map/map_v2_ore_veins.jsonl`,
+utilise par `tools/build_map_data.py` comme source autoritaire des gisements.
+Chaque position y est une transformation de socket serialisee exacte. Quand ce
+fichier est absent, le build retombe sur l'ancienne methode (jointure du socket au
+mesh HISM le plus proche), qui laissait 283 filons en qualite `Inconnue` et 12
+sockets en `Minerai inconnu`.
 
 Chaque filon porte une qualite, les trois niveaux de `EOrePurityLevel` cote jeu :
-`Impure`, `Normale` ou `Pure`. Elle est determinee par le mesh de purete explicite
-le plus proche du meme minerai. Quand l'export ne fournit aucun marqueur de qualite
-suffisamment proche, la valeur reste `Inconnue` afin de ne pas inventer une
-information : sur les 660 filons, 95 sont impurs, 118 normaux, 164 purs et 283
-indetermines.
+`Impure`, `Normale` ou `Pure` : 201 impurs, 373 normaux, 86 purs. La goethite,
+l'helium 3 et le soufre utilisent des classes de socket dediees et n'ont qu'un seul
+grade de materiau physique, donc leur qualite est exacte. Le titane, le wolfram et
+le calcium passent par des `BP_OreSocket` generiques : leur minerai et leur qualite
+sont deduits en joignant le socket a l'ancrage de collision exporte le plus proche,
+la geometrie des triangles de collision etant absente de l'export.
+
+Le catalogue publie donc aussi la fiabilite de cette jointure, par filon :
+`exact` (271), `elevee` (282), `moyenne` (100) et `faible` (7, tous du wolfram, a
+des distances de jointure de 30 a 45 m contre ~1 m pour les jointures fiables). Un
+filon dont la qualite repose sur une jointure moyenne ou faible est dessine creux
+sur la carte : la couleur porte toujours la qualite, mais un marqueur plein
+affirmerait une certitude que l'export n'a pas. Le panneau de selection donne le
+niveau exact et rappelle la methode.
+
+Le catalogue publie enfin l'extracteur a poser sur chaque minerai
+(`Excavatrice de minerai` 389 filons, `Foreuse laser` 102, `Extracteur de soufre`
+95, `Extracteur d'helium 3` 74). Le groupe `Extracteur` de l'onglet `Catalogue`
+filtre les filons par machine, et le panneau de selection l'indique par filon.
 
 La qualite se lit directement sur la carte, sans ouvrir le panneau : le marqueur
 garde la couleur de son minerai et la qualite joue sur sa luminosite et sa taille

@@ -58,6 +58,21 @@ ORE_SOCKET_RESOURCES = {
     "BP_HeliumSocket_C": "helium_3",
 }
 
+# How the purity of a vein was established, worst last. `exact` is read straight
+# from the only physical material the resource has; the others come from joining
+# the socket to the nearest exported collision anchor, because the collision
+# triangles the game ray-traces are absent from the export.
+ORE_JOIN_CONFIDENCE = ("exact", "high", "medium", "low")
+
+# Extractor buildable per ore. The identifiers and French names come from the
+# vein dataset; only the English side needs a table here.
+EXTRACTOR_LABELS_EN = {
+    "MechanicalDrill": "Mechanical Drill",
+    "LaserDrill": "Laser Drill",
+    "GasExtractor": "Gas Extractor",
+    "AcidExtractor": "Acid Extractor",
+}
+
 # Placement category -> (layer, group). Groups drive the filter tree.
 PLACEMENT_LAYERS: dict[str, tuple[str, str]] = {
     "abandoned_base": ("building", "abandoned_base"),
@@ -255,14 +270,90 @@ def log(message: str) -> None:
 # ── Resources ─────────────────────────────────────────────────────────────────
 
 
+def read_ore_veins(
+    path: Path,
+    buckets: dict[tuple[str, str, str], list[tuple[int, int, int, int, int]]],
+    type_category: dict[str, str],
+    type_extractor: dict[str, str],
+    extractors: dict[str, dict[str, Any]],
+) -> int:
+    """Publish the extractor deposits from the dedicated ore vein export.
+
+    Every position is an exact serialized socket transform. Resource and purity
+    are authoritative for the three specialized socket types, and joined to the
+    nearest exported collision anchor for the generic `BP_OreSocket` ones; the
+    export states its own confidence, which is kept per point so the viewer can
+    show which veins rest on an inferred join.
+    """
+
+    published = 0
+    for entry in read_jsonl(path):
+        position = entry.get("position_cm") or {}
+        x_cm = position.get("x")
+        y_cm = position.get("y")
+        resource_id = entry.get("resource_id")
+        if x_cm is None or y_cm is None or not resource_id:
+            continue
+
+        purity = entry.get("purity") or "unknown"
+        if purity not in ORE_PURITY_LEVELS:
+            purity = "unknown"
+        confidence = (entry.get("purity_assignment") or {}).get("confidence")
+        if confidence not in ORE_JOIN_CONFIDENCE:
+            confidence = "medium"
+
+        type_category.setdefault(resource_id, "mineral")
+        buckets[("mineral", resource_id, "deposit")].append(
+            (
+                quantize(x_cm, POSITION_SCALE_CM),
+                quantize(y_cm, POSITION_SCALE_CM),
+                quantize(position.get("z"), ALTITUDE_SCALE_CM),
+                ORE_PURITY_LEVELS.index(purity),
+                ORE_JOIN_CONFIDENCE.index(confidence),
+            )
+        )
+
+        extractor_id = entry.get("extractor_id")
+        if extractor_id:
+            type_extractor.setdefault(resource_id, extractor_id)
+            extractor = extractors.setdefault(
+                extractor_id,
+                {
+                    "en": EXTRACTOR_LABELS_EN.get(extractor_id, humanize(extractor_id)),
+                    "fr": entry.get("extractor_name_fr") or extractor_id,
+                    "count": 0,
+                    "resources": [],
+                },
+            )
+            extractor["count"] += 1
+            if resource_id not in extractor["resources"]:
+                extractor["resources"].append(resource_id)
+
+        published += 1
+
+    for extractor in extractors.values():
+        extractor["resources"].sort()
+
+    return published
+
+
 def build_resources(
     path: Path,
     placements_path: Path,
-) -> tuple[dict[str, list[dict[str, Any]]], dict[str, dict[str, Any]]]:
-    """Return per-category delta-encoded groups plus the resource type table."""
+    ore_veins_path: Path | None = None,
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Return per-category delta-encoded groups, the resource type table and the
+    extractor table.
 
-    # (category, type, kind) -> quantized points plus an ore-purity code.
-    buckets: dict[tuple[str, str, str], list[tuple[int, int, int, int]]] = defaultdict(list)
+    Extractor deposits come from `ore_veins_path` when that export exists: it
+    carries the serialized socket transform plus a documented resource/purity
+    attribution, where this script can only join sockets to nearby meshes and
+    leaves three quarters of them as `unknown` quality.
+    """
+
+    # (category, type, kind) -> quantized points plus ore purity and join
+    # confidence codes.
+    buckets: dict[tuple[str, str, str], list[tuple[int, int, int, int, int]]] = defaultdict(list)
     type_labels: dict[str, dict[str, str]] = {}
     type_items: dict[str, dict[str, str]] = {}
     type_category: dict[str, str] = {}
@@ -321,55 +412,76 @@ def build_resources(
             quantize(y_cm, POSITION_SCALE_CM),
             quantize(position.get("z"), ALTITUDE_SCALE_CM),
             ORE_PURITY_LEVELS.index("unknown"),
+            ORE_JOIN_CONFIDENCE.index("exact"),
         )
         buckets[(category, type_id, kind)].append(point)
 
-    socket_count = 0
-    for entry in read_jsonl(placements_path):
-        if entry.get("category") != "resource_deposit_socket":
-            continue
-        position = entry.get("position_cm") or {}
-        x_cm = position.get("x")
-        y_cm = position.get("y")
-        if x_cm is None or y_cm is None:
-            continue
+    extractors: dict[str, dict[str, Any]] = {}
+    type_extractor: dict[str, str] = {}
+    veins_path = (
+        ore_veins_path
+        if ore_veins_path is not None and ore_veins_path.exists()
+        else None
+    )
 
-        resource_id = ORE_SOCKET_RESOURCES.get(entry.get("actor_type") or "")
-        if resource_id is None:
-            nearest = nearest_ore(ore_cells, x_cm, y_cm)
-            if (
-                nearest is None
-                or math.sqrt(nearest[0]) > ORE_SOCKET_RESOURCE_MAX_CM
-                or nearest[1] not in GENERIC_ORE_SOCKET_RESOURCES
-            ):
-                resource_id = "unknown_ore"
-            else:
-                resource_id = nearest[1]
-
-        purity = "unknown"
-        nearest_purity = nearest_ore_purity(purity_cells, resource_id, x_cm, y_cm)
-        if nearest_purity is not None and math.sqrt(nearest_purity[0]) <= ORE_SOCKET_PURITY_MAX_CM:
-            purity = nearest_purity[1]
-
-        type_category.setdefault(resource_id, "mineral")
-        buckets[("mineral", resource_id, "deposit")].append(
-            (
-                quantize(x_cm, POSITION_SCALE_CM),
-                quantize(y_cm, POSITION_SCALE_CM),
-                quantize(position.get("z"), ALTITUDE_SCALE_CM),
-                ORE_PURITY_LEVELS.index(purity),
-            )
+    if veins_path is not None:
+        socket_count = read_ore_veins(
+            veins_path, buckets, type_category, type_extractor, extractors
         )
-        socket_count += 1
+        source_note = f"published from {veins_path.name}"
+    else:
+        socket_count = 0
+        for entry in read_jsonl(placements_path):
+            if entry.get("category") != "resource_deposit_socket":
+                continue
+            position = entry.get("position_cm") or {}
+            x_cm = position.get("x")
+            y_cm = position.get("y")
+            if x_cm is None or y_cm is None:
+                continue
+
+            resource_id = ORE_SOCKET_RESOURCES.get(entry.get("actor_type") or "")
+            if resource_id is None:
+                nearest = nearest_ore(ore_cells, x_cm, y_cm)
+                if (
+                    nearest is None
+                    or math.sqrt(nearest[0]) > ORE_SOCKET_RESOURCE_MAX_CM
+                    or nearest[1] not in GENERIC_ORE_SOCKET_RESOURCES
+                ):
+                    resource_id = "unknown_ore"
+                else:
+                    resource_id = nearest[1]
+
+            purity = "unknown"
+            nearest_purity = nearest_ore_purity(purity_cells, resource_id, x_cm, y_cm)
+            if (
+                nearest_purity is not None
+                and math.sqrt(nearest_purity[0]) <= ORE_SOCKET_PURITY_MAX_CM
+            ):
+                purity = nearest_purity[1]
+
+            type_category.setdefault(resource_id, "mineral")
+            buckets[("mineral", resource_id, "deposit")].append(
+                (
+                    quantize(x_cm, POSITION_SCALE_CM),
+                    quantize(y_cm, POSITION_SCALE_CM),
+                    quantize(position.get("z"), ALTITUDE_SCALE_CM),
+                    ORE_PURITY_LEVELS.index(purity),
+                    ORE_JOIN_CONFIDENCE.index("medium"),
+                )
+            )
+            socket_count += 1
+        source_note = "published from mesh proximity (ore vein export absent)"
 
     log(
         f"resources: {total} rows, {hism_indexed} mineral HISM instances indexed but not published, "
-        f"{hism_dropped} plant HISM instances excluded, {socket_count} extractor deposits published"
+        f"{hism_dropped} plant HISM instances excluded, {socket_count} extractor deposits {source_note}"
     )
 
     groups_by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
     counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     purity_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    confidence_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     for (category, type_id, kind), points in sorted(buckets.items()):
         if not points:
@@ -384,8 +496,14 @@ def build_resources(
         }
         if kind == "deposit":
             group["p"] = [point[3] for point in points]
+            # Join confidence rides along only when at least one vein is not
+            # exact, so an export without inferred joins stays byte-identical.
+            confidences = [point[4] for point in points]
+            if any(code != ORE_JOIN_CONFIDENCE.index("exact") for code in confidences):
+                group["c"] = confidences
             for point in points:
                 purity_counts[type_id][ORE_PURITY_LEVELS[point[3]]] += 1
+                confidence_counts[type_id][ORE_JOIN_CONFIDENCE[point[4]]] += 1
         groups_by_category[category].append(group)
         counts[type_id][kind] += len(points)
 
@@ -412,9 +530,17 @@ def build_resources(
                 for level in ORE_PURITY_LEVELS
                 if purity_counts[type_id].get(level)
             }
+        if confidence_counts.get(type_id):
+            entry_types["purity_confidence_counts"] = {
+                level: confidence_counts[type_id].get(level, 0)
+                for level in ORE_JOIN_CONFIDENCE
+                if confidence_counts[type_id].get(level)
+            }
+        if type_extractor.get(type_id):
+            entry_types["extractor"] = type_extractor[type_id]
         types[type_id] = entry_types
 
-    return groups_by_category, types
+    return groups_by_category, types, extractors
 
 
 # ── Placements ────────────────────────────────────────────────────────────────
@@ -630,9 +756,10 @@ def main() -> int:
         )
         log(f"{part_id}: {len(payload['rows'])} rows -> {size / 1024:.0f} KiB")
 
-    resource_groups, resource_types = build_resources(
+    resource_groups, resource_types, extractors = build_resources(
         source / "map_v2_resources.jsonl",
         source / "map_v2_placements.jsonl",
+        source / "map_v2_ore_veins.jsonl",
     )
     for category, groups in sorted(resource_groups.items()):
         part_id = f"resources-{category}"
@@ -668,6 +795,8 @@ def main() -> int:
         "altitude_scale_cm": ALTITUDE_SCALE_CM,
         "resource_kinds": list(RESOURCE_KINDS),
         "resource_types": resource_types,
+        "extractors": extractors,
+        "purity_confidence_levels": list(ORE_JOIN_CONFIDENCE),
         "poi_groups": poi_counts,
         "placement_groups": {layer: dict(groups) for layer, groups in placement_counts.items()},
         "parts": parts,

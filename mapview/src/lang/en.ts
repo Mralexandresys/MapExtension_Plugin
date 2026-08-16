@@ -233,6 +233,18 @@ export const en = {
         resourcesTitle: "Resources",
         representationTitle: "Representation",
         representationHelp: "Choose which source the displayed points come from.",
+        extractorTitle: "Extractor",
+        extractorHelp:
+            "Machine to place on the vein. The count is how many veins accept it.",
+        confidenceTitle: "Purity reliability",
+        confidences: {
+            exact: "Exact",
+            high: "High",
+            medium: "Medium",
+            low: "Low",
+        },
+        confidenceInferredNote:
+            "Purity inferred by joining the socket to the nearest collision anchor.",
         purityTitle: "Ore quality",
         purityHelp:
             "Quality of the extractor deposits. Brighter and larger markers are purer.",

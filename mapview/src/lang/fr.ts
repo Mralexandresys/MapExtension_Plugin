@@ -232,6 +232,18 @@ export const fr = {
         resourcesTitle: "Ressources",
         representationTitle: "Type de representation",
         representationHelp: "Choisis la source des points affiches.",
+        extractorTitle: "Extracteur",
+        extractorHelp:
+            "Machine a poser sur le filon. Le compteur donne les filons compatibles.",
+        confidenceTitle: "Fiabilite de la purete",
+        confidences: {
+            exact: "Exacte",
+            high: "Elevee",
+            medium: "Moyenne",
+            low: "Faible",
+        },
+        confidenceInferredNote:
+            "Purete deduite d'une jointure au plus proche ancrage de collision.",
         purityTitle: "Qualite du filon",
         purityHelp:
             "Qualite des filons pour extracteurs. Plus le marqueur est clair et gros, plus le filon est pur.",
