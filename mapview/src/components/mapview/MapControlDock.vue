@@ -95,8 +95,6 @@ function handleFileChange(event: Event): void {
                     </div>
                     <div class="control-dock-meta">
                         <span>{{ panel.currentTimeLabel }}</span>
-                        <span class="status-footer-dot" aria-hidden="true"></span>
-                        <span>{{ panel.liveAgeLabel }}</span>
                     </div>
                     <p class="sr-only" role="status" aria-live="polite">
                         {{ statusAnnouncement }}
@@ -258,14 +256,16 @@ function handleFileChange(event: Event): void {
 
                 <div class="control-dock-utility-row">
                     <button
-                        class="button subtle small"
+                        class="button subtle small auto-refresh-toggle"
+                        :class="{ active: panel.autoRefresh }"
                         type="button"
+                        :aria-pressed="panel.autoRefresh"
                         @click="emit('toggle-auto-refresh')"
                     >
                         {{
                             panel.autoRefresh
-                                ? panel.ui.buttons.live
-                                : panel.ui.buttons.pause
+                                ? panel.ui.buttons.pause
+                                : panel.ui.buttons.live
                         }}
                     </button>
 
@@ -305,20 +305,6 @@ function handleFileChange(event: Event): void {
                             {{ panel.ui.hero.iconScaleHelp }}
                         </small>
                     </label>
-
-                    <div
-                        class="inline-note control-dock-note"
-                        :class="{ error: !!props.panel.statusError }"
-                    >
-                        <strong>{{ panel.statusText }}</strong>
-                        <span v-if="panel.statusError">{{ panel.statusError }}</span>
-                        <span v-else-if="panel.endpointHasPendingChanges">
-                            {{ panel.ui.status.endpointPending }}
-                        </span>
-                        <span v-else>
-                            {{ panel.liveAgeLabel }}
-                        </span>
-                    </div>
                 </div>
             </div>
             <div class="command-stats-row">
@@ -385,6 +371,7 @@ function handleFileChange(event: Event): void {
     align-items: center;
     justify-content: flex-end;
     gap: 6px;
+    min-width: 0;
 }
 
 .refresh-interval-inline {
@@ -570,9 +557,15 @@ function handleFileChange(event: Event): void {
 
 .control-dock-utility-row {
     display: grid;
-    grid-template-columns: auto minmax(100px, 132px) minmax(180px, 220px) minmax(180px, 220px) minmax(0, 1fr);
-    gap: 10px;
-    align-items: stretch;
+    grid-template-columns: max-content minmax(120px, 160px) minmax(200px, 260px);
+    justify-content: start;
+    gap: 10px 18px;
+    align-items: start;
+}
+
+/* Without this the toggle stretches to the height of the icon-scale field. */
+.control-dock-utility-row > .button {
+    align-self: center;
 }
 
 .icon-scale-field {
@@ -588,15 +581,6 @@ function handleFileChange(event: Event): void {
 
 .icon-scale-slider {
     width: 100%;
-}
-
-.control-dock-note {
-    min-height: 100%;
-    background: rgba(8, 14, 26, 0.82);
-}
-
-.control-dock-note strong {
-    line-height: 1.3;
 }
 
 .settings-trigger {
@@ -650,6 +634,49 @@ function handleFileChange(event: Event): void {
     border: 2px dashed currentColor;
     border-radius: 999px;
     opacity: 0.62;
+}
+
+@media (max-width: 720px) {
+    .command-header {
+        padding: 10px 12px 12px;
+    }
+
+    .command-header-actions {
+        justify-content: flex-start;
+    }
+
+    .refresh-interval-inline {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .refresh-interval-inline-input {
+        width: 100%;
+    }
+
+    /* One scrollable line instead of a ragged grid: the labels stay readable
+       and the header keeps a predictable height. */
+    .command-stats-row {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        gap: 0;
+        padding: 0;
+        scrollbar-width: none;
+    }
+
+    .command-stats-row::-webkit-scrollbar {
+        display: none;
+    }
+
+    .command-stat {
+        flex: 0 0 auto;
+        min-width: 82px;
+        padding: 8px 12px;
+    }
+
+    .command-stats-timeline {
+        flex: 1 0 min(260px, 70vw);
+    }
 }
 
 @media (max-width: 980px) {

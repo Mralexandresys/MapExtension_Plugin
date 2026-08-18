@@ -1291,7 +1291,7 @@ defineExpose({
       </g>
     </svg>
 
-    <div v-if="!cargo" class="map-empty-state">
+    <div v-if="!cargo && !loading" class="map-empty-state">
       <strong>{{ ui.map.emptyTitle }}</strong>
       <span>{{ ui.map.emptyBody }}</span>
     </div>
@@ -1439,6 +1439,13 @@ defineExpose({
 
 :deep(.map-marker:focus) {
     outline: none;
+}
+
+/* Keyboard focus on a marker was only a slightly thicker stroke, which is
+   invisible against the map. Give it the same ring the rest of the UI uses. */
+:deep(.map-marker:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
 :deep(.map-marker:focus-visible rect),

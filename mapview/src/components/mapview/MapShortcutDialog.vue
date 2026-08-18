@@ -149,16 +149,18 @@ onBeforeUnmount(() => {
 
 .shortcut-list {
     display: grid;
-    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    gap: 8px;
     margin-top: 14px;
 }
 
 .shortcut-row {
     display: grid;
-    grid-template-columns: 160px minmax(0, 1fr);
-    gap: 14px;
-    padding: 14px;
-    border-radius: 16px;
+    grid-template-columns: minmax(88px, auto) minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
     border: 1px solid var(--border);
     background: rgba(8, 14, 26, 0.62);
 }
@@ -195,7 +197,7 @@ onBeforeUnmount(() => {
     font-weight: 700;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 720px) {
     .shortcut-row {
         grid-template-columns: 1fr;
     }

@@ -45,7 +45,9 @@
 
     /* Typographie */
     --font-mono:      "JetBrains Mono", "Fira Code", "SFMono-Regular", "Consolas", monospace;
-    --font-display:   "Orbitron", "Rajdhani", "Exo 2", sans-serif;
+    --font-display:   "Orbitron", "Rajdhani", "Exo 2", "Bahnschrift",
+                      "Segoe UI Variable Display", "Avenir Next Condensed",
+                      "Ubuntu Condensed", "DejaVu Sans Condensed", sans-serif;
     --font-body:      "IBM Plex Sans", "Inter", "Segoe UI", sans-serif;
 
     font-family: var(--font-body);
@@ -130,6 +132,11 @@ h3,
     height: 100vh;
     padding: 0;
     display: grid;
+    /* An implicit grid column is `auto`, i.e. at least max-content: the header
+       row widened the column past the viewport and every child inherited it,
+       which is why the map stage, the filters drawer and the map toolbar all
+       hung off the right edge on a phone. `width: 100%` does not cap it. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     gap: 0;
 }
@@ -666,9 +673,9 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 [role="button"]:focus-visible {
-    outline: none;
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
     border-color: var(--border-strong);
-    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2);
 }
 
 .button.small {
@@ -705,14 +712,18 @@ textarea:focus-visible,
 }
 
 .hero-fact-card span {
-    order: -1;
     min-width: 0;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
 }
 
 .fact-card {
+    /* Label above value. Side by side (`auto 1fr`) let a long label such as
+       "Description" collide with its own value in the narrow selection panel. */
     display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 2px 12px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
     font-family: var(--font-mono);
     font-size: 0.76rem;
     padding: 8px 12px;
@@ -1121,24 +1132,22 @@ textarea:focus-visible,
 }
 
 @media (max-width: 720px) {
-    body {
-        overflow: auto;
-    }
-
     .app-shell {
         padding: 0;
         gap: 0;
         grid-template-rows: auto minmax(0, 1fr);
+        /* Dynamic viewport unit: mobile browser chrome collapses on scroll and
+           `100vh` leaves a strip of the map permanently under it. */
+        height: 100dvh;
     }
 
     .app-header {
-        padding: 12px 12px 0;
+        padding: 0;
     }
 
     .map-stage,
     .map-stage > .map-canvas {
-        min-height: calc(100vh - 92px);
-        height: calc(100vh - 92px);
+        min-height: 0;
         border-radius: 0;
     }
 
@@ -1169,6 +1178,7 @@ textarea:focus-visible,
 
     .overlay-bottom-center {
         bottom: 78px;
+        right: 64px;
     }
 
     .floating-panel {

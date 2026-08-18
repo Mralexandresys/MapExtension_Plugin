@@ -387,8 +387,8 @@ export const en = {
         laterAction: "Later",
     },
     map: {
-        emptyTitle: "Local map not loaded",
-        emptyBody: "Set the plugin endpoint and refresh.",
+        emptyTitle: "No live data",
+        emptyBody: "The plugin is not answering. Check the endpoint, then refresh.",
         actionsLabel: "Map actions",
         loading: "Loading",
         cargoConnection: "Cargo connection",

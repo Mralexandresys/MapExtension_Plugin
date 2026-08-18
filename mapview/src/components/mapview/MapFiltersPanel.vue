@@ -124,13 +124,20 @@ const harvestSummary = computed(() => {
     return selected ? selected.label : "--";
 });
 
-const behaviorEnabledCount = computed(
+const behaviorCheckedCount = computed(
     () =>
         [
-            !props.panel.showAllLinks,
+            props.panel.showAllLinks,
             props.panel.highlightOrphans,
             props.panel.userAnnotationsOnly,
         ].filter(Boolean).length,
+);
+
+const behaviorChangedFromDefault = computed(
+    () =>
+        !props.panel.showAllLinks ||
+        props.panel.highlightOrphans ||
+        props.panel.userAnnotationsOnly,
 );
 
 // What is drawn, not what was fetched.
@@ -174,8 +181,8 @@ const tabs = computed<FilterTab[]>(() => {
     list.push({
         key: "behavior",
         label: ui.tabs.behavior,
-        summary: ui.groupCount(behaviorEnabledCount.value, 3),
-        dirty: behaviorEnabledCount.value > 0,
+        summary: ui.groupCount(behaviorCheckedCount.value, 3),
+        dirty: behaviorChangedFromDefault.value,
     });
 
     return list;

@@ -92,4 +92,16 @@ const emit = defineEmits<{
         border-radius: 20px;
     }
 }
+
+@media (max-width: 720px) {
+    .map-toolbar {
+        flex-wrap: wrap;
+    }
+
+    .toolbar-button {
+        flex: 1 1 auto;
+        padding: 8px 10px;
+        letter-spacing: 0.06em;
+    }
+}
 </style>

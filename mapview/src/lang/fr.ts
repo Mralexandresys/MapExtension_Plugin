@@ -386,9 +386,9 @@ export const fr = {
         laterAction: "Plus tard",
     },
     map: {
-        emptyTitle: "Map locale non chargee",
+        emptyTitle: "Aucune donnee live",
         emptyBody:
-            "Renseigne l endpoint du plugin puis lance une actualisation.",
+            "Le plugin ne repond pas. Verifie l endpoint, puis actualise.",
         actionsLabel: "Actions carte",
         loading: "Chargement en cours",
         cargoConnection: "Connexion cargo",

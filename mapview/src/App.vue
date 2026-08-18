@@ -571,15 +571,20 @@ function staticDetailRows(selection: StaticSelection): DetailRow[] {
     return rows;
 }
 
+/** A hover preview, not a data sheet: the panel holds the full row list. */
+const TOOLTIP_MAX_LINES = 4;
+
 function describeStatic(selection: StaticSelection): {
     title: string;
     lines: string[];
 } {
+    const guidLabel = ui.value.staticFilters.details.guid;
     return {
         title: staticTitle(selection),
-        lines: staticDetailRows(selection).map(
-            (row) => `${row.label}: ${row.value}`,
-        ),
+        lines: staticDetailRows(selection)
+            .filter((row) => row.label !== guidLabel)
+            .slice(0, TOOLTIP_MAX_LINES)
+            .map((row) => `${row.label}: ${row.value}`),
     };
 }
 
