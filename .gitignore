@@ -37,6 +37,9 @@ StarRupture-Plugin-SDK/
 .DS_Store
 Thumbs.db
 
+# Python bytecode
+__pycache__/
+
 # Local working notes
 *.local
 

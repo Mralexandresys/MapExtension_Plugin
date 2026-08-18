@@ -129,7 +129,7 @@ Le plugin se build contre `StarRupture-Plugin-SDK`.
 
 Exemple :
 
-- `./build_client.sh release`
+- `./build.sh client release`
 
 Pour les details de build et de workflow, voir `DEVELOPERS.md`.
 

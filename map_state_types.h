@@ -53,6 +53,21 @@ namespace Detail
 		std::string PublicKey;
 	};
 
+	inline std::string CargoKindToString(CargoKind kind)
+	{
+		return kind == CargoKind::Sender ? "sender" : "receiver";
+	}
+
+	inline std::string ComposeMarkerDisplayName(const CargoMarker& marker)
+	{
+		if (marker.Kind == CargoKind::Sender && !marker.ResourceSummary.empty())
+		{
+			return marker.DisplayName + " - " + marker.ResourceSummary;
+		}
+
+		return marker.DisplayName;
+	}
+
 	struct CargoConnection
 	{
 		std::string SenderKey;

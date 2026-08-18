@@ -1,6 +1,7 @@
 #include "map_state_capture.h"
 
 
+#include "map_state_sdk_helpers.h"
 #include "plugin_config.h"
 #include "plugin_helpers.h"
 #include "shared/map_sync_protocol.h"
@@ -94,9 +95,21 @@ namespace
 		bool Ready = false;
 	};
 
+	using MapStateSdk::EnviroWaveStageToString;
+	using MapStateSdk::EnviroWaveStepToString;
+	using MapStateSdk::EnviroWaveToString;
+	using MapStateSdk::FadeoutSubstageToString;
+	using MapStateSdk::GetCurrentUnixTimeMilliseconds;
+	using MapStateSdk::GrowbackSubstageToString;
+	using MapStateSdk::IsChimeraWorldName;
+	using MapStateSdk::PreWaveSubstageToString;
+	using MapStateSdk::TryGetStaticClass;
+	using MapStateSdk::TryGetWorldSubsystem;
+	using MapStateSdk::TryIsObjectOfClass;
+	using MapStateSdk::TryProbeWorldNameRaw;
+
 	void ClearChimeraWorldState(const char* reason);
 	void ResetObservedPlantCatalog();
-	int64_t GetCurrentUnixTimeMilliseconds();
 	void ApplyRuptureCycleObservationTimestamp(MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot);
 	void StorePersistentRuptureCycleSnapshot(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot);
 
@@ -204,24 +217,9 @@ namespace
 		return MapExtensionPluginConfig::Config::VerboseLifecycleLogs();
 	}
 
-	bool ShouldLogCargoSnapshots()
-	{
-		return MapExtensionPluginConfig::Config::LogCargoSnapshots();
-	}
-
-	bool ShouldLogActorScanFallback()
-	{
-		return MapExtensionPluginConfig::Config::LogActorScanFallback();
-	}
-
-	bool ShouldLogRefreshTimings()
-	{
-		return MapExtensionPluginConfig::Config::LogRefreshTimings();
-	}
-
 	bool ShouldLogRuptureDiagnostics()
 	{
-		return MapExtensionPluginConfig::Config::LogRuptureDiagnostics();
+		return MapExtensionPluginConfig::Config::LogRuptureCycleEvents();
 	}
 
 	float GetRefreshIntervalSeconds()
@@ -242,7 +240,7 @@ namespace
 		int64_t LastPhaseAtMs = 0;
 
 		explicit RefreshTimingLog(const char* reason)
-			: Enabled(ShouldLogRefreshTimings())
+			: Enabled(MapExtensionPluginConfig::Config::LogRefreshTimings())
 			, Reason(reason ? reason : "unknown")
 		{
 			if (!Enabled)
@@ -386,94 +384,6 @@ namespace
 		return g_snapshot.HasPackageTransportReplicator;
 	}
 
-	bool IsChimeraWorldName(const std::string& worldName)
-	{
-		return worldName.find("ChimeraMain") != std::string::npos;
-	}
-
-	const char* EnviroWaveToString(SDK::EEnviroWave wave)
-	{
-		switch (wave)
-		{
-		case SDK::EEnviroWave::None:
-			return "None";
-		case SDK::EEnviroWave::Heat:
-			return "Heat";
-		case SDK::EEnviroWave::Cold:
-			return "Cold";
-		default:
-			return "Unknown";
-		}
-	}
-
-	const char* EnviroWaveStageToString(SDK::EEnviroWaveStage stage)
-	{
-		switch (stage)
-		{
-		case SDK::EEnviroWaveStage::None:
-			return "None";
-		case SDK::EEnviroWaveStage::PreWave:
-			return "PreWave";
-		case SDK::EEnviroWaveStage::Moving:
-			return "Moving";
-		case SDK::EEnviroWaveStage::Fadeout:
-			return "Fadeout";
-		case SDK::EEnviroWaveStage::Growback:
-			return "Growback";
-		default:
-			return "Unknown";
-		}
-	}
-
-	const char* PreWaveSubstageToString(SDK::EEnviroWavePreWaveSubstage substage)
-	{
-		switch (substage)
-		{
-		case SDK::EEnviroWavePreWaveSubstage::None:
-			return "None";
-		case SDK::EEnviroWavePreWaveSubstage::BeforeExplosion:
-			return "BeforeExplosion";
-		case SDK::EEnviroWavePreWaveSubstage::AfterExplosion:
-			return "AfterExplosion";
-		default:
-			return "Unknown";
-		}
-	}
-
-	const char* FadeoutSubstageToString(SDK::EEnviroWaveFadeoutSubstage substage)
-	{
-		switch (substage)
-		{
-		case SDK::EEnviroWaveFadeoutSubstage::None:
-			return "None";
-		case SDK::EEnviroWaveFadeoutSubstage::FireWave:
-			return "FireWave";
-		case SDK::EEnviroWaveFadeoutSubstage::Burning:
-			return "Burning";
-		case SDK::EEnviroWaveFadeoutSubstage::Fading:
-			return "Fading";
-		default:
-			return "Unknown";
-		}
-	}
-
-	const char* GrowbackSubstageToString(SDK::EEnviroWaveGrowbackSubstage substage)
-	{
-		switch (substage)
-		{
-		case SDK::EEnviroWaveGrowbackSubstage::None:
-			return "None";
-		case SDK::EEnviroWaveGrowbackSubstage::MoonPhase:
-			return "MoonPhase";
-		case SDK::EEnviroWaveGrowbackSubstage::RegrowthStart:
-			return "RegrowthStart";
-		case SDK::EEnviroWaveGrowbackSubstage::Regrowth:
-			return "Regrowth";
-		default:
-			return "Unknown";
-		}
-	}
-
 	struct RuptureCycleLocalState final
 	{
 		SDK::EEnviroWave Wave = SDK::EEnviroWave::None;
@@ -516,63 +426,6 @@ namespace
 		std::unordered_map<uint32_t, std::string> ByEntityId;
 	};
 
-	template <typename TSubsystem>
-	TSubsystem* TryGetWorldSubsystem(SDK::UWorld* world, SDK::UClass* subsystemClass)
-	{
-		if (!world || !subsystemClass)
-		{
-			return nullptr;
-		}
-
-		auto* subsystem = SDK::USubsystemBlueprintLibrary::GetWorldSubsystem(world, subsystemClass);
-		if (!subsystem || !subsystem->IsA(subsystemClass))
-		{
-			return nullptr;
-		}
-
-		return static_cast<TSubsystem*>(subsystem);
-	}
-
-	const char* EnviroWaveStepToString(
-		SDK::EEnviroWaveStage stage,
-		SDK::EEnviroWavePreWaveSubstage preWaveSubstage,
-		SDK::EEnviroWaveFadeoutSubstage fadeoutSubstage,
-		SDK::EEnviroWaveGrowbackSubstage growbackSubstage)
-	{
-		if (stage == SDK::EEnviroWaveStage::PreWave && preWaveSubstage != SDK::EEnviroWavePreWaveSubstage::None)
-		{
-			return PreWaveSubstageToString(preWaveSubstage);
-		}
-		if (stage == SDK::EEnviroWaveStage::Fadeout && fadeoutSubstage != SDK::EEnviroWaveFadeoutSubstage::None)
-		{
-			return FadeoutSubstageToString(fadeoutSubstage);
-		}
-		if (stage == SDK::EEnviroWaveStage::Growback && growbackSubstage != SDK::EEnviroWaveGrowbackSubstage::None)
-		{
-			return GrowbackSubstageToString(growbackSubstage);
-		}
-		return "None";
-	}
-
-	bool TryProbeWorldNameRaw(SDK::UWorld* world)
-	{
-		if (!world)
-		{
-			return false;
-		}
-
-		__try
-		{
-			volatile auto nameIndex = world->Name.ComparisonIndex;
-			(void)nameIndex;
-			return true;
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
-		{
-			return false;
-		}
-	}
-
 	bool TryValidateTrackedWorldPointerByName(SDK::UWorld* world, const std::string& expectedName)
 	{
 		if (!world || expectedName.empty())
@@ -595,39 +448,9 @@ namespace
 		}
 	}
 
-	bool TryIsObjectOfClass(SDK::UObject* obj, SDK::UClass* expectedClass)
-	{
-		if (!obj || !expectedClass)
-		{
-			return false;
-		}
-
-		__try
-		{
-			return obj->IsA(expectedClass);
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
-		{
-			return false;
-		}
-	}
-
 	bool TryIsActorObject(SDK::UObject* obj, SDK::UClass* actorClass)
 	{
 		return TryIsObjectOfClass(obj, actorClass);
-	}
-
-	template <typename TObjectClass>
-	SDK::UClass* TryGetStaticClass()
-	{
-		__try
-		{
-			return TObjectClass::StaticClass();
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
-		{
-			return nullptr;
-		}
 	}
 
 	bool TryCopyValidatedTrackedChimeraWorldState(
@@ -1120,12 +943,6 @@ namespace
 		return oss.str();
 	}
 
-	int64_t GetCurrentUnixTimeMilliseconds()
-	{
-		using namespace std::chrono;
-		return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-	}
-
 	void ApplyRuptureCycleObservationTimestamp(MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
 	{
 		snapshot.HasObservedAtUnixMs = false;
@@ -1290,12 +1107,7 @@ namespace
 	}
 
 
-	std::string CargoKindToString(CargoKind kind)
-	{
-		return kind == CargoKind::Sender ? "sender" : "receiver";
-	}
-
-	bool IsCargoRealtimeActorImpl(SDK::AActor* actor)
+	bool IsCargoRealtimeActor(SDK::AActor* actor)
 	{
 		return actor
 			&& (
@@ -1305,7 +1117,7 @@ namespace
 				|| actor->IsA(SDK::ACrItemSenderBuilding::StaticClass()));
 	}
 
-	bool IsAuxiliaryRealtimeActorImpl(SDK::AActor* actor)
+	bool IsAuxiliaryRealtimeActor(SDK::AActor* actor)
 	{
 		return actor
 			&& (
@@ -1403,16 +1215,6 @@ namespace
 		marker.ResourceSummary += resourceName;
 	}
 
-	std::string ComposeMarkerDisplayName(const CargoMarker& marker)
-	{
-		if (marker.Kind == CargoKind::Sender && !marker.ResourceSummary.empty())
-		{
-			return marker.DisplayName + " - " + marker.ResourceSummary;
-		}
-
-		return marker.DisplayName;
-	}
-
 	std::string FormatVector(const SDK::FVector& value)
 	{
 		std::ostringstream oss;
@@ -1487,22 +1289,6 @@ namespace
 		}
 
 		return static_cast<SDK::ACrGameStateBase*>(gameStateBase);
-	}
-
-	void LogRuntimePlanIfNeededImpl()
-	{
-		if (g_runtimePlanLogged || !MapExtensionPluginConfig::Config::LogRuntimePlanOnce())
-		{
-			return;
-		}
-
-		g_runtimePlanLogged = true;
-		LOG_INFO("Runtime plan: capture cargo dispatcher/receiver network data from runtime sources, then publish snapshots over local HTTP.");
-		LOG_INFO("Runtime plan: use package transport replication first, actor scans as fallback, and keep the web UI separate from Unreal widgets.");
-		LOG_INFO(
-			"Runtime plan: refresh the cached snapshot every %d ms while ChimeraMain is running.",
-			MapExtensionPluginConfig::Config::RefreshIntervalMs());
-		LOG_INFO("Runtime plan: also refresh immediately when relevant actors begin play in ChimeraMain.");
 	}
 
 	std::string HexEncode(const std::string& value)
@@ -1616,7 +1402,7 @@ namespace
 
 	void LogSnapshotSummary(const CargoSnapshot& snapshot)
 	{
-		if (!ShouldLogCargoSnapshots())
+		if (!MapExtensionPluginConfig::Config::LogCargoSnapshots())
 		{
 			return;
 		}
@@ -1660,12 +1446,7 @@ namespace
 				|| std::strncmp(reason, "ActorBeginPlay", std::strlen("ActorBeginPlay")) == 0);
 	}
 
-	bool IsRelevantRealtimeActorImpl(SDK::AActor* actor)
-	{
-		return IsCargoRealtimeActorImpl(actor) || IsAuxiliaryRealtimeActorImpl(actor);
-	}
-
-	bool IsRelevantRuptureActorImpl(SDK::AActor* actor)
+	bool IsRelevantRuptureActor(SDK::AActor* actor)
 	{
 		return actor
 			&& (
@@ -2501,7 +2282,7 @@ namespace
 		SDK::UGameplayStatics::GetAllActorsOfClass(world, TActorClass::StaticClass(), &actors);
 
 		const int count = actors.Num();
-		const int maxLog = ShouldLogActorScanFallback() ? std::min(count, kMaxLoggedActorsPerKind) : 0;
+		const int maxLog = MapExtensionPluginConfig::Config::LogActorScanFallback() ? std::min(count, kMaxLoggedActorsPerKind) : 0;
 		std::string actorClassName = "(unknown)";
 		if (SDK::UClass* actorClass = TActorClass::StaticClass())
 		{
@@ -3770,13 +3551,19 @@ namespace
 		return true;
 	}
 
-	CargoSnapshot CopySnapshotImpl()
+}
+
+namespace MapStateRuntime
+{
+namespace Detail
+{
+	CargoSnapshot CopySnapshot()
 	{
 		std::lock_guard<std::mutex> lock(g_snapshotMutex);
 		return g_snapshot;
 	}
 
-	bool RefreshCargoSnapshotImpl(SDK::UWorld* world, const char* reason)
+	bool RefreshCargoSnapshot(SDK::UWorld* world, const char* reason)
 	{
 		const bool isRealtimeRefresh = IsRealtimeRefreshReason(reason);
 		const TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
@@ -3921,7 +3708,7 @@ namespace
 			nextSnapshot.WorldName = world->GetName();
 		}
 
-		if (nextSnapshot.Markers.empty() && ShouldLogCargoSnapshots())
+		if (nextSnapshot.Markers.empty() && MapExtensionPluginConfig::Config::LogCargoSnapshots())
 		{
 			LOG_WARN(
 				"Cargo snapshot #%llu from '%s' found no cargo markers (replicator=%s, actor_receivers=%d, actor_senders=%d)",
@@ -3967,7 +3754,7 @@ namespace
 			|| !nextSnapshot.Pois.empty();
 	}
 
-	void TryRefreshCurrentWorldImpl(const char* reason)
+	void TryRefreshCurrentWorld(const char* reason)
 	{
 		TrackedChimeraWorldState trackedState{};
 		bool invalidPointer = false;
@@ -3988,61 +3775,57 @@ namespace
 			return;
 		}
 
-		RefreshCargoSnapshotImpl(trackedState.World, reason);
+		RefreshCargoSnapshot(trackedState.World, reason);
 	}
-}
 
-namespace MapStateRuntime
-{
-	namespace Detail
+	void LogRuntimePlanIfNeeded()
 	{
-		CargoSnapshot CopySnapshot()
+		if (g_runtimePlanLogged || !MapExtensionPluginConfig::Config::LogRuntimePlanOnce())
 		{
-			return CopySnapshotImpl();
+			return;
 		}
 
-		void LogRuntimePlanIfNeeded()
+		g_runtimePlanLogged = true;
+		LOG_INFO("Runtime plan: capture cargo dispatcher/receiver network data from runtime sources, then publish snapshots over local HTTP.");
+		LOG_INFO("Runtime plan: use package transport replication first, actor scans as fallback, and keep the web UI separate from Unreal widgets.");
+		LOG_INFO(
+			"Runtime plan: refresh the cached snapshot every %d ms while ChimeraMain is running.",
+			MapExtensionPluginConfig::Config::RefreshIntervalMs());
+		LOG_INFO("Runtime plan: also refresh immediately when relevant actors begin play in ChimeraMain.");
+	}
+
+	std::string BuildPlayerPublicKeyForController(void* playerController)
+	{
+		SDK::AController* controller = static_cast<SDK::AController*>(playerController);
+		if (!controller)
 		{
-			LogRuntimePlanIfNeededImpl();
+			return {};
 		}
 
-		std::string BuildPlayerPublicKeyForController(void* playerController)
+		std::string internalKey = GetControllerInternalKey(controller);
+		if (internalKey.empty())
 		{
-			SDK::AController* controller = static_cast<SDK::AController*>(playerController);
-			if (!controller)
+			if (SDK::APawn* pawn = controller->K2_GetPawn())
 			{
-				return {};
-			}
-
-			std::string internalKey = GetControllerInternalKey(controller);
-			if (internalKey.empty())
-			{
-				if (SDK::APawn* pawn = controller->K2_GetPawn())
+				const std::string pawnName = pawn->GetName();
+				if (!pawnName.empty())
 				{
-					const std::string pawnName = pawn->GetName();
-					if (!pawnName.empty())
-					{
-						internalKey = "pawn:" + pawnName;
-					}
+					internalKey = "pawn:" + pawnName;
 				}
 			}
-
-			if (internalKey.empty())
-			{
-				return {};
-			}
-
-			return MakeTaggedPublicKey("player", internalKey);
 		}
+
+		if (internalKey.empty())
+		{
+			return {};
+		}
+
+		return MakeTaggedPublicKey("player", internalKey);
+	}
 
 	bool IsRelevantRealtimeActor(SDK::AActor* actor)
 	{
-		return IsRelevantRealtimeActorImpl(actor);
-	}
-
-	bool RefreshCargoSnapshot(SDK::UWorld* world, const char* reason)
-	{
-		return RefreshCargoSnapshotImpl(world, reason);
+		return IsCargoRealtimeActor(actor) || IsAuxiliaryRealtimeActor(actor);
 	}
 
 	void RequestCargoSnapshotRefresh(const char* reason)
@@ -4062,11 +3845,6 @@ namespace MapStateRuntime
 				"Scheduled cargo snapshot refresh from %s",
 				reason ? reason : "unknown");
 		}
-	}
-
-	void TryRefreshCurrentWorld(const char* reason)
-	{
-		TryRefreshCurrentWorldImpl(reason);
 	}
 
 	// The delegate splices live in the engine's InvocationList, so they must be
@@ -4268,9 +4046,9 @@ namespace MapStateRuntime
 		{
 			return;
 		}
-		const bool cargoActor = IsCargoRealtimeActorImpl(beginPlayActor);
-		const bool auxiliaryActor = IsAuxiliaryRealtimeActorImpl(beginPlayActor);
-		const bool ruptureActor = IsRelevantRuptureActorImpl(beginPlayActor);
+		const bool cargoActor = IsCargoRealtimeActor(beginPlayActor);
+		const bool auxiliaryActor = IsAuxiliaryRealtimeActor(beginPlayActor);
+		const bool ruptureActor = IsRelevantRuptureActor(beginPlayActor);
 		if (!cargoActor && !auxiliaryActor && !ruptureActor)
 		{
 			return;

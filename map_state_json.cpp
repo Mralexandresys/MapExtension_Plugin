@@ -74,21 +74,6 @@ namespace Detail
 			return std::round(value * scale) / scale;
 		}
 
-		std::string CargoKindToString(CargoKind kind)
-		{
-			return kind == CargoKind::Sender ? "sender" : "receiver";
-		}
-
-		std::string ComposeMarkerDisplayName(const CargoMarker& marker)
-		{
-			if (marker.Kind == CargoKind::Sender && !marker.ResourceSummary.empty())
-			{
-				return marker.DisplayName + " - " + marker.ResourceSummary;
-			}
-
-			return marker.DisplayName;
-		}
-
 		json ToJson(const SDK::FVector& value)
 		{
 			return json{

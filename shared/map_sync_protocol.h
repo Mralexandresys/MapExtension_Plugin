@@ -2,27 +2,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <type_traits>
 
 namespace MapSyncProtocol
 {
 	constexpr uint32_t kProtocolVersion = 5;
-
-	// Reserved for future selective snapshots. The server intentionally
-	// ignores request_flags and always returns a full snapshot.
-	constexpr uint32_t kRequestFlagRuptureCycle = 1u << 0;
-	constexpr uint32_t kRequestFlagPlayers = 1u << 1;
-	constexpr uint32_t kRequestFlagTeleporters = 1u << 2;
-	constexpr uint32_t kRequestFlagCargoMarkers = 1u << 3;
-	constexpr uint32_t kRequestFlagCargoConnections = 1u << 4;
-	constexpr uint32_t kRequestFlagPois = 1u << 5;
-	constexpr uint32_t kRequestFlagAll =
-		kRequestFlagRuptureCycle
-		| kRequestFlagPlayers
-		| kRequestFlagTeleporters
-		| kRequestFlagCargoMarkers
-		| kRequestFlagCargoConnections
-		| kRequestFlagPois;
 
 	constexpr size_t kWorldNameCapacity = 64;
 	constexpr size_t kKeyCapacity = 64;
@@ -98,7 +83,8 @@ namespace MapSyncProtocol
 	struct ClientSnapshotRequestPacket
 	{
 		uint32_t protocol_version = kProtocolVersion;
-		uint32_t request_flags = kRequestFlagAll;
+		// Reserved: the server always answers with a full snapshot.
+		uint32_t request_flags = 0;
 		uint64_t request_sequence = 0;
 		// POI page requested for this snapshot (protocol v5 pagination).
 		uint16_t poi_page = 0;
@@ -230,7 +216,10 @@ namespace MapSyncProtocol
 		char unique_key[kKeyCapacity] = {};
 	};
 
-	struct ServerPlayersChunkPacket
+	// One page of a chunked snapshot section. Every section streams the same
+	// envelope, only the entry type and the per-packet capacity change.
+	template <typename TEntry, size_t Capacity>
+	struct ServerChunkPacket
 	{
 		uint32_t protocol_version = kProtocolVersion;
 		uint32_t reserved = 0;
@@ -239,56 +228,14 @@ namespace MapSyncProtocol
 		uint16_t chunk_count = 0;
 		uint16_t item_count = 0;
 		uint16_t reserved2 = 0;
-		ServerPlayerEntry items[kPlayerChunkCapacity] = {};
+		TEntry items[Capacity] = {};
 	};
 
-	struct ServerTeleportersChunkPacket
-	{
-		uint32_t protocol_version = kProtocolVersion;
-		uint32_t reserved = 0;
-		uint64_t snapshot_id = 0;
-		uint16_t chunk_index = 0;
-		uint16_t chunk_count = 0;
-		uint16_t item_count = 0;
-		uint16_t reserved2 = 0;
-		ServerTeleporterEntry items[kTeleporterChunkCapacity] = {};
-	};
-
-	struct ServerCargoMarkersChunkPacket
-	{
-		uint32_t protocol_version = kProtocolVersion;
-		uint32_t reserved = 0;
-		uint64_t snapshot_id = 0;
-		uint16_t chunk_index = 0;
-		uint16_t chunk_count = 0;
-		uint16_t item_count = 0;
-		uint16_t reserved2 = 0;
-		ServerCargoMarkerEntry items[kCargoMarkerChunkCapacity] = {};
-	};
-
-	struct ServerCargoConnectionsChunkPacket
-	{
-		uint32_t protocol_version = kProtocolVersion;
-		uint32_t reserved = 0;
-		uint64_t snapshot_id = 0;
-		uint16_t chunk_index = 0;
-		uint16_t chunk_count = 0;
-		uint16_t item_count = 0;
-		uint16_t reserved2 = 0;
-		ServerCargoConnectionEntry items[kCargoConnectionChunkCapacity] = {};
-	};
-
-	struct ServerPoisChunkPacket
-	{
-		uint32_t protocol_version = kProtocolVersion;
-		uint32_t reserved = 0;
-		uint64_t snapshot_id = 0;
-		uint16_t chunk_index = 0;
-		uint16_t chunk_count = 0;
-		uint16_t item_count = 0;
-		uint16_t reserved2 = 0;
-		ServerPoiEntry items[kPoiChunkCapacity] = {};
-	};
+	using ServerPlayersChunkPacket = ServerChunkPacket<ServerPlayerEntry, kPlayerChunkCapacity>;
+	using ServerTeleportersChunkPacket = ServerChunkPacket<ServerTeleporterEntry, kTeleporterChunkCapacity>;
+	using ServerCargoMarkersChunkPacket = ServerChunkPacket<ServerCargoMarkerEntry, kCargoMarkerChunkCapacity>;
+	using ServerCargoConnectionsChunkPacket = ServerChunkPacket<ServerCargoConnectionEntry, kCargoConnectionChunkCapacity>;
+	using ServerPoisChunkPacket = ServerChunkPacket<ServerPoiEntry, kPoiChunkCapacity>;
 
 	static_assert(std::is_trivially_copyable_v<ClientSnapshotRequestPacket>);
 	static_assert(std::is_trivially_copyable_v<ServerSnapshotBeginPacket>);
@@ -315,18 +262,7 @@ namespace MapSyncProtocol
 			return;
 		}
 
-		destination[0] = '\0';
-		if (!source)
-		{
-			return;
-		}
-
-		size_t index = 0;
-		while (index + 1 < capacity && source[index] != '\0')
-		{
-			destination[index] = source[index];
-			++index;
-		}
-		destination[index] = '\0';
+		// snprintf always NUL-terminates and truncates to the buffer size.
+		std::snprintf(destination, capacity, "%s", source ? source : "");
 	}
 }

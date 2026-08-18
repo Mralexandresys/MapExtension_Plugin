@@ -367,7 +367,6 @@ namespace MapExtensionClient
 
 			MapSyncProtocol::ClientSnapshotRequestPacket packet{};
 			packet.request_sequence = ++g_requestSequence;
-			packet.request_flags = MapSyncProtocol::kRequestFlagAll;
 			packet.poi_page = RemoteCache::GetNextPoiPageToRequest();
 
 			Network::SendPacketToServer(hooks, self, packet);

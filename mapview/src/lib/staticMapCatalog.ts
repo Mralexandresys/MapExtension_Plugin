@@ -541,16 +541,6 @@ function decodePart(part: StaticManifestPart, payload: RawPart): StaticPartData 
 
 // ── Label helpers ─────────────────────────────────────────────────────────────
 
-export function resourceTypeLabel(
-    manifest: StaticMapManifest | null,
-    typeId: string,
-    lang: string,
-): string {
-    const entry = manifest?.resource_types?.[typeId];
-    if (!entry) return typeId;
-    return lang === "fr" ? entry.fr : entry.en;
-}
-
 /**
  * Resources the plugin observes live but the world export never contained, so
  * the catalog cannot name them. Prickler and Prism Herb are ordinary plants the

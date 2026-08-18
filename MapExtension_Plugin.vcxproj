@@ -9,14 +9,6 @@
       <Configuration>Client Release</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="Debug|x64">
-      <Configuration>Debug</Configuration>
-      <Platform>x64</Platform>
-    </ProjectConfiguration>
-    <ProjectConfiguration Include="Release|x64">
-      <Configuration>Release</Configuration>
-      <Platform>x64</Platform>
-    </ProjectConfiguration>
     <ProjectConfiguration Include="Server Debug|x64">
       <Configuration>Server Debug</Configuration>
       <Platform>x64</Platform>
@@ -43,23 +35,10 @@
     <SolutionDir Condition="'$(SolutionDir)' == ''">$(RepoRootDir)</SolutionDir>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
-    <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
-    <CharacterSet>Unicode</CharacterSet>
-  </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
-    <CharacterSet>Unicode</CharacterSet>
-  </PropertyGroup>
-  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
-    <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'">
@@ -87,13 +66,7 @@
   <ImportGroup Label="Shared">
     <Import Project="$(PluginSdkSharedProps)" />
   </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-  </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-  </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Client Release|x64'">
@@ -107,21 +80,7 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <TargetName>MapExtension_Plugin</TargetName>
-    <OutDir>$(MSBuildThisFileDirectory)build\$(Configuration)\Plugins\</OutDir>
-    <IntDir>$(MSBuildThisFileDirectory)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
-    <StarRuptureSDKSourceDir>$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKSourceDir>
-    <StarRuptureSDKConfigDir>$(StarRuptureSdkBaseDir)Client\;$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKConfigDir>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
-    <TargetName>MapExtension_Plugin</TargetName>
-    <OutDir>$(MSBuildThisFileDirectory)build\$(Configuration)\Plugins\</OutDir>
-    <IntDir>$(MSBuildThisFileDirectory)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
-    <StarRuptureSDKSourceDir>$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKSourceDir>
-    <StarRuptureSDKConfigDir>$(StarRuptureSdkBaseDir)Client\;$(StarRuptureSdkBaseDir)Client\SDK\</StarRuptureSDKConfigDir>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <TargetName>MapExtension_Plugin</TargetName>
     <OutDir>$(MSBuildThisFileDirectory)build\$(Configuration)\Plugins\</OutDir>
     <IntDir>$(MSBuildThisFileDirectory)build\intermediate\$(Configuration)\$(ProjectName)\</IntDir>
@@ -149,22 +108,6 @@
     <StarRuptureSDKSourceDir>$(StarRuptureSdkBaseDir)Server\SDK\</StarRuptureSDKSourceDir>
     <StarRuptureSDKConfigDir>$(StarRuptureSdkBaseDir)Server\;$(StarRuptureSdkBaseDir)Server\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;MODLOADER_CLIENT_BUILD;MAPEXTENSION_PLUGIN_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-    </ClCompile>
-    <Link>
-      <SubSystem>Windows</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <EnableUAC>false</EnableUAC>
-    </Link>
-  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -177,26 +120,6 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-      <EnableUAC>false</EnableUAC>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <ClCompile>
-      <WarningLevel>TurnOffAllWarnings</WarningLevel>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
-      <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;MODLOADER_CLIENT_BUILD;MAPEXTENSION_PLUGIN_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-    </ClCompile>
-    <Link>
-      <SubSystem>Windows</SubSystem>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
     </Link>
@@ -264,6 +187,7 @@
     <ClInclude Include="map_state_http.h" />
     <ClInclude Include="map_state_json.h" />
     <ClInclude Include="map_state_runtime.h" />
+    <ClInclude Include="map_state_sdk_helpers.h" />
     <ClInclude Include="map_state_types.h" />
     <ClInclude Include="plugin.h" />
     <ClInclude Include="plugin_config.h" />
@@ -320,8 +244,6 @@
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="server\map_sync_server.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)'=='Debug'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)'=='Release'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Client Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Client Release'">true</ExcludedFromBuild>
     </ClCompile>

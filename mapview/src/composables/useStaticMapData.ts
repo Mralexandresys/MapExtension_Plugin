@@ -354,5 +354,3 @@ export function useStaticMapData(projection: Ref<MapProjectionConstants>) {
         findNearest,
     };
 }
-
-export type StaticMapData = ReturnType<typeof useStaticMapData>;

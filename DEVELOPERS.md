@@ -59,7 +59,7 @@ The DLL is written to `build\\<Configuration>\\Plugins\\MapExtension_Plugin.dll`
 
 - override the preprocessor definition in Visual Studio: **Project Properties → C/C++ → Preprocessor → Preprocessor Definitions**.
 - or pass MSBuild properties from the helper script:
-  - `./build_client.sh release --build-tag "ML-2026.04.04-214044-v0.2" --build-author "Mralexandresys"`
+  - `./build.sh client release --build-tag "ML-2026.04.04-214044-v0.2" --build-author "Mralexandresys"`
 - or call MSBuild directly with properties such as `/p:ModLoaderBuildTag=ML-2026.04.04-214044-v0.2 /p:ModLoaderBuildAuthor=Mralexandresys`.
 
 If the tag macro is not set, builds fall back to `"dev"`. If the author macro is not set, builds fall back to `"Mralexandresys"`.
@@ -92,8 +92,8 @@ No manual edit of a parent solution is required if you use the helper scripts.
 From the repository root:
 
 ```bash
-./build_client.sh release
-./build_server.sh release
+./build.sh client release
+./build.sh server release
 ```
 
 To inspect the latest build logs manually:
@@ -149,7 +149,7 @@ The viewer loads parts lazily by enabled layer. `StaticMapCanvas.vue` renders la
 1. Set `MODLOADER_BUILD_TAG` to the version you want to publish and, if needed, `MODLOADER_BUILD_AUTHOR` to the release author (see above), then build both `Client Release|x64` and `Server Release|x64` so that these files are produced:
    - `build/Client Release/Plugins/MapExtension_Plugin.dll`
    - `build/Server Release/Plugins/MapExtension_Plugin.dll`
-   - Build the client DLL with `./build_client.sh release` and the server DLL with `./build_server.sh release`.
+   - Build the client DLL with `./build.sh client release` and the server DLL with `./build.sh server release`.
 2. Move to `mapview/`, ensure Node.js 20.19.0+ or 22.12.0+ is active, then run `pnpm install && pnpm run check && pnpm run build`. The bundle lands in `mapview/dist/MapExtensionViewer.html`.
 3. Create a client archive containing:
    - `build/Client Release/Plugins/MapExtension_Plugin.dll`

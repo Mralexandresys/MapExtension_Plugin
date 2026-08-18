@@ -48,12 +48,11 @@ export function useMapViewState(
     mapCanvasRef: Ref<MapCanvasHandle | null>,
     hasCatalogSelection: () => boolean = () => false,
 ) {
+    const dataSource = useMapViewDataSource();
     const {
-        DEFAULT_ENDPOINT,
         cargo,
         health,
         ruptureCycle,
-        endpointDraft,
         lang,
         showAllLinks,
         highlightOrphans,
@@ -69,19 +68,11 @@ export function useMapViewState(
         filterTab,
         status,
         ui,
-        languageOptions,
         normalizedEndpoint,
-        endpointHasPendingChanges,
         pluginVersion,
         viewerOutdated,
-        viewerUpdateDownloadUrl,
-        viewerUpdateReleaseUrl,
-        viewerUpdateModPageUrl,
-        handleEndpointKeydown,
-        updateRefreshInterval,
         refreshData,
-        applyEndpoint,
-    } = useMapViewDataSource();
+    } = dataSource;
 
     const { viewerUpdateOpen, dismissViewerUpdate } = useViewerUpdateNotice(
         viewerOutdated,
@@ -464,36 +455,17 @@ export function useMapViewState(
     });
 
     return {
-        DEFAULT_ENDPOINT,
-        cargo,
-        endpointDraft,
-        lang,
-        showAllLinks,
-        highlightOrphans,
+        // Everything the data source already exposes, forwarded as-is.
+        ...dataSource,
         userAnnotationsOnly,
         focusMode,
-        preset,
-        harvestResource,
-        autoRefresh,
-        refreshIntervalMs,
-        iconScale,
         selectedKey,
         hoveredKey,
         controlSettingsOpen,
         ruptureDetailsOpen,
-        filterTab,
         detailsPanelExpanded,
-        filtersPanelCollapsed,
         shortcutsOpen,
         viewerUpdateOpen,
-        pluginVersion,
-        viewerUpdateDownloadUrl,
-        viewerUpdateReleaseUrl,
-        viewerUpdateModPageUrl,
-        entityVisibility,
-        status,
-        ui,
-        languageOptions,
         entityToggleOptions: computed(() =>
             entityToggleOptions.value.map((option) => ({
                 ...option,
@@ -501,8 +473,6 @@ export function useMapViewState(
             })),
         ),
         shortcutItems,
-        endpointHasPendingChanges,
-        normalizedEndpoint,
         displayedCargoMarkers,
         visibleCargoConnections,
         displayedTeleporters,
@@ -537,10 +507,6 @@ export function useMapViewState(
         ruptureMarkerPercent,
         ruptureHasLiveData,
         ruptureMarkerLabel,
-        handleEndpointKeydown,
-        updateRefreshInterval,
-        refreshData,
-        applyEndpoint,
         clearSelection,
         selectEntity,
         toggleControlSettings,

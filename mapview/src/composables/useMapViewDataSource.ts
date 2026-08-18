@@ -8,6 +8,7 @@ import {
 } from "vue";
 
 import { fetchJson, normalizeEndpoint } from "../lib/api";
+import { clamp } from "../lib/formatters";
 import { VIEWER_CONTRACT_VERSION } from "../lib/viewerContract";
 import { applyLanguage, getMessages, resolveInitialLanguage } from "../lang";
 import type { Language } from "../lang";
@@ -52,17 +53,18 @@ function resolvePreset(saved: PersistedPreferences): MapPreset {
 }
 
 function clampIconScale(value: unknown): number {
-    const numericValue = typeof value === "number" ? value : Number(value);
+    const numericValue = Number(value);
     if (!Number.isFinite(numericValue)) return DEFAULT_ICON_SCALE;
-    return Math.min(MAX_ICON_SCALE, Math.max(MIN_ICON_SCALE, numericValue));
+    return clamp(numericValue, MIN_ICON_SCALE, MAX_ICON_SCALE);
 }
 
 function clampRefreshIntervalMs(value: unknown): number {
-    const numericValue = typeof value === "number" ? value : Number(value);
+    const numericValue = Number(value);
     if (!Number.isFinite(numericValue)) return LIVE_REFRESH_MS;
-    return Math.min(
+    return clamp(
+        Math.round(numericValue),
+        MIN_REFRESH_INTERVAL_MS,
         MAX_REFRESH_INTERVAL_MS,
-        Math.max(MIN_REFRESH_INTERVAL_MS, Math.round(numericValue)),
     );
 }
 
@@ -88,10 +90,6 @@ interface PersistedPreferences {
     entityVisibility?: Partial<EntityVisibility>;
     filtersPanelCollapsed?: boolean;
     filterTab?: FilterTabKey;
-    /** Legacy key: the collapsible sections became tabs. */
-    filterSectionsOpen?: Record<string, boolean>;
-    /** Legacy: the rupture timeline is now a header strip with no compact mode. */
-    ruptureCompact?: boolean;
 }
 
 export function useMapViewDataSource() {
@@ -142,7 +140,6 @@ export function useMapViewDataSource() {
     let clockTimer: number | null = null;
 
     const ui = computed(() => getMessages(lang.value));
-    const languageOptions: Language[] = ["en", "fr"];
     const normalizedEndpoint = computed(() => normalizeEndpoint(endpoint.value));
     const normalizedDraftEndpoint = computed(() =>
         normalizeEndpoint(endpointDraft.value),
@@ -175,8 +172,6 @@ export function useMapViewDataSource() {
     );
 
     function loadPreferences(): void {
-        if (typeof localStorage === "undefined") return;
-
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (!raw) return;
@@ -223,8 +218,6 @@ export function useMapViewDataSource() {
     }
 
     function savePreferences(): void {
-        if (typeof localStorage === "undefined") return;
-
         localStorage.setItem(
             STORAGE_KEY,
             JSON.stringify({
@@ -406,7 +399,7 @@ export function useMapViewDataSource() {
         entityVisibility,
         status,
         ui,
-        languageOptions,
+        languageOptions: LANGUAGE_OPTIONS,
         normalizedEndpoint,
         endpointHasPendingChanges,
         pluginVersion,

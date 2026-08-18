@@ -16,8 +16,6 @@ interface PersistedDismissal {
 }
 
 function readDismissedVersion(): string {
-    if (typeof localStorage === "undefined") return "";
-
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return "";
@@ -33,8 +31,6 @@ function readDismissedVersion(): string {
 }
 
 function writeDismissedVersion(version: string): void {
-    if (typeof localStorage === "undefined") return;
-
     try {
         localStorage.setItem(
             STORAGE_KEY,

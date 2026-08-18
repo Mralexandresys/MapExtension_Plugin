@@ -76,7 +76,7 @@ export interface NamedMapEntity {
     map: Point2D;
 }
 
-export interface Teleporter extends NamedMapEntity {}
+export type Teleporter = NamedMapEntity;
 
 export interface Player extends NamedMapEntity {
     /** True for the marker representing the local viewer's own player. Older plugins do not send this field. */
@@ -177,18 +177,6 @@ export interface MapCanvasHandle {
     focusSelection: () => void;
     focusPoint: (mapX: number, mapY: number, desiredScale?: number) => void;
     resetView: () => void;
-}
-
-export interface EntityEntry {
-    type: "cargo" | "teleporter" | "player";
-    sortType: number;
-    unique_key: string;
-    label: string;
-    badgeClass: EntityToggleKey;
-    badgeLabel: string;
-    meta1: string;
-    meta2: string;
-    orphan: boolean;
 }
 
 export interface RupturePhaseSeconds {

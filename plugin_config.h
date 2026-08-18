@@ -115,11 +115,6 @@ namespace MapExtensionPluginConfig
 			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogRuptureCycleEvents", false) : false;
 		}
 
-		static bool LogRuptureDiagnostics()
-		{
-			return LogRuptureCycleEvents();
-		}
-
 		static bool LogActorScanFallback()
 		{
 			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogActorScanFallback", false) : false;

@@ -18,8 +18,6 @@ function normalizeLanguage(value: unknown): Language | null {
 }
 
 function getStoredLanguage(storageKey: string): Language | null {
-  if (typeof localStorage === 'undefined') return null;
-
   try {
     const raw = localStorage.getItem(storageKey);
     if (!raw) return null;
@@ -30,31 +28,15 @@ function getStoredLanguage(storageKey: string): Language | null {
   }
 }
 
+/** `?lang=fr` overrides the saved choice, which itself overrides the browser. */
 export function resolveInitialLanguage(storageKey: string): Language {
-  if (typeof window !== 'undefined') {
-    const params = new URLSearchParams(window.location.search);
-    const queryLanguage = normalizeLanguage(params.get('lang') ?? params.get('LANG'));
-    if (queryLanguage) return queryLanguage;
-  }
-
-  const globalState = globalThis as { LANG?: unknown; MAPVIEW_LANG?: unknown };
-  const globalLanguage = normalizeLanguage(globalState.MAPVIEW_LANG ?? globalState.LANG);
-  if (globalLanguage) return globalLanguage;
-
-  const storedLanguage = getStoredLanguage(storageKey);
-  if (storedLanguage) return storedLanguage;
-
-  if (typeof document !== 'undefined') {
-    const documentLanguage = normalizeLanguage(document.documentElement.lang);
-    if (documentLanguage) return documentLanguage;
-  }
-
-  if (typeof navigator !== 'undefined') {
-    const browserLanguage = normalizeLanguage(navigator.language);
-    if (browserLanguage) return browserLanguage;
-  }
-
-  return 'en';
+  const params = new URLSearchParams(window.location.search);
+  return (
+    normalizeLanguage(params.get('lang')) ??
+    getStoredLanguage(storageKey) ??
+    normalizeLanguage(navigator.language) ??
+    'en'
+  );
 }
 
 export function getMessages(language: Language): Messages {
@@ -62,8 +44,6 @@ export function getMessages(language: Language): Messages {
 }
 
 export function applyLanguage(language: Language): void {
-  if (typeof document === 'undefined') return;
-
   const current = getMessages(language);
   document.documentElement.lang = language;
   document.title = current.documentTitle;

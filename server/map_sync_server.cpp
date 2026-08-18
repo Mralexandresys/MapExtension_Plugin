@@ -1,6 +1,7 @@
 #include "map_sync_server.h"
 
 #include "../map_state_capture.h"
+#include "../map_state_sdk_helpers.h"
 #include "../plugin_config.h"
 #include "../plugin_helpers.h"
 #include "../shared/map_sync_protocol.h"
@@ -26,6 +27,15 @@ namespace
 	using RuptureCycleSnapshot = MapStateRuntime::Detail::RuptureCycleSnapshot;
 	using TeleporterMarker = MapStateRuntime::Detail::TeleporterMarker;
 
+	using MapStateSdk::EnviroWaveStageToString;
+	using MapStateSdk::EnviroWaveToString;
+	using MapStateSdk::GetCurrentUnixTimeMilliseconds;
+	using MapStateSdk::IsChimeraWorldName;
+	using MapStateSdk::TryGetStaticClass;
+	using MapStateSdk::TryGetWorldSubsystem;
+	using MapStateSdk::TryIsObjectOfClass;
+	using MapStateSdk::TryProbeWorldNameRaw;
+
 	PluginNetworkServerMessageCallback g_snapshotRequestHandle = nullptr;
 	SDK::UWorld* g_trackedWorld = nullptr;
 	bool g_worldReady = false;
@@ -34,35 +44,9 @@ namespace
 	std::string g_lastLoggedRuptureStateKey;
 	bool g_lastLoggedRuptureStateKeyValid = false;
 
-	int64_t GetCurrentUnixTimeMilliseconds()
-	{
-		using namespace std::chrono;
-		const auto now = system_clock::now();
-		return duration_cast<milliseconds>(now.time_since_epoch()).count();
-	}
-
 	bool ShouldLogRuptureDiagnostics()
 	{
-		return MapExtensionPluginConfig::Config::LogRuptureDiagnostics();
-	}
-
-	bool TryProbeWorldNameRaw(SDK::UWorld* world)
-	{
-		if (!world)
-		{
-			return false;
-		}
-
-		__try
-		{
-			volatile auto nameIndex = world->Name.ComparisonIndex;
-			(void)nameIndex;
-			return true;
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
-		{
-			return false;
-		}
+		return MapExtensionPluginConfig::Config::LogRuptureCycleEvents();
 	}
 
 	bool TryGetWorldNameSafe(SDK::UWorld* world, std::string& outName)
@@ -85,41 +69,6 @@ namespace
 		}
 	}
 
-	bool IsChimeraWorldName(const char* worldName)
-	{
-		return worldName != nullptr && std::strstr(worldName, "ChimeraMain") != nullptr;
-	}
-
-	template <typename TObjectClass>
-	SDK::UClass* TryGetStaticClass()
-	{
-		__try
-		{
-			return TObjectClass::StaticClass();
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
-		{
-			return nullptr;
-		}
-	}
-
-	bool TryIsObjectOfClass(SDK::UObject* object, SDK::UClass* expectedClass)
-	{
-		if (!object || !expectedClass)
-		{
-			return false;
-		}
-
-		__try
-		{
-			return object->IsA(expectedClass);
-		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
-		{
-			return false;
-		}
-	}
-
 	struct RuptureCycleState final
 	{
 		SDK::EEnviroWave Wave = SDK::EEnviroWave::None;
@@ -130,23 +79,6 @@ namespace
 		double ElapsedSeconds = 0.0;
 		bool HasElapsed = false;
 	};
-
-	template <typename TSubsystem>
-	TSubsystem* TryGetWorldSubsystem(SDK::UWorld* world, SDK::UClass* subsystemClass)
-	{
-		if (!world || !subsystemClass)
-		{
-			return nullptr;
-		}
-
-		auto* subsystem = SDK::USubsystemBlueprintLibrary::GetWorldSubsystem(world, subsystemClass);
-		if (!subsystem || !subsystem->IsA(subsystemClass))
-		{
-			return nullptr;
-		}
-
-		return static_cast<TSubsystem*>(subsystem);
-	}
 
 	SDK::ACrGameStateBase* TryGetGameState(SDK::UWorld* world)
 	{
@@ -189,107 +121,13 @@ namespace
 		}
 	}
 
-	const char* EnviroWaveToString(SDK::EEnviroWave wave)
-	{
-		switch (wave)
-		{
-		case SDK::EEnviroWave::None:
-			return "None";
-		case SDK::EEnviroWave::Heat:
-			return "Heat";
-		case SDK::EEnviroWave::Cold:
-			return "Cold";
-		default:
-			return "Unknown";
-		}
-	}
-
-	const char* EnviroWaveStageToString(SDK::EEnviroWaveStage stage)
-	{
-		switch (stage)
-		{
-		case SDK::EEnviroWaveStage::None:
-			return "None";
-		case SDK::EEnviroWaveStage::PreWave:
-			return "PreWave";
-		case SDK::EEnviroWaveStage::Moving:
-			return "Moving";
-		case SDK::EEnviroWaveStage::Fadeout:
-			return "Fadeout";
-		case SDK::EEnviroWaveStage::Growback:
-			return "Growback";
-		default:
-			return "Unknown";
-		}
-	}
-
-	const char* PreWaveSubstageToString(SDK::EEnviroWavePreWaveSubstage substage)
-	{
-		switch (substage)
-		{
-		case SDK::EEnviroWavePreWaveSubstage::None:
-			return "None";
-		case SDK::EEnviroWavePreWaveSubstage::BeforeExplosion:
-			return "BeforeExplosion";
-		case SDK::EEnviroWavePreWaveSubstage::AfterExplosion:
-			return "AfterExplosion";
-		default:
-			return "Unknown";
-		}
-	}
-
-	const char* FadeoutSubstageToString(SDK::EEnviroWaveFadeoutSubstage substage)
-	{
-		switch (substage)
-		{
-		case SDK::EEnviroWaveFadeoutSubstage::None:
-			return "None";
-		case SDK::EEnviroWaveFadeoutSubstage::FireWave:
-			return "FireWave";
-		case SDK::EEnviroWaveFadeoutSubstage::Burning:
-			return "Burning";
-		case SDK::EEnviroWaveFadeoutSubstage::Fading:
-			return "Fading";
-		default:
-			return "Unknown";
-		}
-	}
-
-	const char* GrowbackSubstageToString(SDK::EEnviroWaveGrowbackSubstage substage)
-	{
-		switch (substage)
-		{
-		case SDK::EEnviroWaveGrowbackSubstage::None:
-			return "None";
-		case SDK::EEnviroWaveGrowbackSubstage::MoonPhase:
-			return "MoonPhase";
-		case SDK::EEnviroWaveGrowbackSubstage::RegrowthStart:
-			return "RegrowthStart";
-		case SDK::EEnviroWaveGrowbackSubstage::Regrowth:
-			return "Regrowth";
-		default:
-			return "Unknown";
-		}
-	}
-
 	const char* EnviroWaveStepToString(const RuptureCycleState& state)
 	{
-		if (state.Stage == SDK::EEnviroWaveStage::PreWave
-			&& state.PreWaveSubstage != SDK::EEnviroWavePreWaveSubstage::None)
-		{
-			return PreWaveSubstageToString(state.PreWaveSubstage);
-		}
-		if (state.Stage == SDK::EEnviroWaveStage::Fadeout
-			&& state.FadeoutSubstage != SDK::EEnviroWaveFadeoutSubstage::None)
-		{
-			return FadeoutSubstageToString(state.FadeoutSubstage);
-		}
-		if (state.Stage == SDK::EEnviroWaveStage::Growback
-			&& state.GrowbackSubstage != SDK::EEnviroWaveGrowbackSubstage::None)
-		{
-			return GrowbackSubstageToString(state.GrowbackSubstage);
-		}
-		return "None";
+		return MapStateSdk::EnviroWaveStepToString(
+			state.Stage,
+			state.PreWaveSubstage,
+			state.FadeoutSubstage,
+			state.GrowbackSubstage);
 	}
 
 	bool CaptureRuptureCycleState(SDK::UWorld* world, RuptureCycleState& outState);

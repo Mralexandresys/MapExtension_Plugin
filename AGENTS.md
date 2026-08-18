@@ -46,10 +46,9 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
 - `mapview/local-test/`: mock HTTP API and fixture payloads for frontend development without the game/plugin.
 - `mapview/public/map-tiles/`: packaged map tile assets copied next to `MapExtensionViewer.html`.
 - `tools/build_map_data.py`: converts the local raw map exports in `analyse_map/` into the compact static catalog under `mapview/public/map-data/`.
-- `build_client.sh`, `build_server.sh`, `summarize_build.sh`: root build helpers.
+- `build.sh`, `summarize_build.sh`: root build helpers; `./build.sh <client|server> <debug|release>`.
 - `.github/workflows/release.yml`: PowerShell-based release packaging flow.
 - `licenses/`, `THIRD_PARTY_NOTICES.md`, `mapview/THIRD_PARTY_NOTICES.md`: third-party attribution and license notices.
-- `update/`: implementation notes for prior/planned improvement phases; use as context, not as active runtime code.
 - `StarRupture-Plugin-SDK/include/plugin_interface.h`: plugin API, interfaces, callbacks, enums.
 - `StarRupture-Plugin-SDK/include/plugin_network_helpers.h`: typed helpers for client/server plugin-network packets.
 - `StarRupture-Plugin-SDK/StarRupture SDK/`: Dumper-7 generated UE5 SDK headers for client/server targets.
@@ -77,17 +76,17 @@ Run these from the repository root unless stated otherwise.
 | Change type | Commands |
 | --- | --- |
 | Docs only | No build required |
-| Client-only C++ | `./build_client.sh debug --summary` or `./build_client.sh release --summary`, then `./summarize_build.sh client` |
-| Shared C++, config, protocol, or server-side C++ | Run a client build as above, then `./build_server.sh release --summary` and `./summarize_build.sh server` |
+| Client-only C++ | `./build.sh client debug --summary` or `./build.sh client release --summary`, then `./summarize_build.sh client` |
+| Shared C++, config, protocol, or server-side C++ | Run a client build as above, then `./build.sh server release --summary` and `./summarize_build.sh server` |
 | `mapview/` only | `cd mapview && pnpm run check && pnpm run build` |
 
-Server validation command: `./build_server.sh release --summary`.
+Server validation command: `./build.sh server release --summary`.
 
 ## Build mechanics
 
-- C++ builds are launched from Linux/WSL with `build_client.sh` and `build_server.sh`, but they execute Windows `MSBuild.exe`.
-- The local helper scripts do not invoke PowerShell; the GitHub release workflow uses PowerShell, while local Linux/WSL validation calls `MSBuild.exe` directly.
-- The scripts locate Visual Studio/MSBuild with `vswhere.exe` under `/mnt/c/Program Files (x86)/Microsoft Visual Studio/Installer/`, then fall back to common Visual Studio 2022/18 paths.
+- C++ builds are launched from Linux/WSL with `build.sh`, but they execute Windows `MSBuild.exe`.
+- The local helper script does not invoke PowerShell; the GitHub release workflow uses PowerShell, while local Linux/WSL validation calls `MSBuild.exe` directly.
+- The script locates Visual Studio/MSBuild with `vswhere.exe` under `/mnt/c/Program Files (x86)/Microsoft Visual Studio/Installer/`, then falls back to common Visual Studio 2022/18 paths.
 - Paths are converted with `wslpath`; `wslpath` and a Windows Visual Studio/MSBuild installation are required.
 - The default SDK root is `./StarRupture-Plugin-SDK`, but it can be overridden with `--sdk-root <path>`.
 - Client builds use `Client Debug|x64` or `Client Release|x64`; server builds use `Server Debug|x64` or `Server Release|x64`, with release server builds preferred for packaging/validation.
