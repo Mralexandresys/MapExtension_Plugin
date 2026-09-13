@@ -32,12 +32,13 @@ Sans override, le mock fournit :
 - un `/rupture-cycle` sans donnees live, utile pour verifier l'etat vide et les vues
   detaillee/compacte ;
 - un `/cargo` avec deux joueurs (`MockSelf` avec `self: true`, rendu dans la couleur
-  « moi », et `MockAlly`) et quatre POI visibles dans une zone rapprochee de la carte :
+  « moi », et `MockAlly`) et six POI visibles dans une zone rapprochee de la carte :
   - une base abandonnee, rendue avec l'icone de batiment fissure ;
   - une ressource `Gold Fruit` `available`, rendue avec un point plein ;
   - une ressource `Gold Fruit` `depleted`, rendue attenuee et en contour ;
   - une ressource `Plant Fiber` `available`, qui exerce une autre couleur de la
-    palette.
+    palette ;
+  - un Ignitium et une Star Tears pour les filtres des ressources de rupture.
 
 Les deux exemples `Gold Fruit` doivent conserver la meme couleur malgre leur etat,
 tandis que `Plant Fiber` permet de verifier la palette stable par ressource. Survoler
@@ -46,11 +47,12 @@ etat.
 
 Pour verifier les filtres :
 
-1. Le mode `Reseau` affiche la base abandonnee et les trois ressources.
-2. Les boutons `Bases abandonnees` et `Ressources vegetales` les masquent ou les
-   restaurent independamment.
-3. Le mode `Ressources` conserve seulement les trois ressources vegetales.
-4. Les modes `Teleporteurs` et `Joueurs` masquent tous les POI.
+1. Le prereglage `Reseau` active les familles observees et les POI canoniques.
+2. Les boutons `Bases abandonnees`, `Ressources vegetales`, `Ignitium` et `Star Tears`
+   les masquent ou les restaurent independamment.
+3. `Exploration` masque le cargo et permet d'ouvrir le Catalogue : chercher `calcium`
+   doit afficher les 102 gisements sans message « aucun resultat ».
+4. `Recolte` selectionne une ressource ; `Technique` expose les couches et details internes.
 5. `Afficher uniquement mes marqueurs et zones` masque les POI et toutes les autres
    entites du plugin pour ne laisser que les annotations utilisateur.
 
@@ -77,8 +79,11 @@ rupture live et une version de contrat superieure dans `/health`.
 Pour verifier la retrocompatibilite avec un plugin anterieur aux POI (et au champ
 `self` des joueurs), copier la fixture fournie :
 
+Depuis `mapview/` :
+
 ```bash
-cp examples/cargo-legacy-no-pois.json data/cargo.json
+mkdir -p local-test/data
+cp local-test/examples/cargo-legacy-no-pois.json local-test/data/cargo.json
 ```
 
 Cette fixture omet volontairement le tableau `pois`, les compteurs
@@ -86,7 +91,7 @@ Cette fixture omet volontairement le tableau `pois`, les compteurs
 des joueurs, comme le ferait un plugin plus ancien.
 
 Forcer ensuite un refresh du viewer. Le resultat attendu est une carte toujours
-utilisable, aucun POI rendu et des compteurs POI a zero, sans exiger les champs
+utilisable, aucun POI observe rendu et des compteurs POI observes a zero, sans exiger les champs
 `pois`, `counts.pois`, `counts.abandoned_bases` ou `counts.plant_resources`.
 
 Supprimer `local-test/data/cargo.json`, puis rafraichir le viewer, restaure le scenario

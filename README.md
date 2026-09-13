@@ -10,7 +10,7 @@ The plugin works in both single-player and multiplayer. For solo/local sessions,
 
 - See which `Cargo Dispatchers` are linked to which `Cargo Receivers`, and vice versa
 - View their positions directly on the map
-- See the items currently travelling through the network
+- See the items and amounts requested by cargo connections (without measuring actual throughput)
 - Display the positions of `teleporters`
 - Display the positions of `players`, with your own player highlighted in a distinct color
 - Display abandoned bases, supported gatherable plants, Ignitium, and Star Tears as points of interest (POIs), including Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb, and Nootka Lupine
@@ -40,7 +40,9 @@ Abandoned bases use their own map icon. Plant resources use a stable palette col
 
 Ignitium and Star Tears filters use positions validated from runtime actors in areas loaded near players. The broad PCG inclusion/exclusion volumes are not displayed as resource locations. While the published timeline is in Arcadia stable (from 690 seconds in the 3240-second cycle, with `PreWave` as a fallback when elapsed time is unavailable), a validated, unharvested Ignitium site is exposed as Star Tears instead of Ignitium; an actual Star Tears actor observation is preferred at the same site. During the stabilizing transition, both resources can be displayed in the late-cycle overlap, with Star Tears drawn above the underlying Ignitium marker.
 
-The viewer can reduce the rupture timeline to a compact bar; hover it or focus it with the keyboard to show the current phase, remaining time, legend, and timeline ticks. The filters can hide every game entity and leave only personal markers and zones, and the `Player` control or `P` shortcut centers the map on the first reported player position.
+The rupture bar shows the phase and remaining time. Click it or press `Enter`/`Space` to open details; `Escape`, Close or an outside click closes them. On mobile, the bar stays visible without horizontal scrolling, details stay within the viewport, and the map controls have reserved space below the filters. The `Player` control or `P` shortcut centers on the `self` player, falling back to the first player when that flag is absent.
+
+The timeline uses a calibrated 3240-second cycle (30/60/600/2550), animated between observations. It can drift from the game; raw Heat/Cold settings do not directly map to these phases. This calibration is deliberately retained.
 
 ## Plant coverage
 

@@ -12,6 +12,11 @@ Frontend Vue 3 + Vite de l'interface web locale de `MapExtension_Plugin`.
 
 ## Commandes
 
+Utiliser Node `^20.19.0 || >=22.12.0` et pnpm 10.14.0. Avec nvm,
+executer `nvm install && nvm use` a la racine (`.nvmrc` : 22.22.1), puis revenir
+dans `mapview/`. `corepack pnpm` permet de lancer la version declaree dans
+`package.json` sans utiliser un ancien pnpm global.
+
 ```bash
 pnpm install
 pnpm run dev
@@ -63,7 +68,7 @@ Pour utiliser ou distribuer l'interface, garder `map-tiles/` et `map-data/` a co
 
 ## Catalogue statique du monde
 
-Le viewer charge un catalogue compact pre-genere depuis `public/map-data/`. Il contient 241 POI principaux ainsi que les ressources, batiments, zones et elements techniques extraits localement des exports `analyse_map/map_v2_*`. Les POI restent dans le SVG interactif ; les centaines de milliers de ressources et placements sont dessines par `StaticMapCanvas.vue` afin d'eviter un DOM SVG trop volumineux.
+Le viewer charge un catalogue compact pre-genere depuis `public/map-data/`. Il contient 241 POI principaux ainsi que les ressources, batiments, zones et elements techniques extraits localement des exports `analyse_map/map_v2_*`. Les POI restent dans le SVG interactif ; les 57 147 ressources et 21 751 placements sont dessines par `StaticMapCanvas.vue` afin d'eviter un DOM SVG trop volumineux.
 
 Dans la couche `building`, le frontend rend uniquement les placements dont l'`actorType` contient `KeyCard`, `Coralion_Egg` ou `Spawner`, sans distinction de casse. Les couches `zone` et `technical` conservent tous leurs placements.
 
@@ -118,7 +123,7 @@ Les quatre prereglages repondent chacun a une question de joueur et pilotent d'u
 | `Recolte` | Ou est la ressource que je collecte maintenant ? | Une seule ressource a la fois + grottes |
 | `Technique` | Que contient l'export brut ? | Placements, zones, sockets et proxies (mode developpeur) |
 
-Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` ne porte plus aucun filon depuis que l'export dedie attribue les 12 sockets `BP_OreSocket` restants au wolfram ; il ne subsiste que pour les acteurs de minerai non identifies, et reste masque. Le compteur de filtres actifs de l'en-tete ne compte que les ecarts par rapport au prereglage courant.
+Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` est exclu du catalogue. L'export dedie attribue les 12 anciens sockets non identifies au tungstene, qui compte ainsi 107 gisements. Le compteur de filtres actifs de l'en-tete ne compte que les ecarts par rapport au prereglage courant.
 
 ### Zones et elements de generation
 
@@ -173,22 +178,27 @@ la geometrie des triangles de collision etant absente de l'export.
 
 Le catalogue publie donc aussi la fiabilite de cette jointure, par filon :
 `exact` (271), `elevee` (282), `moyenne` (100) et `faible` (7, tous du wolfram, a
-des distances de jointure de 30 a 45 m contre ~1 m pour les jointures fiables). Un
-filon dont la qualite repose sur une jointure moyenne ou faible est dessine creux
-sur la carte : la couleur porte toujours la qualite, mais un marqueur plein
-affirmerait une certitude que l'export n'a pas. Le panneau de selection donne le
-niveau exact et rappelle la methode.
+des distances de jointure de 30 a 45 m contre ~1 m pour les jointures fiables). Cette fiabilite reste une information technique : elle est affichee dans le panneau
+de selection en prereglage `Technique`, sans modifier le remplissage des marqueurs
+ni ajouter une mention « estimee » a la purete dans les vues joueur.
 
 Le catalogue publie enfin l'extracteur a poser sur chaque minerai
 (`Excavatrice de minerai` 389 filons, `Foreuse laser` 102, `Extracteur de soufre`
-95, `Extracteur d'helium 3` 74). Le groupe `Extracteur` de l'onglet `Catalogue`
-filtre les filons par machine, et le panneau de selection l'indique par filon.
+95, `Extracteur d'helium 3` 74). L'extracteur figure dans la selection du filon,
+sans filtre separe : chaque minerai correspond deja a une seule machine.
 
 La qualite se lit directement sur la carte, sans ouvrir le panneau : le marqueur
 garde la couleur de son minerai et la qualite joue sur sa luminosite et sa taille
 (pur = plus clair et plus gros, impur = plus sombre et plus petit). Elle est aussi
-filtrable, groupe `Qualite du filon` de l'onglet `Catalogue`, ce qui permet de n'afficher que
-les filons purs. Le panneau de selection continue d'indiquer la valeur exacte.
+filtrable dans le bloc `Gisements pour extracteurs` de l'onglet `Catalogue`, au-dessus
+des types de minerai. Les compteurs de purete suivent les minerais actives et la recherche.
+Le filtre agit sur les gisements ; les ressources recoltees a la main restent dans un bloc
+separe. La recherche prend en compte les deux blocs, sans afficher « aucun resultat »
+lorsque seuls des gisements correspondent. Le panneau de selection indique la purete.
+
+Le generateur supprime les representations acteur/PCG du meme minerai situees a
+moins de 500 cm sur chacun des deux axes horizontaux d'un gisement. Le catalogue
+courant retire ainsi 366 doublons sans retirer les 660 gisements.
 
 Les libelles EN/FR viennent des tables d'items du jeu embarquees dans l'export
 (`item.item_name`), donc le catalogue affiche les noms officiels : `Minerai de
@@ -211,22 +221,29 @@ Research Outpost`) reste dans le panneau de selection.
 
 ### Regeneration
 
-Depuis la racine du depot, avec les quatre exports locaux presents dans `analyse_map/` :
+Depuis la racine du depot, avec les exports locaux presents dans `analyse_map/` :
 
 ```bash
 python3 tools/build_map_data.py
 ```
 
-Le script lit `map_v2_resources.jsonl`, `map_v2_placements.jsonl`, `map_v2_pois.geojson` et `map_v2_catalog.json`, puis reecrit `mapview/public/map-data/*.js`. `analyse_map/` est ignore par Git, mais les fichiers compacts generes doivent etre versionnes pour que les builds locaux et CI disposent du catalogue.
+Le script lit `map_v2_resources.jsonl`, `map_v2_placements.jsonl` et `map_v2_pois.geojson`,
+avec `map_v2_ore_veins.jsonl` comme source privilegiee des gisements lorsqu'il est present.
+`map_v2_catalog.json` est une reference locale et n'est plus lu ; son ancien bloc
+`rupture` n'est plus publie dans le manifeste. Le script reecrit `mapview/public/map-data/*.js`.
+`analyse_map/` est ignore et conserve localement, tandis que les fichiers compacts generes
+doivent etre versionnes pour les builds locaux et CI. Apres regeneration, lancer
+`pnpm run check && pnpm run build` dans `mapview/`.
 
 ## POI live et filtres de carte
 
-Le tableau optionnel `pois` de `GET /cargo` alimente deux familles de points
+Le tableau optionnel `pois` de `GET /cargo` alimente quatre categories de points
 d'interet :
 
 - les bases abandonnees utilisent une icone de batiment fissure distincte ;
 - le plugin courant publie les plantes disponibles Hydrobulb, Polifruit, Oxallop,
-  Purplant, Serpent Root, Prickler, Prism Herb et Sulheart ; il publie aussi les
+  Purplant, Serpent Root, Prickler, Prism Herb et Sulheart, ainsi que Gold Fruit,
+  Thornfruit, Sikkim Rhubarb, Nootka Lupine et Plant par classes d'acteur ; il publie aussi les
   acteurs live Ignitium (`ACrOreActor::Resource == I_FireWaveOre_C`) et Star Tears
   (`InteractionRewardResource == I_StarTears_C`) avec leurs positions exactes ;
 - les grands volumes PCG d'inclusion et d'exclusion ne sont pas relies a ces filtres :
@@ -261,11 +278,15 @@ desactiver restaure les elements permis par le mode et les autres filtres actifs
 
 ## Timeline Rupture et recentrage joueur
 
-Le bouton de vue compacte du panneau Rupture remplace le panneau detaille par une barre
-de timeline reduite ; le choix est conserve dans les preferences du navigateur. En
-mode compact, survoler la barre ou lui donner le focus avec `Tab` ouvre les details :
-phase actuelle, temps restant, graduations de la timeline et legende des phases. Le
-meme contenu est donc disponible a la souris et au clavier.
+La barre Rupture affiche la phase et le temps restant. Un clic ou `Entree`/`Espace`
+ouvre les details ; `Echap`, Fermer ou un clic exterieur les referme. Les details sont
+rendus hors du bandeau, limites a la fenetre et defilables si necessaire. Sur mobile,
+la barre du cycle reste visible sans defilement horizontal et le tiroir de filtres
+reserve la hauteur reelle des commandes de carte, y compris quand elles occupent plusieurs lignes.
+
+Les durees sont une calibration conservee de 3240 secondes (30/60/600/2550), pas une
+lecture exacte des reglages Heat/Cold. L'animation entre observations et cette calibration
+peuvent diverger du jeu ; brancher directement les durees brutes ne corrigerait pas ce decalage.
 
 Le bouton `Joueur` de la barre d'actions et le raccourci `P` recentrent la carte sur le
 joueur marque `self: true` dans le payload courant (son propre joueur), ou a defaut sur
@@ -277,7 +298,7 @@ les autres raccourcis, `P` est actif en dehors des champs de saisie.
 
 Le payload `/cargo` interne de `pnpm run mock-api` contient une base abandonnee, une
 ressource `Gold Fruit` disponible, la meme ressource en etat `depleted` et une ressource
-`Plant Fiber` disponible. Il permet de verifier les icones, les deux etats, la stabilite
+`Plant Fiber` disponible, un Ignitium et une Star Tears. Il permet de verifier les icones, les deux etats, la stabilite
 de couleur pour un meme nom de ressource, la palette entre ressources et les filtres.
 Les scenarios et les commandes detaillees sont documentes dans
 `local-test/README.md`.
@@ -288,7 +309,7 @@ elle contient un payload `/cargo` valide mais sans champ `pois`, sans compteurs
 `pois`, `abandoned_bases` et `plant_resources`, et sans champ `self` sur les joueurs.
 Le mock sert cet
 override tel quel : apres un refresh, le viewer doit continuer a afficher la carte et
-les anciennes entites, avec zero POI. Supprimer l'override permet de revenir au payload
+les anciennes entites, avec zero POI observes (les POI du catalogue restent independants). Supprimer l'override permet de revenir au payload
 POI interne.
 
 ## Test local de la pop-up de mise a jour
@@ -298,10 +319,11 @@ fichiers de fixtures deposes dans `local-test/data/` : `health.json`, `cargo.jso
 `rupture-cycle.json` (ou `rupture_cycle.json`). Si le fichier existe et n'est pas vide,
 il est renvoye tel quel ; sinon le mock repond avec son payload interne par defaut.
 
-Le payload `/health` par defaut declare `"viewer_contract_version": 1`, soit la meme
+Le payload `/health` par defaut declare `"viewer_contract_version": 2`, soit la meme
 valeur que `VIEWER_CONTRACT_VERSION` : par defaut, la pop-up ne s'affiche donc pas.
 
-Pour la declencher, creer `local-test/data/health.json` avec une valeur superieure :
+Pour la declencher, creer `local-test/data/health.json` avec une valeur strictement
+superieure a `VIEWER_CONTRACT_VERSION` (3 pour le viewer actuel a 2) :
 
 ```json
 {
@@ -313,7 +335,7 @@ Pour la declencher, creer `local-test/data/health.json` avec une valeur superieu
   "teleporter_count": 0,
   "player_count": 0,
   "plugin_version": "ML-v1.16.0-v0.5",
-  "viewer_contract_version": 2,
+  "viewer_contract_version": 3,
   "viewer_update": {
     "download_url": "https://example.invalid/viewer.zip",
     "release_url": "https://example.invalid/release",

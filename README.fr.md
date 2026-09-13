@@ -10,7 +10,7 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local,
 
 - Voir quels `Cargo Dispatchers` sont relies a quels `Cargo Receivers`, et inversement
 - Afficher leurs positions directement sur la carte
-- Voir les objets actuellement transportes dans le reseau
+- Voir les objets et quantites demandes dans les connexions cargo (sans mesure du debit reel)
 - Afficher la position des `teleporteurs`
 - Afficher la position des `joueurs`, avec son propre joueur mis en avant dans une couleur distincte
 - Afficher les bases abandonnees, les plantes recoltables prises en charge, Ignitium et Star Tears comme points d'interet (POI), dont Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb et Nootka Lupine
@@ -40,7 +40,9 @@ Les bases abandonnees utilisent leur propre icone sur la carte. Les ressources v
 
 Les filtres Ignitium et Star Tears utilisent les positions validees depuis les acteurs runtime dans les zones chargees pres des joueurs. Les grands volumes PCG d'inclusion et d'exclusion ne sont pas affiches comme des emplacements de ressources. Quand la timeline publiee indique Arcadia stable (a partir de 690 secondes dans le cycle de 3240 secondes, avec `PreWave` en secours si le temps ecoule est indisponible), un site Ignitium valide et non recolte est expose comme Star Tears plutot que comme Ignitium ; une observation reelle d'acteur Star Tears au meme site reste prioritaire. Pendant la transition de stabilisation, les deux ressources peuvent etre affichees dans la courte fenetre de fin de cycle, avec Star Tears au-dessus du marqueur Ignitium sous-jacent.
 
-L'interface peut reduire la timeline de rupture en barre compacte ; son survol ou son focus clavier affiche la phase courante, le temps restant, la legende et les reperes de timeline. Les filtres peuvent masquer toutes les entites du jeu pour ne laisser que les marqueurs et zones personnels, et le controle `Joueur` ou le raccourci `P` centre la carte sur la premiere position de joueur recue.
+La barre de rupture affiche la phase et le temps restant. Un clic ou `Entree`/`Espace` ouvre les details ; `Echap`, le bouton Fermer ou un clic exterieur les referme. Sur mobile, la barre reste visible sans defilement horizontal, les details restent dans la fenetre et les commandes de carte disposent d'un espace reserve sous les filtres. Le controle `Joueur` ou le raccourci `P` centre la carte sur le joueur `self`, ou sur le premier joueur en l'absence de cet indicateur.
+
+La timeline utilise une calibration de 3240 secondes (30/60/600/2550), animee entre les observations. Elle peut diverger du jeu ; les reglages bruts Heat/Cold ne sont pas une correspondance directe avec ces phases. Cette calibration reste volontairement conservee.
 
 ## Couverture des plantes
 

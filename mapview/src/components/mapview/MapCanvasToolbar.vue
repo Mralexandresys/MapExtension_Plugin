@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { MapCanvasToolbarModel } from "../../lib/types";
 
 defineProps<{
@@ -11,12 +12,25 @@ const emit = defineEmits<{
     "center-player": [];
     "toggle-focus": [];
     "toggle-filters": [];
+    resize: [height: number];
 }>();
+
+const toolbarRef = ref<HTMLElement | null>(null);
+let resizeObserver: ResizeObserver | undefined;
+onMounted(() => {
+    const toolbar = toolbarRef.value;
+    if (!toolbar) return;
+    resizeObserver = new ResizeObserver(() => {
+        emit("resize", Math.ceil(toolbar.getBoundingClientRect().height));
+    });
+    resizeObserver.observe(toolbar);
+});
+onBeforeUnmount(() => resizeObserver?.disconnect());
 </script>
 
 <template>
     <div class="overlay-layer overlay-bottom-center">
-        <section class="floating-panel map-toolbar" :aria-label="panel.ui.map.actionsLabel">
+        <section ref="toolbarRef" class="floating-panel map-toolbar" :aria-label="panel.ui.map.actionsLabel">
             <!-- Resets the map view only. Clearing filters stays in the filters
                  panel, where it is contextual: the two used to share a label. -->
             <button class="toolbar-button" type="button" @click="emit('reset')">

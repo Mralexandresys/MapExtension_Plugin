@@ -33,6 +33,13 @@ function mapRuptureStageToPhaseKey(
     return null;
 }
 
+/**
+ * Phase durations, from the plugin when it sends them and from these fallbacks
+ * otherwise. Both sets are calibrated by observation rather than read from the
+ * game: the timeline is a model of the cycle, not a reading of its clock, and
+ * it can therefore disagree with what the player sees on screen. Kept as is on
+ * purpose -- see the note above `BuildRuptureCycleJson` in `map_state_json.cpp`.
+ */
 function getRuptureDurations(response: RuptureCycleResponse | null) {
     const timeline = response?.timeline;
     const burning = timeline?.phase_seconds?.burning ?? 30;

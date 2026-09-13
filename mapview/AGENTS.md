@@ -12,7 +12,7 @@ It is intended to be opened locally as `MapExtensionViewer.html` while the game/
 - TypeScript.
 - Vite.
 - `vite-plugin-singlefile`.
-- Node.js 20.19.0+ or 22.12.0+.
+- Node.js 20.19.x+ in the 20.x line, or 22.12.0+; `.nvmrc` selects the tested Node 22.22.1. Use pnpm 10.14.0 as declared in `package.json`.
 
 ## Important structure
 
@@ -40,7 +40,7 @@ For frontend-only changes, run `pnpm run check` and `pnpm run build`. Do not reb
 
 ## Static map catalog
 
-- The source `.jsonl`, `.json`, and GeoJSON exports are intentionally local and very large: `../analyse_map/map_v2_resources.jsonl`, `../analyse_map/map_v2_placements.jsonl`, `../analyse_map/map_v2_pois.geojson`, and `../analyse_map/map_v2_catalog.json`. Do not commit, load, or regenerate them unnecessarily.
+- The local, ignored build inputs are `../analyse_map/map_v2_resources.jsonl`, `../analyse_map/map_v2_placements.jsonl`, `../analyse_map/map_v2_pois.geojson`, and the preferred `../analyse_map/map_v2_ore_veins.jsonl` for deposits. `map_v2_catalog.json` is reference material only and is no longer read by the generator. Do not commit, load, or regenerate these very large exports unnecessarily.
 - From the repository root, run `python3 tools/build_map_data.py` to regenerate `public/map-data/manifest.js`, `resources-*.js`, `placements-*.js`, and `pois.js`.
 - The viewer loads catalog parts lazily by layer. Keep generated file names, their JSONP wrapper, and the `map-data/` directory layout compatible with the catalog loader.
 - After regeneration, run `pnpm run check && pnpm run build` from `mapview/`; the build copies the catalog to `dist/map-data/` beside `MapExtensionViewer.html`.

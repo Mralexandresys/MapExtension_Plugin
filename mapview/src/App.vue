@@ -427,6 +427,9 @@ const staticFiltersModel = useStaticFiltersModel({
     loadedCount: staticLoadedCount,
 });
 
+/** The Technical preset is the only place raw export vocabulary belongs. */
+const developerMode = computed(() => PRESET_DEFINITIONS[preset.value].developerMode);
+
 function isStaticSeriesVisible(entry: StaticPointSeries): boolean {
     return staticFilters.isSeriesVisible(entry);
 }
@@ -475,34 +478,18 @@ function staticTitle(selection: StaticSelection): string {
 
 function staticDetailRows(selection: StaticSelection): DetailRow[] {
     const messages = ui.value.staticFilters;
-    const rows: DetailRow[] = [
-        {
-            label: messages.details.catalog,
-            value: messages.layers[selection.layer],
-        },
-    ];
+    const rows: DetailRow[] = [];
 
     if (selection.kind === "resource") {
-        const categories = messages.categories as Record<string, string>;
-        rows.push({
-            label: messages.details.group,
-            value: categories[selection.category ?? ""] ?? selection.category ?? "",
-        });
-        if (selection.representation) {
-            rows.push({
-                label: messages.details.representation,
-                value: messages.representations[selection.representation],
-            });
-        }
+        // Quality and extractor lead: on a vein they are what the click was
+        // for. The taxonomy rows that used to head the list -- catalog, group,
+        // representation -- describe how the catalog is built, not the spot.
         if (selection.purity) {
             rows.push({
                 label: messages.details.purity,
                 value: messages.purities[selection.purity],
             });
         }
-        // Which machine goes on this vein, and how solid the quality above is.
-        // Three quarters of the deposits carry a purity joined to a nearby
-        // collision anchor rather than read off the socket itself.
         const extractorId = staticFilters.resourceExtractor(selection.group);
         const extractor = extractorId
             ? staticData.manifest.value?.extractors?.[extractorId]
@@ -513,17 +500,6 @@ function staticDetailRows(selection: StaticSelection): DetailRow[] {
                 value: lang.value === "fr" ? extractor.fr : extractor.en,
             });
         }
-        if (selection.purityConfidence) {
-            const inferred = selection.purityConfidence !== "exact";
-            rows.push({
-                label: messages.confidenceTitle,
-                value: inferred
-                    ? `${messages.confidences[selection.purityConfidence]} - ${
-                          messages.confidenceInferredNote
-                      }`
-                    : messages.confidences[selection.purityConfidence],
-            });
-        }
         rows.push({
             label: ui.value.selection.state,
             value: messages.states[selection.state],
@@ -532,13 +508,6 @@ function staticDetailRows(selection: StaticSelection): DetailRow[] {
         rows.push({
             label: messages.details.group,
             value: staticGroupLabel(selection.group),
-        });
-    }
-
-    if (selection.actorType) {
-        rows.push({
-            label: messages.details.actorType,
-            value: selection.actorType,
         });
     }
 
@@ -554,9 +523,6 @@ function staticDetailRows(selection: StaticSelection): DetailRow[] {
                 value: description,
             });
         }
-        if (poi.guid) {
-            rows.push({ label: messages.details.guid, value: poi.guid });
-        }
     }
 
     rows.push({
@@ -568,6 +534,43 @@ function staticDetailRows(selection: StaticSelection): DetailRow[] {
         value: `${selection.z} m`,
     });
 
+    // How the catalog names and derives this element. Useful to check an
+    // export, never to a player, so it rides with the Technical preset.
+    if (developerMode.value) {
+        rows.push({
+            label: messages.details.catalog,
+            value: messages.layers[selection.layer],
+        });
+        if (selection.kind === "resource") {
+            const categories = messages.categories as Record<string, string>;
+            rows.push({
+                label: messages.details.group,
+                value: categories[selection.category ?? ""] ?? selection.category ?? "",
+            });
+            if (selection.representation) {
+                rows.push({
+                    label: messages.details.representation,
+                    value: messages.representations[selection.representation],
+                });
+            }
+            if (selection.purityConfidence) {
+                rows.push({
+                    label: messages.details.confidence,
+                    value: selection.purityConfidence,
+                });
+            }
+        }
+        if (selection.actorType) {
+            rows.push({
+                label: messages.details.actorType,
+                value: selection.actorType,
+            });
+        }
+        if (poi?.guid) {
+            rows.push({ label: messages.details.guid, value: poi.guid });
+        }
+    }
+
     return rows;
 }
 
@@ -578,11 +581,9 @@ function describeStatic(selection: StaticSelection): {
     title: string;
     lines: string[];
 } {
-    const guidLabel = ui.value.staticFilters.details.guid;
     return {
         title: staticTitle(selection),
         lines: staticDetailRows(selection)
-            .filter((row) => row.label !== guidLabel)
             .slice(0, TOOLTIP_MAX_LINES)
             .map((row) => `${row.label}: ${row.value}`),
     };
@@ -695,7 +696,7 @@ const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     staticVisibleCount: staticVisibleCount.value,
     entityToggleOptions: entityToggleOptions.value,
     entityVisibility: readonly(entityVisibility),
-    developerMode: PRESET_DEFINITIONS[preset.value].developerMode,
+    developerMode: developerMode.value,
     showAllLinks: showAllLinks.value,
     highlightOrphans: highlightOrphans.value,
     userAnnotationsOnly: userAnnotationsOnly.value,
@@ -704,6 +705,7 @@ const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     staticFilters: staticFiltersModel.value,
 }));
 
+const mapToolbarHeight = ref(100);
 const canvasToolbarPanel = computed<MapCanvasToolbarModel>(() => ({
     ui: ui.value,
     selectedEntityActive: !!selectedEntity.value || !!staticSelection.value,
@@ -764,6 +766,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
         <section
             class="card map-stage"
             :class="{ 'sidebar-open': !filtersPanelCollapsed }"
+            :style="{ '--map-toolbar-height': `${mapToolbarHeight}px` }"
         >
             <MapCanvas
                 ref="mapCanvasRef"
@@ -810,6 +813,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
 
             <MapCanvasToolbar
                 :panel="canvasToolbarPanel"
+                @resize="mapToolbarHeight = $event"
                 @reset="resetMapView"
                 @center="centerCurrentSelection"
                 @center-player="centerOnPlayer"

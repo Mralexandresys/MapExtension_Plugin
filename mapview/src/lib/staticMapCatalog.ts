@@ -57,18 +57,15 @@ export const DEFAULT_ENABLED_KINDS: readonly StaticResourceKind[] = [
  * the only physical material the resource has; the others come from joining the
  * socket to the nearest exported collision anchor, the collision triangles the
  * game ray-traces being absent from the export.
+ *
+ * Developer data: it says how the catalog was built, not anything a player can
+ * act on, so it is only surfaced in the Technical preset.
  */
 export type StaticOreConfidence = "exact" | "high" | "medium" | "low";
 
 export const STATIC_ORE_CONFIDENCE_LEVELS: readonly StaticOreConfidence[] = [
     "exact",
     "high",
-    "medium",
-    "low",
-];
-
-/** Below this, the purity shown rests on a join the export flags as weak. */
-export const STATIC_ORE_CONFIDENCE_INFERRED: readonly StaticOreConfidence[] = [
     "medium",
     "low",
 ];
@@ -356,18 +353,6 @@ export function resourceColor(typeId: string): string {
 
 export function groupColor(group: string): string {
     return GROUP_COLORS[group] ?? hashColor(group);
-}
-
-/** One hue per extractor buildable on a vein, keyed by the catalog's ids. */
-const EXTRACTOR_COLORS: Record<string, string> = {
-    MechanicalDrill: "#f59e0b",
-    LaserDrill: "#ef4444",
-    GasExtractor: "#38bdf8",
-    AcidExtractor: "#a3e635",
-};
-
-export function extractorColor(extractorId: string): string {
-    return EXTRACTOR_COLORS[extractorId] ?? hashColor(extractorId);
 }
 
 // ── JSONP loading ─────────────────────────────────────────────────────────────

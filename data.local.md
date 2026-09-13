@@ -1,4 +1,6 @@
-Oui. Voici une nomenclature regroupée par type. La colonne française est une proposition de traduction à harmoniser ensuite avec les noms officiels du jeu.
+# Notes de traduction — propositions historiques
+
+Ce document est un brouillon, pas le contrat du viewer ni une liste de fonctions implémentées. Les libellés distribués viennent des tables du jeu et des corrections de `tools/build_map_data.py`, puis de `mapview/src/lang/`. Les propositions ci-dessous ne doivent pas remplacer automatiquement ces noms ; consulter `CONTEXT.md` et `game-context.md` pour le modèle actuel.
 
 ## Plantes récoltables
 

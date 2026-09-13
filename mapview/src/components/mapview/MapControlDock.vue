@@ -654,11 +654,10 @@ function handleFileChange(event: Event): void {
         width: 100%;
     }
 
-    /* One scrollable line instead of a ragged grid: the labels stay readable
-       and the header keeps a predictable height. */
+    /* Keep the cycle visible without horizontally scrolling past the stats. */
     .command-stats-row {
-        flex-wrap: nowrap;
-        overflow-x: auto;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 0;
         padding: 0;
         scrollbar-width: none;
@@ -669,13 +668,14 @@ function handleFileChange(event: Event): void {
     }
 
     .command-stat {
-        flex: 0 0 auto;
-        min-width: 82px;
-        padding: 8px 12px;
+        min-width: 0;
+        padding: 8px 6px;
     }
 
     .command-stats-timeline {
-        flex: 1 0 min(260px, 70vw);
+        order: -1;
+        grid-column: 1 / -1;
+        min-width: 0;
     }
 }
 

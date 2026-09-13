@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 
 import droneProhibitedSvg from "../../assets/drone-prohibited-1-svgrepo-com.svg?raw";
 import { formatClockSeconds } from "../../lib/formatters";
@@ -19,6 +19,19 @@ const emit = defineEmits<{
 }>();
 
 const rootRef = ref<HTMLElement | null>(null);
+const detailsRef = ref<HTMLElement | null>(null);
+const detailsPosition = ref({ top: "12px", left: "12px" });
+
+function positionDetails(): void {
+    if (!rootRef.value || !detailsRef.value) return;
+    const anchor = rootRef.value.getBoundingClientRect();
+    const details = detailsRef.value.getBoundingClientRect();
+    const margin = 12;
+    detailsPosition.value = {
+        top: `${Math.max(margin, Math.min(anchor.bottom + 8, window.innerHeight - details.height - margin))}px`,
+        left: `${Math.max(margin, Math.min(anchor.right - details.width, window.innerWidth - details.width - margin))}px`,
+    };
+}
 
 const activeToneClass = computed(
     () => props.panel.phases.find((phase) => phase.active)?.toneClass ?? "",
@@ -30,32 +43,46 @@ function phaseRange(phase: RupturePhaseView): string {
 
 function handleDocumentPointerDown(event: PointerEvent): void {
     const target = event.target as Node | null;
-    if (target && rootRef.value?.contains(target)) return;
+    if (target && (rootRef.value?.contains(target) || detailsRef.value?.contains(target))) return;
     emit("close-details");
 }
 
 function handleDocumentKeydown(event: KeyboardEvent): void {
     if (event.key !== "Escape") return;
     event.stopPropagation();
+    closeDetails();
+}
+
+function closeDetails(): void {
     emit("close-details");
+    rootRef.value?.querySelector("button")?.focus();
 }
 
 watch(
-    () => props.panel.detailsOpen,
-    (open) => {
+    () => [props.panel.detailsOpen, props.panel.hasLiveData],
+    async ([open], [wasOpen]) => {
         if (open) {
             document.addEventListener("pointerdown", handleDocumentPointerDown);
             document.addEventListener("keydown", handleDocumentKeydown, true);
+            window.addEventListener("resize", positionDetails);
+            window.addEventListener("scroll", positionDetails, true);
+            await nextTick();
+            positionDetails();
+            if (!wasOpen) detailsRef.value?.querySelector("button")?.focus({ preventScroll: true });
             return;
         }
         document.removeEventListener("pointerdown", handleDocumentPointerDown);
         document.removeEventListener("keydown", handleDocumentKeydown, true);
+        window.removeEventListener("resize", positionDetails);
+        window.removeEventListener("scroll", positionDetails, true);
     },
 );
 
 onBeforeUnmount(() => {
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
     document.removeEventListener("keydown", handleDocumentKeydown, true);
+    window.removeEventListener("resize", positionDetails);
+    window.removeEventListener("scroll", positionDetails, true);
 });
 </script>
 
@@ -65,6 +92,7 @@ onBeforeUnmount(() => {
             class="rupture-strip-trigger"
             type="button"
             :aria-expanded="panel.detailsOpen"
+            aria-controls="rupture-details"
             :title="panel.ui.rupture.title"
             @click="emit('toggle-details')"
         >
@@ -106,106 +134,116 @@ onBeforeUnmount(() => {
             ></span>
         </button>
 
-        <div v-if="panel.detailsOpen" class="rupture-details">
-            <div class="rupture-details-head">
-                <div>
-                    <h2>{{ panel.ui.rupture.title }}</h2>
-                    <p>{{ panel.ui.rupture.subtitle }}</p>
-                </div>
-                <button
-                    class="button subtle small"
-                    type="button"
-                    @click="emit('close-details')"
-                >
-                    {{ panel.ui.buttons.close }}
-                </button>
-            </div>
-
-            <template v-if="panel.hasLiveData">
-                <div class="rupture-focus-inline">
-                    <span class="rupture-focus-pill">
-                        <span class="rupture-focus-label">
-                            {{ panel.ui.rupture.currentPhase }}
-                        </span>
-                        <strong class="rupture-focus-value">
-                            {{ panel.currentPhaseLabel }}
-                        </strong>
-                    </span>
-                    <span class="rupture-focus-pill">
-                        <span class="rupture-focus-label">
-                            {{ panel.ui.rupture.timeRemaining }}
-                        </span>
-                        <strong class="rupture-focus-value">
-                            {{ panel.currentPhaseRemainingLabel }}
-                        </strong>
-                    </span>
-                    <!-- Position in the cycle. Previously a floating bubble above
-                         the track, which overlapped this very row. -->
-                    <span class="rupture-focus-pill">
-                        <span class="rupture-focus-label">
-                            {{ panel.ui.rupture.elapsed }}
-                        </span>
-                        <strong class="rupture-focus-value">
-                            {{ panel.markerLabel }}
-                        </strong>
-                    </span>
+        <Teleport to="body">
+            <div
+                v-if="panel.detailsOpen"
+                id="rupture-details"
+                ref="detailsRef"
+                class="rupture-details"
+                role="region"
+                :aria-label="panel.ui.rupture.title"
+                :style="detailsPosition"
+            >
+                <div class="rupture-details-head">
+                    <div>
+                        <h2>{{ panel.ui.rupture.title }}</h2>
+                        <p>{{ panel.ui.rupture.subtitle }}</p>
+                    </div>
+                    <button
+                        class="button subtle small"
+                        type="button"
+                        @click="closeDetails"
+                    >
+                        {{ panel.ui.buttons.close }}
+                    </button>
                 </div>
 
-                <div class="rupture-timeline">
-                    <div class="rupture-track">
-                        <div
+                <template v-if="panel.hasLiveData">
+                    <div class="rupture-focus-inline">
+                        <span class="rupture-focus-pill">
+                            <span class="rupture-focus-label">
+                                {{ panel.ui.rupture.currentPhase }}
+                            </span>
+                            <strong class="rupture-focus-value">
+                                {{ panel.currentPhaseLabel }}
+                            </strong>
+                        </span>
+                        <span class="rupture-focus-pill">
+                            <span class="rupture-focus-label">
+                                {{ panel.ui.rupture.timeRemaining }}
+                            </span>
+                            <strong class="rupture-focus-value">
+                                {{ panel.currentPhaseRemainingLabel }}
+                            </strong>
+                        </span>
+                        <!-- Position in the cycle. Previously a floating bubble above
+                             the track, which overlapped this very row. -->
+                        <span class="rupture-focus-pill">
+                            <span class="rupture-focus-label">
+                                {{ panel.ui.rupture.elapsed }}
+                            </span>
+                            <strong class="rupture-focus-value">
+                                {{ panel.markerLabel }}
+                            </strong>
+                        </span>
+                    </div>
+
+                    <div class="rupture-timeline">
+                        <div class="rupture-track">
+                            <div
+                                v-for="phase in panel.phases"
+                                :key="phase.key"
+                                class="rupture-segment"
+                                :class="[phase.toneClass, { active: phase.active }]"
+                                :style="{ width: `${phase.widthPercent}%` }"
+                            ></div>
+                            <div
+                                v-if="panel.markerPercent !== null"
+                                class="rupture-marker"
+                                :style="{ left: `${panel.markerPercent}%` }"
+                            ></div>
+                        </div>
+                    </div>
+
+                    <!-- Replaces the absolutely-positioned tick scale: phase
+                         durations are wildly unequal, so the boundary labels piled
+                         up at both ends of the track and left the middle empty.
+                         A row per phase carries the same numbers, legibly, and
+                         doubles as the legend. -->
+                    <ul class="rupture-phase-list" :aria-label="panel.ui.handles.legend">
+                        <li
                             v-for="phase in panel.phases"
                             :key="phase.key"
-                            class="rupture-segment"
-                            :class="[phase.toneClass, { active: phase.active }]"
-                            :style="{ width: `${phase.widthPercent}%` }"
-                        ></div>
-                        <div
-                            v-if="panel.markerPercent !== null"
-                            class="rupture-marker"
-                            :style="{ left: `${panel.markerPercent}%` }"
-                        ></div>
-                    </div>
-                </div>
-
-                <!-- Replaces the absolutely-positioned tick scale: phase
-                     durations are wildly unequal, so the boundary labels piled
-                     up at both ends of the track and left the middle empty.
-                     A row per phase carries the same numbers, legibly, and
-                     doubles as the legend. -->
-                <ul class="rupture-phase-list" :aria-label="panel.ui.handles.legend">
-                    <li
-                        v-for="phase in panel.phases"
-                        :key="phase.key"
-                        class="rupture-phase-row"
-                        :class="{ active: phase.active }"
-                    >
-                        <span
-                            class="rupture-track-swatch"
-                            :class="phase.toneClass"
-                            aria-hidden="true"
-                        ></span>
-                        <span class="rupture-phase-name">
-                            {{ phase.label }}
+                            class="rupture-phase-row"
+                            :class="{ active: phase.active }"
+                        >
                             <span
-                                v-if="phase.key === 'incoming'"
-                                class="rupture-legend-icon incoming"
-                                :title="panel.ui.rupture.incomingDroneDisabledTooltip"
-                                :aria-label="panel.ui.rupture.incomingDroneDisabledTooltip"
-                                v-html="incomingDroneIconMarkup"
+                                class="rupture-track-swatch"
+                                :class="phase.toneClass"
+                                aria-hidden="true"
                             ></span>
-                        </span>
-                        <span class="rupture-phase-range">{{ phaseRange(phase) }}</span>
-                        <span class="rupture-phase-duration">{{ phase.durationLabel }}</span>
-                        <span class="rupture-phase-status">{{ phase.statusLabel }}</span>
-                    </li>
-                </ul>
-            </template>
+                            <span class="rupture-phase-name">
+                                {{ phase.label }}
+                                <span
+                                    v-if="phase.key === 'incoming'"
+                                    class="rupture-legend-icon incoming"
+                                    :title="panel.ui.rupture.incomingDroneDisabledTooltip"
+                                    :aria-label="panel.ui.rupture.incomingDroneDisabledTooltip"
+                                    v-html="incomingDroneIconMarkup"
+                                ></span>
+                            </span>
+                            <span class="rupture-phase-range">{{ phaseRange(phase) }}</span>
+                            <span class="rupture-phase-duration">{{ phase.durationLabel }}</span>
+                            <span class="rupture-phase-status">{{ phase.statusLabel }}</span>
+                        </li>
+                    </ul>
+                </template>
 
-            <div v-else class="empty-state rupture-empty-state">
-                {{ panel.ui.rupture.noData }}
+                <div v-else class="empty-state rupture-empty-state">
+                    {{ panel.ui.rupture.noData }}
+                </div>
             </div>
-        </div>
+        </Teleport>
     </div>
 </template>
 
@@ -304,11 +342,12 @@ onBeforeUnmount(() => {
 /* ── detail dropdown ──────────────────────────────────────────────────────── */
 
 .rupture-details {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
+    position: fixed;
     z-index: 20;
-    width: min(760px, calc(100vw - 32px));
+    width: min(760px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    overflow: auto;
+    overscroll-behavior: contain;
     display: grid;
     gap: 14px;
     padding: 16px;
@@ -543,9 +582,18 @@ onBeforeUnmount(() => {
     }
 
     .rupture-details {
-        right: auto;
-        left: 0;
-        width: min(560px, calc(100vw - 32px));
+        width: min(560px, calc(100vw - 24px));
+    }
+}
+
+@media (max-width: 720px) {
+    .rupture-phase-name {
+        grid-column: 2 / -1;
+        white-space: normal;
+    }
+
+    .rupture-phase-range {
+        grid-column: 2;
     }
 }
 </style>

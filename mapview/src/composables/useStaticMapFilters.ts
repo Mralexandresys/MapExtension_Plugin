@@ -4,7 +4,6 @@ import type { Language, Messages } from "../lang";
 import {
     DEFAULT_ENABLED_KINDS,
     DEFAULT_ENABLED_LAYERS,
-    extractorColor,
     groupColor,
     orePurityColor,
     resourceColor,
@@ -25,6 +24,7 @@ import {
 } from "../lib/mapPresets";
 import type {
     MapStaticFiltersModel,
+    StaticDepositTypeOption,
     StaticFilterCategory,
     StaticFilterOption,
     StaticFilterPlacementSection,
@@ -53,8 +53,6 @@ export interface StaticFilterState {
     poiGroups: Record<string, boolean>;
     /** Ore quality of extractor deposits, keyed by purity level. */
     orePurities: Record<string, boolean>;
-    /** Extractor buildable on the deposit, keyed by extractor id. */
-    extractors: Record<string, boolean>;
     /** Keyed by `${layer}:${group}`. */
     placementGroups: Record<string, boolean>;
 }
@@ -77,7 +75,6 @@ function createDefaultState(): StaticFilterState {
         resourceKinds,
         poiGroups: {},
         orePurities,
-        extractors: {},
         placementGroups: {},
     };
 }
@@ -122,7 +119,6 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         mergeRecord(state.resourceKinds, stored.resourceKinds);
         mergeRecord(state.poiGroups, stored.poiGroups);
         mergeRecord(state.orePurities, stored.orePurities);
-        mergeRecord(state.extractors, stored.extractors);
         mergeRecord(state.placementGroups, stored.placementGroups);
     }
 
@@ -139,11 +135,6 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
                 }
                 if (state.resourceCategories[entry.category] === undefined) {
                     state.resourceCategories[entry.category] = true;
-                }
-            }
-            for (const extractor of Object.keys(value.extractors ?? {})) {
-                if (state.extractors[extractor] === undefined) {
-                    state.extractors[extractor] = true;
                 }
             }
             for (const group of Object.keys(value.poi_groups ?? {})) {
@@ -198,24 +189,12 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         if (!isLayerEnabled(series.layer)) return false;
         if (series.layer !== "resource") return true;
         if (state.resourceKinds[series.kind] === false) return false;
-        if (series.kind === "deposit") {
-            const extractor = resourceExtractor(series.group);
-            if (extractor && !isExtractorEnabled(extractor)) return false;
-        }
         return isResourceTypeEnabled(series.group, series.category);
     }
 
     /** Which extractor a deposit takes, as published by the catalog. */
     function resourceExtractor(typeId: string): string | undefined {
         return manifest.value?.resource_types?.[typeId]?.extractor;
-    }
-
-    function isExtractorEnabled(extractorId: string): boolean {
-        return state.extractors[extractorId] !== false;
-    }
-
-    function toggleExtractor(extractorId: string): void {
-        state.extractors[extractorId] = state.extractors[extractorId] === false;
     }
 
     /**
@@ -400,9 +379,6 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
             state.orePurities[level] = enabled;
         }
         if (!value) return;
-        for (const extractor of Object.keys(value.extractors ?? {})) {
-            state.extractors[extractor] = enabled;
-        }
         for (const [typeId, entry] of Object.entries(value.resource_types)) {
             state.resourceTypes[typeId] = enabled;
             state.resourceCategories[entry.category] = enabled;
@@ -427,7 +403,6 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         }
         for (const key of Object.keys(state.poiGroups)) state.poiGroups[key] = true;
         Object.assign(state.orePurities, defaults.orePurities);
-        for (const key of Object.keys(state.extractors)) state.extractors[key] = true;
         for (const key of Object.keys(state.placementGroups)) {
             state.placementGroups[key] = true;
         }
@@ -460,8 +435,6 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         isLayerEnabled,
         isSeriesVisible,
         isOrePurityVisible,
-        isExtractorEnabled,
-        toggleExtractor,
         resourceExtractor,
         toggleOrePurity,
         isPlacementGroupEnabled,
@@ -549,10 +522,14 @@ export function useStaticFiltersModel(options: {
 
         const byCategory = new Map<string, StaticFilterOption[]>();
         for (const [typeId, entry] of Object.entries(catalog?.resource_types ?? {})) {
+            // Veins live in the deposits block; a type is only listed here for
+            // the points that are actually gathered by hand.
+            const handCount = filters.resourceTypeCount(typeId) - (entry.counts.deposit ?? 0);
+            if (handCount <= 0) continue;
             const option: StaticFilterOption = {
                 key: typeId,
                 label: french ? entry.fr : entry.en,
-                count: filters.resourceTypeCount(typeId),
+                count: handCount,
                 enabled: filters.state.resourceTypes[typeId] !== false,
                 color: resourceColor(typeId),
             };
@@ -612,41 +589,56 @@ export function useStaticFiltersModel(options: {
             }),
         ).filter((option) => option.count > 0);
 
-        // One row per extractor buildable on the loaded veins. The count is the
-        // number of deposits that extractor can be placed on, so it answers
-        // "where can I put a laser drill?" directly.
-        const extractors: StaticFilterOption[] = Object.entries(
-            catalog?.extractors ?? {},
+        // ── Extractor deposits ────────────────────────────────────────────
+        // One block, because "where do I put a drill, and on what quality?" is
+        // one question. Quality used to be a section of its own at the bottom
+        // of the panel, filtering only the deposit points while every other
+        // mineral stayed on screen, which read as a filter doing nothing.
+        const depositTypes: StaticDepositTypeOption[] = Object.entries(
+            catalog?.resource_types ?? {},
         )
-            .map(([id, entry]) => ({
-                key: id,
+            .filter(([, entry]) => (entry.counts.deposit ?? 0) > 0)
+            .map(([typeId, entry]) => ({
+                key: typeId,
                 label: french ? entry.fr : entry.en,
-                count: entry.count,
-                enabled: filters.state.extractors[id] !== false,
-                color: extractorColor(id),
+                count: entry.counts.deposit ?? 0,
+                enabled: filters.state.resourceTypes[typeId] !== false,
+                color: resourceColor(typeId),
+                purityCounts: STATIC_ORE_PURITY_LEVELS.map((level) => ({
+                    key: level,
+                    count: entry.purity_counts?.[level] ?? 0,
+                    color: orePurityColor(level),
+                })).filter((purity) => purity.count > 0),
             }))
             .filter((option) => matchesSearch(option.label, option.key, needle))
             .sort((left, right) => right.count - left.count);
 
-        // Ore quality of the extractor deposits, summed over every ore that
-        // carries one. Absent when no deposit is in the catalog.
+        // Counted over the ores actually enabled, so the chips describe what
+        // ticking them would show rather than what the whole world contains.
         const purityCounts: Partial<Record<StaticOrePurity, number>> = {};
-        for (const entry of Object.values(catalog?.resource_types ?? {})) {
-            for (const [level, count] of Object.entries(entry.purity_counts ?? {})) {
-                const key = level as StaticOrePurity;
-                purityCounts[key] = (purityCounts[key] ?? 0) + count;
+        for (const option of depositTypes) {
+            if (!option.enabled) continue;
+            for (const purity of option.purityCounts) {
+                purityCounts[purity.key] = (purityCounts[purity.key] ?? 0) + purity.count;
             }
         }
 
-        const orePurities: StaticFilterOption[] = STATIC_ORE_PURITY_LEVELS.map(
-            (level) => ({
+        const deposits = {
+            count: depositTypes.reduce((total, option) => total + option.count, 0),
+            purities: STATIC_ORE_PURITY_LEVELS.map((level) => ({
                 key: level,
                 label: messages.purities[level],
                 count: purityCounts[level] ?? 0,
                 enabled: filters.state.orePurities[level] !== false,
                 color: orePurityColor(level),
-            }),
-        ).filter((option) => option.count > 0);
+            })).filter(
+                (option) =>
+                    option.count > 0 ||
+                    // A level filtered down to nothing still needs its way back.
+                    !option.enabled,
+            ),
+            types: depositTypes,
+        };
 
         const sectionTitles: Record<string, string> = {
             building: messages.buildingsTitle,
@@ -683,9 +675,8 @@ export function useStaticFiltersModel(options: {
             layers,
             poiGroups,
             resourceCategories,
+            deposits,
             representations,
-            orePurities,
-            extractors,
             placementSections,
         };
     });
@@ -711,9 +702,6 @@ export function applyStaticFilterToggle(
             return;
         case "representation":
             filters.toggleResourceKind(toggle.key as StaticResourceKind);
-            return;
-        case "extractor":
-            filters.toggleExtractor(toggle.key);
             return;
         case "orePurity":
             filters.toggleOrePurity(toggle.key as StaticOrePurity);

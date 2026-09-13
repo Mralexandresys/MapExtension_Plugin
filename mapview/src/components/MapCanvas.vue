@@ -426,13 +426,20 @@ function poiStateLabel(poi: Poi): string {
 }
 
 function poiTooltipLines(poi: Poi): string[] {
-  return [
+  const lines = [
     `${ui.value.selection.type}: ${poiKindLabel(poi)}`,
     `${ui.value.selection.name}: ${poiLabel(poi)}`,
     `${ui.value.selection.resource}: ${poi.resource || ui.value.map.noResource}`,
     `${ui.value.selection.state}: ${poiStateLabel(poi)}`,
-    ui.value.map.clickToSelect,
   ];
+
+  // Which of the two a site presents follows the rupture cycle, so a spot that
+  // was Ignitium an hour ago legitimately reads as Star Tears now.
+  if (poi.kind === 'ignitium' || poi.kind === 'star_tears') {
+    lines.push(ui.value.filters.ruptureSiteHint);
+  }
+
+  return [...lines, ui.value.map.clickToSelect];
 }
 
 function poiColorStyle(poi: Poi): Record<string, string> {
@@ -454,11 +461,13 @@ function cargoAriaLabel(marker: CargoMarker): string {
 }
 
 function teleporterAriaLabel(teleporter: Teleporter): string {
-  return `${teleporterLabel(teleporter)}. ${teleporter.source || ui.value.map.unknownSource}.`;
+  return `${teleporterLabel(teleporter)}. ${ui.value.entityLabels.teleporter}.`;
 }
 
 function playerAriaLabel(player: Player): string {
-  return `${playerLabel(player)}. ${player.source || ui.value.map.unknownSource}.`;
+  return `${playerLabel(player)}. ${
+    player.self ? ui.value.selection.selfPlayer : ui.value.entityLabels.player
+  }.`;
 }
 
 function poiAriaLabel(poi: Poi): string {
@@ -492,7 +501,7 @@ function handleTeleporterFocus(teleporter: Teleporter, event: FocusEvent): void 
 
   showTooltipFromElement(
     teleporterLabel(teleporter),
-    [teleporter.source || ui.value.map.unknownSource, ui.value.map.clickToSelect],
+    [ui.value.map.clickToSelect],
     target,
   );
 }
@@ -503,7 +512,10 @@ function handlePlayerFocus(player: Player, event: FocusEvent): void {
 
   showTooltipFromElement(
     playerLabel(player),
-    [player.source || ui.value.map.unknownSource, ui.value.map.clickToSelect],
+    [
+      player.self ? ui.value.selection.selfPlayer : ui.value.entityLabels.player,
+      ui.value.map.clickToSelect,
+    ],
     target,
   );
 }
@@ -529,7 +541,7 @@ function showCargoTooltip(marker: CargoMarker, event: MouseEvent): void {
 function showTeleporterTooltip(teleporter: Teleporter, event: MouseEvent): void {
   showTooltip(
     teleporterLabel(teleporter),
-    [teleporter.source || ui.value.map.unknownSource, ui.value.map.clickToSelect],
+    [ui.value.map.clickToSelect],
     event,
   );
 }
@@ -537,7 +549,10 @@ function showTeleporterTooltip(teleporter: Teleporter, event: MouseEvent): void 
 function showPlayerTooltip(player: Player, event: MouseEvent): void {
   showTooltip(
     playerLabel(player),
-    [player.source || ui.value.map.unknownSource, ui.value.map.clickToSelect],
+    [
+      player.self ? ui.value.selection.selfPlayer : ui.value.entityLabels.player,
+      ui.value.map.clickToSelect,
+    ],
     event,
   );
 }

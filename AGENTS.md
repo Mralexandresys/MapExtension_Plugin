@@ -19,7 +19,7 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
 
 ## Technologies
 
-- C++20 plugin built with Visual Studio/MSBuild.
+- C++20 plugin built with Visual Studio/MSBuild and the v143 C++ toolset, matching CI.
 - Local `StarRupture-Plugin-SDK/` checkout inside this project, used for StarRupture Mod Loader plugin interfaces and generated game SDK headers.
 - Local HTTP endpoints: `/health`, `/cargo`, `/rupture-cycle`.
 - Vendored `nlohmann/json` for JSON serialization.
@@ -30,7 +30,7 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
 - `plugin.cpp`: plugin metadata, startup, shutdown, config/runtime registration.
 - `plugin.h`, `dllmain.cpp`: exported plugin entry points and Windows DLL attach/detach plumbing.
 - `plugin_config.h`: config schema and typed config accessors.
-- `plugin_config.cpp`: config hook registration and global config interface storage.
+- `plugin_config.cpp`: storage for the config interface and plugin-self pointers; schema initialization lives in `plugin_config.h`.
 - `plugin_helpers.h`: shared accessors for plugin hooks/self.
 - `map_state_capture.cpp` / `.h`: world scanning, snapshot refresh, local fallback, gameplay callbacks.
 - `map_state_http.cpp` / `.h`: client-only local HTTP server.
@@ -63,8 +63,8 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
   - `analyse_map/map_v2_resources.jsonl` — very large resource-instance export.
   - `analyse_map/map_v2_placements.jsonl` — very large placement, volume, and technical-actor export.
   - `analyse_map/map_v2_pois.geojson` — canonical point-of-interest export.
-  - `analyse_map/map_v2_catalog.json` — map metadata, data layers, and rupture rules.
-  - `analyse_map/map_v2_ore_veins.jsonl` — the 660 extractor ore veins, with their exact socket transform, resource, purity, extractor and the confidence of the purity join. Authoritative for the `deposit` points when present; the build falls back to joining sockets to nearby ore meshes when it is absent, which leaves 283 veins at unknown quality.
+  - `analyse_map/map_v2_catalog.json` — map metadata, data layers, and rupture rules. Kept for reference; the catalog build no longer reads it since the viewer never consumed the `rupture` block.
+  - `analyse_map/map_v2_ore_veins.jsonl` — the 660 extractor ore veins, with their exact socket transform, resource, purity, extractor and the confidence of the purity join. Authoritative for the `deposit` points when present; the build falls back to joining sockets to nearby ore meshes when it is absent, which leaves 283 veins at unknown quality. The build also drops the `actor`/`pcg` points within 500 cm on each horizontal axis of a published deposit — the export describes the same vein up to three times — and never publishes `unknown_ore`.
 - Run `python3 tools/build_map_data.py` from the repository root. It regenerates the versioned build inputs in `mapview/public/map-data/`: `manifest.js`, `resources-*.js`, `placements-*.js`, and `pois.js`.
 - Coordinates are compacted to world decimetres, with altitudes in metres, then grouped and delta-encoded. Keep projection assumptions synchronized with `map_state_types.h` and `mapview`.
 - After regenerating data, validate/package the viewer with `cd mapview && pnpm run check && pnpm run build`.
@@ -91,7 +91,8 @@ Server validation command: `./build.sh server release --summary`.
 - The default SDK root is `./StarRupture-Plugin-SDK`, but it can be overridden with `--sdk-root <path>`.
 - Client builds use `Client Debug|x64` or `Client Release|x64`; server builds use `Server Debug|x64` or `Server Release|x64`, with release server builds preferred for packaging/validation.
 - Build outputs are written to `build/<Configuration>/Plugins/MapExtension_Plugin.dll`, for example `build/Client Release/Plugins/MapExtension_Plugin.dll` and `build/Server Release/Plugins/MapExtension_Plugin.dll`.
-- `--summary` writes `build_client.log` or `build_server.log` and runs `summarize_build.sh` on it; `summarize_build.sh client|server` can be rerun on an existing log.
+- The solution and `build.sh` both default to the SDK nested under this project. Install the v143 toolset even when using a newer Visual Studio.
+- `--summary` replaces `build_client.log` or `build_server.log` for the current attempt (including launch failures) and runs `summarize_build.sh` on it; `summarize_build.sh client|server` can be rerun on an existing log.
 - Keep shell scripts (`*.sh`) with LF line endings so they run correctly on Linux/WSL. Do not mass-normalize unrelated CRLF Visual Studio/project files unless that is the intended change.
 
 ## SDK update analysis and migration

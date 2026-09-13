@@ -90,6 +90,14 @@ const landmarkOptions = computed(() => props.panel.staticFilters?.poiGroups ?? [
 
 const presetDefinition = computed(() => PRESET_DEFINITIONS[props.panel.preset]);
 
+// Two rows for one thing: a site shows as Ignitium during the wave and as Star
+// Tears once the map stabilizes, so an empty row is the cycle, not a bug.
+function entityRowTitle(key: EntityToggleKey, label: string): string {
+    return key === "ignitium" || key === "starTears"
+        ? `${label} - ${props.panel.ui.filters.ruptureSiteHint}`
+        : label;
+}
+
 // ── Tabs ────────────────────────────────────────────────────────────────────
 // One list at a time, each with the full height of the sidebar. Every tab
 // carries its own summary so a hidden tab never hides the fact that filters are
@@ -564,7 +572,10 @@ const harvestGroups = computed(() => [
                                     :class="option.key"
                                     aria-hidden="true"
                                 ></span>
-                                <span class="filter-row-label" :title="option.label">
+                                <span
+                                    class="filter-row-label"
+                                    :title="entityRowTitle(option.key, option.label)"
+                                >
                                     {{ option.label }}
                                 </span>
                                 <span class="filter-row-count">
@@ -1031,7 +1042,7 @@ const harvestGroups = computed(() => [
 
     .filters-sidebar {
         height: auto;
-        max-height: min(58vh, calc(100vh - 128px));
+        max-height: min(58dvh, 100%);
         border-right: 0;
         border-radius: 0 20px 0 0;
         box-shadow: 0 20px 54px rgba(0, 0, 0, 0.42);

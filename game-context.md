@@ -93,7 +93,10 @@ Le catalogue distribué avec le viewer est généré à partir de :
 - `map_v2_resources.jsonl` : ressources, points PCG et instances HISM ;
 - `map_v2_placements.jsonl` : acteurs, bâtiments, volumes et sockets ;
 - `map_v2_pois.geojson` : POI canoniques ;
-- `map_v2_catalog.json` : métadonnées, couches et règles de rupture.
+- `map_v2_ore_veins.jsonl` : source privilégiée des gisements.
+
+`map_v2_catalog.json` décrit les métadonnées et règles de rupture pour référence ;
+le générateur ne le lit plus et ne publie plus son bloc rupture.
 
 Il décrit le monde exporté, pas l'état courant d'une sauvegarde. Il ne permet pas,
 à lui seul, de savoir si une ressource :
@@ -236,74 +239,45 @@ Points essentiels :
 - le marqueur décrit un emplacement de construction/extraction, pas l'état live
   du bâtiment que le joueur pourrait y construire.
 
-Les classes spécialisées identifient directement :
+La source privilégiée est désormais `map_v2_ore_veins.jsonl`, qui fournit la
+transformation exacte du socket, le minerai, la pureté, l'extracteur et la fiabilité
+de la jointure. Sans ce fichier, le générateur utilise le rapprochement avec les
+meshes minéraux et garde les puretés indéterminées à `unknown`.
 
-- `BP_GoethiteOreSocket_C` → goethite ;
-- `BP_SulphurSocket_C` → soufre ;
-- `BP_HeliumSocket_C` → hélium-3.
+Le catalogue distribué contient 660 gisements :
 
-Les sockets génériques `BP_OreSocket_C` sont classifiés seulement lorsqu'un minerai
-de base suffisamment proche permet une attribution fiable :
+| Minerai | Gisements | Impurs | Normaux | Purs |
+|---|---:|---:|---:|---:|
+| Titane | 180 | 53 | 89 | 38 |
+| Calcium | 102 | 22 | 56 | 24 |
+| Tungstène / wolfram | 107 | 31 | 52 | 24 |
+| Goethite | 102 | 0 | 102 | 0 |
+| Soufre | 95 | 95 | 0 | 0 |
+| Hélium-3 | 74 | 0 | 74 | 0 |
+| **Total** | **660** | **201** | **373** | **86** |
 
-- titane ;
-- wolfram, affiché comme minerai de tungstène ;
-- calcium.
-
-Un socket générique non attribuable reste `Minerai inconnu`. Il ne faut pas
-transformer une proximité ambiguë en type de minerai certain.
-
-Le catalogue actuellement généré contient `660` sockets d'extracteur :
-
-| Minerai | Sockets |
-|---|---:|
-| Titane | 180 |
-| Calcium | 102 |
-| Wolfram / minerai de tungstène | 95 |
-| Goethite | 102 |
-| Soufre | 95 |
-| Hélium-3 | 74 |
-| Minerai inconnu | 12 |
-
-Ces nombres décrivent les sockets de l'export utilisé pour générer le catalogue.
-Ils ne sont pas des quantités de minerai restantes dans une partie.
+Les douze anciens sockets non identifiés sont attribués au tungstène. Le type
+`unknown_ore` est exclu du catalogue, y compris ses 389 anciennes ancres d'acteur.
+Les représentations acteur/PCG redondantes avec un gisement du même minerai sont
+retirées au build (tolérance de 500 cm sur chaque axe horizontal, sans comparaison
+d'altitude), soit 366 points pour les exports actuels.
 
 ### Pureté des gisements
 
-Les gisements pour extracteurs peuvent avoir un niveau de pureté :
+`impure`, `normal` et `pure` décrivent un rendement, pas la quantité restante,
+l'épuisement ou la présence d'une foreuse. `unknown` reste une valeur valide pour
+une pureté indéterminée, même si aucun des 660 gisements actuels ne l'utilise.
 
-| Valeur interne | Libellé français | Sens |
-|---|---|---|
-| `impure` | Impure | Niveau de pureté faible |
-| `normal` | Normale | Niveau de pureté standard |
-| `pure` | Pure | Niveau de pureté élevé |
-| `unknown` | Inconnue | L'export ne permet pas une attribution fiable |
+La pureté est exacte pour les 271 sockets spécialisés de goethite, soufre et
+hélium-3. Pour les autres, elle est déduite de la jointure exportée : 282 à fiabilité
+élevée, 100 moyenne et 7 faible (ces deux dernières catégories concernent le
+tungstène). Les positions de socket exactes ne rendent pas ces puretés exactes.
+La fiabilité reste consultable en préréglage Technique ; les vues joueur affichent
+la pureté sans mention « estimée » ni marqueur creux lié à cette fiabilité.
 
-La pureté concerne le socket d'extracteur. Elle est dérivée uniquement d'un
-marqueur de mesh de pureté explicite du même minerai situé suffisamment près du
-socket.
-
-Règles d'interprétation :
-
-- `unknown` ne signifie jamais `normal` ;
-- la pureté n'est pas une quantité restante ;
-- la pureté n'est pas un état d'épuisement ;
-- la pureté ne prouve pas qu'un extracteur est déjà construit ou fonctionne ;
-- une qualité observée sur un mesh ne doit pas être appliquée arbitrairement à
-  tous les rochers de la zone.
-
-Dans l'export actuel, les niveaux sont identifiables pour les gisements de base :
-
-| Minerai | Impurs | Normaux | Purs | Inconnus |
-|---|---:|---:|---:|---:|
-| Titane | 53 | 90 | 37 | 0 |
-| Wolfram | 42 | 28 | 25 | 0 |
-| Calcium | 0 | 0 | 102 | 0 |
-| Goethite | 0 | 0 | 0 | 102 |
-| Soufre | 0 | 0 | 0 | 95 |
-| Hélium-3 | 0 | 0 | 0 | 74 |
-| Minerai inconnu | 0 | 0 | 0 | 12 |
-
-Les qualités inconnues restent volontairement inconnues au lieu d'être inventées.
+Le bloc Gisements regroupe minerais et puretés. L'extracteur reste indiqué à la
+sélection ; il n'a plus de filtre propre, chaque minerai correspondant à une seule
+machine. Ces comptes décrivent l'export, jamais le stock d'une partie.
 
 ### Familles de ressources connues
 
@@ -420,7 +394,7 @@ confondues.
 Le cycle de rupture est représenté comme une timeline comprenant :
 
 - `wave` : type de vague, notamment `Heat` ou `Cold` ;
-- `stage` : phase principale ;
+- `stage` : étape principale nommée par le moteur, distincte de la phase affichée ;
 - `step` : sous-phase ou étape ;
 - `elapsed_seconds` : temps écoulé lorsque disponible ;
 - `observed_at_unix_ms` : date de l'observation.
@@ -433,7 +407,9 @@ Les stages reconnus par le runtime comprennent :
 - `Growback`.
 
 Le viewer anime localement le temps entre deux snapshots à partir du temps écoulé
-et de la date d'observation. Il ne commande pas le cycle.
+et de la date d'observation. Ses phases utilisent une calibration conservée de
+3240 secondes (30/60/600/2550), qui peut diverger du jeu. Les réglages bruts Heat/Cold
+ne se substituent pas directement à ces phases. Il ne commande pas le cycle.
 
 Le front mobile de rupture n'est pas une zone statique dessinée sur la carte.
 
@@ -521,7 +497,9 @@ absentes ; cela ne prouve pas que les objets n'existent pas sur le serveur.
 
 ## Fraîcheur et limites temporelles
 
-Le snapshot est une photographie périodique, pas un journal exhaustif. Valeurs
+Le snapshot est une publication périodique, pas un journal exhaustif. Sa `generation`
+avance à chaque rafraîchissement, même sans changement des observations ; la révision
+de contenu POI sert séparément à invalider les pages réseau. Valeurs
 importantes du comportement actuel :
 
 - intervalle runtime documenté par défaut : `2000 ms` ;

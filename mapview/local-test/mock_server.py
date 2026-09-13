@@ -70,7 +70,6 @@ def default_payloads(port: int) -> dict[str, Any]:
         "cargo": {
             "generation": 1,
             "world": "LocalTest",
-            "reason": "mock",
             "counts": {
                 "markers": 0,
                 "teleporters": 0,

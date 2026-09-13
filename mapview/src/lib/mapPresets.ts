@@ -142,12 +142,11 @@ export const PRESET_DEFINITIONS: Record<MapPreset, PresetDefinition> = {
 };
 
 /**
- * Resource types kept off even when their category is enabled.
- *
- * `unknown_ore` is 389 `BP_OreSocket` anchors, not an identified ore: showing
- * it as a mineral tells the player something false.
+ * Resource types kept off even when their category is enabled. Empty since the
+ * catalog stopped publishing `unknown_ore`, the 389 unidentified `BP_OreSocket`
+ * anchors; kept as the hook for the next type that needs it.
  */
-export const RESOURCE_TYPES_HIDDEN_BY_DEFAULT: readonly string[] = ["unknown_ore"];
+export const RESOURCE_TYPES_HIDDEN_BY_DEFAULT: readonly string[] = [];
 
 /**
  * Above this many points a resource type is treated as "common" and grouped

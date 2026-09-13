@@ -1,5 +1,6 @@
 import type { Language, Messages } from "../lang";
 import type { MapPreset } from "./mapPresets";
+import type { StaticOrePurity } from "./staticMapCatalog";
 
 export type CargoKind = "sender" | "receiver";
 export type EntityToggleKey =
@@ -122,7 +123,6 @@ export interface MapProjection {
 export interface CargoResponse {
     generation: number;
     world?: string;
-    reason?: string;
     counts?: CargoCounts;
     map?: MapProjection;
     markers: CargoMarker[];
@@ -366,7 +366,6 @@ export type StaticFilterScope =
     | "resourceType"
     | "representation"
     | "orePurity"
-    | "extractor"
     | "placementGroup";
 
 export interface StaticFilterToggle {
@@ -388,6 +387,22 @@ export interface StaticFilterCategory extends StaticFilterOption {
     types: StaticFilterOption[];
 }
 
+/** One ore in the deposits block: its veins, split by quality. */
+export interface StaticDepositTypeOption extends StaticFilterOption {
+    purityCounts: Array<{ key: StaticOrePurity; count: number; color: string }>;
+}
+
+/**
+ * Extractor deposits, the only catalog elements carrying a quality. Grouped as
+ * one block because "where do I put a drill, and on what quality?" is a single
+ * question: the quality chips filter this block and nothing else.
+ */
+export interface MapStaticDepositsModel {
+    count: number;
+    purities: StaticFilterOption[];
+    types: StaticDepositTypeOption[];
+}
+
 export interface StaticFilterPlacementSection {
     layer: string;
     title: string;
@@ -403,12 +418,10 @@ export interface MapStaticFiltersModel {
     loadedCount: number;
     layers: StaticFilterOption[];
     poiGroups: StaticFilterOption[];
+    /** Everything gathered by hand, excluding the extractor deposits. */
     resourceCategories: StaticFilterCategory[];
+    deposits: MapStaticDepositsModel;
     representations: StaticFilterOption[];
-    /** Ore quality of the extractor deposits; empty when none are loaded. */
-    orePurities: StaticFilterOption[];
-    /** Extractors buildable on the loaded ore veins; empty on older catalogs. */
-    extractors: StaticFilterOption[];
     placementSections: StaticFilterPlacementSection[];
 }
 

@@ -68,6 +68,13 @@ function setOptionGroup(
     }
 }
 
+function setDepositTypes(enabled: boolean): void {
+    setOptionGroup(props.model.deposits.types, enabled, (option) => ({
+        scope: "resourceType",
+        key: option.key,
+    }));
+}
+
 function setResourceTypes(category: StaticFilterCategory, enabled: boolean): void {
     setOptionGroup(category.types, enabled, (option) => ({
         scope: "resourceType",
@@ -75,11 +82,11 @@ function setResourceTypes(category: StaticFilterCategory, enabled: boolean): voi
     }));
 }
 
-// Only the resource and placement lists honour the search; when both come back
-// empty the remaining groups make it look like the search did nothing.
+// Deposits, hand-gathered resources and (in Technical) placements honour search.
 const searchHasNoMatch = computed(
     () =>
         props.model.search.trim().length > 0 &&
+        props.model.deposits.types.length === 0 &&
         props.model.resourceCategories.length === 0 &&
         (!props.developerMode || props.model.placementSections.length === 0),
 );
@@ -199,6 +206,73 @@ const searchHasNoMatch = computed(
                         <span class="filter-row-count">
                             {{ formatCount(representation.count) }}
                         </span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- The only catalog elements carrying a quality, and the only
+                 ones a base is built around. Quality filters this block alone,
+                 so ticking "Pure" no longer leaves every other ore on screen. -->
+            <section v-if="model.deposits.types.length" class="filter-group">
+                <header class="filter-group-head">
+                    <h4>{{ model.ui.staticFilters.depositsTitle }}</h4>
+                    <span class="filter-group-count">
+                        {{ formatCount(model.deposits.count) }}
+                    </span>
+                    <span class="filter-group-actions">
+                        <button class="group-action" type="button" @click="setDepositTypes(true)">
+                            {{ model.ui.filters.selectAll }}
+                        </button>
+                        <button class="group-action" type="button" @click="setDepositTypes(false)">
+                            {{ model.ui.filters.selectNone }}
+                        </button>
+                    </span>
+                </header>
+                <p class="filter-section-help">{{ model.ui.staticFilters.depositsHelp }}</p>
+
+                <div v-if="model.deposits.purities.length" class="purity-chips">
+                    <button
+                        v-for="purity in model.deposits.purities"
+                        :key="purity.key"
+                        class="purity-chip"
+                        :class="{ active: purity.enabled }"
+                        type="button"
+                        :style="swatchStyle(purity)"
+                        :aria-pressed="purity.enabled"
+                        @click="emit('toggle', { scope: 'orePurity', key: purity.key })"
+                    >
+                        <span class="filter-row-swatch" aria-hidden="true"></span>
+                        <span class="purity-chip-label">{{ purity.label }}</span>
+                        <span class="purity-chip-count">{{ formatCount(purity.count) }}</span>
+                    </button>
+                </div>
+
+                <div class="filter-rows">
+                    <button
+                        v-for="type in model.deposits.types"
+                        :key="type.key"
+                        class="filter-row deposit-row"
+                        :class="{ active: type.enabled, empty: type.count === 0 }"
+                        type="button"
+                        :style="swatchStyle(type)"
+                        :aria-pressed="type.enabled"
+                        @click="emit('toggle', { scope: 'resourceType', key: type.key })"
+                    >
+                        <span class="filter-row-check" aria-hidden="true"></span>
+                        <span class="filter-row-swatch" aria-hidden="true"></span>
+                        <span class="filter-row-label" :title="type.label">{{ type.label }}</span>
+                        <!-- Quality split per ore: which ore is worth filtering
+                             is otherwise only visible one click at a time. -->
+                        <span class="purity-breakdown">
+                            <span
+                                v-for="purity in type.purityCounts"
+                                :key="purity.key"
+                                class="purity-dot-count"
+                                :style="{ '--swatch': purity.color }"
+                                :title="`${model.ui.staticFilters.purities[purity.key]} : ${formatCount(purity.count)}`"
+                            >{{ formatCount(purity.count) }}</span>
+                        </span>
+                        <span class="filter-row-count">{{ formatCount(type.count) }}</span>
                     </button>
                 </div>
             </section>
@@ -323,104 +397,6 @@ const searchHasNoMatch = computed(
                             </button>
                         </div>
                     </div>
-                </div>
-            </section>
-
-            <!-- Which machine goes on the vein. Filtering by it answers "where
-                 can I put a laser drill?" without reading each ore in turn. -->
-            <section v-if="model.extractors.length" class="filter-group">
-                <header class="filter-group-head">
-                    <h4>{{ model.ui.staticFilters.extractorTitle }}</h4>
-                    <span class="filter-group-count">
-                        {{ groupCount(model.extractors) }}
-                    </span>
-                    <span class="filter-group-actions">
-                        <button
-                            class="group-action"
-                            type="button"
-                            @click="setOptionGroup(model.extractors, true, (option) => ({ scope: 'extractor', key: option.key }))"
-                        >
-                            {{ model.ui.filters.selectAll }}
-                        </button>
-                        <button
-                            class="group-action"
-                            type="button"
-                            @click="setOptionGroup(model.extractors, false, (option) => ({ scope: 'extractor', key: option.key }))"
-                        >
-                            {{ model.ui.filters.selectNone }}
-                        </button>
-                    </span>
-                </header>
-                <p class="filter-section-help">
-                    {{ model.ui.staticFilters.extractorHelp }}
-                </p>
-                <div class="filter-rows">
-                    <button
-                        v-for="extractor in model.extractors"
-                        :key="extractor.key"
-                        class="filter-row"
-                        :class="{ active: extractor.enabled, empty: extractor.count === 0 }"
-                        type="button"
-                        :style="swatchStyle(extractor)"
-                        :aria-pressed="extractor.enabled"
-                        @click="emit('toggle', { scope: 'extractor', key: extractor.key })"
-                    >
-                        <span class="filter-row-check" aria-hidden="true"></span>
-                        <span class="filter-row-swatch" aria-hidden="true"></span>
-                        <span class="filter-row-label" :title="extractor.label">
-                            {{ extractor.label }}
-                        </span>
-                        <span class="filter-row-count">
-                            {{ formatCount(extractor.count) }}
-                        </span>
-                    </button>
-                </div>
-            </section>
-
-            <!-- Ore quality applies across every ore, so it sits beside the
-                 resource list rather than inside one of its categories. -->
-            <section v-if="model.orePurities.length" class="filter-group">
-                <header class="filter-group-head">
-                    <h4>{{ model.ui.staticFilters.purityTitle }}</h4>
-                    <span class="filter-group-count">
-                        {{ groupCount(model.orePurities) }}
-                    </span>
-                    <span class="filter-group-actions">
-                        <button
-                            class="group-action"
-                            type="button"
-                            @click="setOptionGroup(model.orePurities, true, (option) => ({ scope: 'orePurity', key: option.key }))"
-                        >
-                            {{ model.ui.filters.selectAll }}
-                        </button>
-                        <button
-                            class="group-action"
-                            type="button"
-                            @click="setOptionGroup(model.orePurities, false, (option) => ({ scope: 'orePurity', key: option.key }))"
-                        >
-                            {{ model.ui.filters.selectNone }}
-                        </button>
-                    </span>
-                </header>
-                <p class="filter-section-help">{{ model.ui.staticFilters.purityHelp }}</p>
-                <div class="filter-rows">
-                    <button
-                        v-for="purity in model.orePurities"
-                        :key="purity.key"
-                        class="filter-row"
-                        :class="{ active: purity.enabled, empty: purity.count === 0 }"
-                        type="button"
-                        :style="swatchStyle(purity)"
-                        :aria-pressed="purity.enabled"
-                        @click="emit('toggle', { scope: 'orePurity', key: purity.key })"
-                    >
-                        <span class="filter-row-check" aria-hidden="true"></span>
-                        <span class="filter-row-swatch" aria-hidden="true"></span>
-                        <span class="filter-row-label" :title="purity.label">
-                            {{ purity.label }}
-                        </span>
-                        <span class="filter-row-count">{{ formatCount(purity.count) }}</span>
-                    </button>
                 </div>
             </section>
 
@@ -575,6 +551,59 @@ const searchHasNoMatch = computed(
     margin: 3px 0 6px 12px;
     padding-left: 10px;
     border-left: 1px solid rgba(34, 211, 238, 0.24);
+}
+
+/* One line of chips: the quality question is answered before the ore list is
+   read, and never below it. */
+.purity-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.purity-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.028);
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.76rem;
+    cursor: pointer;
+    transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+
+.purity-chip:hover {
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--text);
+}
+
+.purity-chip.active {
+    border-color: var(--swatch);
+    color: var(--text);
+}
+
+.purity-chip:not(.active) .filter-row-swatch {
+    opacity: 0.3;
+}
+
+.purity-chip-count {
+    color: var(--dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.deposit-row .purity-breakdown {
+    display: inline-flex;
+    gap: 5px;
+    margin-left: auto;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.purity-dot-count {
+    color: var(--swatch);
 }
 
 .static-nested-head h4 {

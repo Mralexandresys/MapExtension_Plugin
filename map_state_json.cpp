@@ -167,12 +167,12 @@ namespace Detail
 				{"receiver_label", connection.ReceiverLabel},
 				{"item", connection.ItemDisplayName},
 				{"requested_amount", connection.RequestedAmount},
+				// Endpoints carry map coordinates only: the viewer draws the link
+				// in map space and never read the world vectors.
 				{"sender", json{
-					{"world", ToJson(connection.SenderWorldLocation)},
 					{"map", ToJson(connection.SenderMapLocation)}
 				}},
 				{"receiver", json{
-					{"world", ToJson(connection.ReceiverWorldLocation)},
 					{"map", ToJson(connection.ReceiverMapLocation)}
 				}}
 			};
@@ -246,12 +246,11 @@ namespace Detail
 		const json payload = {
 			{"generation", snapshot.Generation},
 			{"world", snapshot.WorldName},
-			{"reason", snapshot.Reason},
+			// Counts the viewer actually reads. `reason`, the per-kind cargo
+			// counts and the connection count were never consumed; the capture
+			// side still keeps them for its own logging.
 			{"counts", {
 				{"markers", snapshot.Markers.size()},
-				{"senders", snapshot.SenderCount},
-				{"receivers", snapshot.ReceiverCount},
-				{"connections", snapshot.Connections.size()},
 				{"teleporters", snapshot.Teleporters.size()},
 				{"players", snapshot.Players.size()},
 				{"pois", snapshot.Pois.size()},
@@ -283,6 +282,15 @@ namespace Detail
 		return payload.dump();
 	}
 
+	// Known limitation, deliberately kept: these durations are calibrated by
+	// observation, not read from the game. They do not derive from the per-wave
+	// settings serialized in the map (PreWave, Moving, Fadeout, Growback, which
+	// also differ between Heat and Cold), and the phase the player sees on
+	// screen can drift from the phase computed here. Replacing them with the raw
+	// map values would swap a calibrated approximation for a wrong one, so they
+	// stay until the exact phase-to-wave-setting mapping is established. The
+	// viewer interpolates locally between polls from `elapsed_seconds` and
+	// `observed_at_unix_ms`, which adds its own drift on top.
 	std::string BuildRuptureCycleJson(const CargoSnapshot& snapshot)
 	{
 		const json payload = {

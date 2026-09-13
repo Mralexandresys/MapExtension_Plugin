@@ -17,6 +17,7 @@ import type {
     EntityToggleKey,
     EntityVisibility,
     HealthResponse,
+    NamedMapEntity,
     Player,
     Poi,
     PoiKind,
@@ -685,16 +686,29 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         return ui.value.selection.summaryNone;
     });
 
+    /** Live positions are Unreal centimetres; the panel speaks metres. */
+    function worldPositionRows(entity: NamedMapEntity): DetailRow[] {
+        return [
+            {
+                label: ui.value.staticFilters.details.position,
+                value: `X ${Math.round(entity.world.x / 100)} m | Y ${Math.round(
+                    entity.world.y / 100,
+                )} m`,
+            },
+            {
+                label: ui.value.staticFilters.details.altitude,
+                value: `${Math.round(entity.world.z / 100)} m`,
+            },
+        ];
+    }
+
     const selectedDetailRows = computed<DetailRow[]>(() => {
         if (selectedCargo.value) {
+            const marker = selectedCargo.value;
             const rows: DetailRow[] = [
                 {
-                    label: ui.value.selection.type,
-                    value: formatEntityType(selectedCargo.value.kind),
-                },
-                {
                     label: ui.value.selection.resource,
-                    value: selectedCargo.value.resource || "--",
+                    value: marker.resource || "--",
                 },
                 {
                     label: ui.value.selection.network,
@@ -707,13 +721,13 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             ];
 
             if (
-                selectedCargo.value.display_name &&
-                selectedCargo.value.label &&
-                selectedCargo.value.display_name !== selectedCargo.value.label
+                marker.display_name &&
+                marker.label &&
+                marker.display_name !== marker.label
             ) {
                 rows.push({
                     label: ui.value.selection.name,
-                    value: selectedCargo.value.display_name,
+                    value: marker.display_name,
                 });
             }
 
@@ -724,42 +738,44 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
                 });
             }
 
+            // What the building actually moves. The plugin has always sent the
+            // item and the requested amount, but they only ever showed in the
+            // tooltip of a hovered link, one link at a time.
+            for (const connection of selectedConnections.value) {
+                const outgoing = connection.sender_key === marker.unique_key;
+                const other =
+                    (outgoing ? connection.receiver_label : connection.sender_label) ||
+                    ui.value.selection.cargoFallback;
+                const amount = connection.requested_amount;
+                rows.push({
+                    label: connection.item || ui.value.map.unknownItem,
+                    value:
+                        amount == null
+                            ? `${outgoing ? "->" : "<-"} ${other}`
+                            : `${outgoing ? "->" : "<-"} ${other} (${amount})`,
+                });
+            }
+
             return rows;
         }
 
         if (selectedTeleporter.value) {
-            return [
-                {
-                    label: ui.value.selection.type,
-                    value: ui.value.selection.teleporterFallback,
-                },
-                {
-                    label: ui.value.selection.source,
-                    value: selectedTeleporter.value.source || "--",
-                },
-            ];
+            return worldPositionRows(selectedTeleporter.value);
         }
 
         if (selectedPlayer.value) {
-            return [
-                {
+            const rows: DetailRow[] = [];
+            if (selectedPlayer.value.self) {
+                rows.push({
                     label: ui.value.selection.type,
-                    value: ui.value.selection.playerFallback,
-                },
-                {
-                    label: ui.value.selection.source,
-                    value: selectedPlayer.value.source || "--",
-                },
-            ];
+                    value: ui.value.selection.selfPlayer,
+                });
+            }
+            return [...rows, ...worldPositionRows(selectedPlayer.value)];
         }
 
         if (selectedPoi.value) {
-            const rows: DetailRow[] = [
-                {
-                    label: ui.value.selection.type,
-                    value: formatEntityType(selectedPoi.value.kind),
-                },
-            ];
+            const rows: DetailRow[] = [];
 
             if (selectedPoi.value.kind !== "abandoned_base") {
                 rows.push({
@@ -771,20 +787,14 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
                 });
             }
 
-            rows.push(
-                {
-                    label: ui.value.selection.state,
-                    value: selectedPoi.value.depleted
-                        ? ui.value.map.depletedLabel
-                        : ui.value.map.availableLabel,
-                },
-                {
-                    label: ui.value.selection.source,
-                    value: selectedPoi.value.source || "--",
-                },
-            );
+            rows.push({
+                label: ui.value.selection.state,
+                value: selectedPoi.value.depleted
+                    ? ui.value.map.depletedLabel
+                    : ui.value.map.availableLabel,
+            });
 
-            return rows;
+            return [...rows, ...worldPositionRows(selectedPoi.value)];
         }
 
         return [];

@@ -23,6 +23,7 @@ namespace Detail
 	{
 		constexpr int kHttpReadBufferSize = 8192;
 		constexpr int kHttpSelectTimeoutMs = 250;
+		constexpr DWORD kHttpIoTimeoutMs = 1000;
 		constexpr int kDefaultHttpPort = 9000;
 		constexpr const char* kLoopbackAddress = "127.0.0.1";
 
@@ -38,8 +39,9 @@ namespace Detail
 			int remaining = static_cast<int>(data.size());
 			while (remaining > 0)
 			{
+				if (g_httpStopRequested.load()) return false;
 				const int sent = send(socketHandle, buffer, remaining, 0);
-				if (sent == SOCKET_ERROR)
+				if (sent <= 0)
 				{
 					return false;
 				}
@@ -140,13 +142,13 @@ namespace Detail
 			SendJsonResponse(clientSocket, 404, "Not Found", "{\"ok\":false,\"error\":\"not_found\"}");
 		}
 
-		void HttpServerMain()
+		void HttpServerMain(SOCKET listenSocket)
 		{
 			while (!g_httpStopRequested.load())
 			{
 				fd_set readSet;
 				FD_ZERO(&readSet);
-				FD_SET(g_httpListenSocket, &readSet);
+				FD_SET(listenSocket, &readSet);
 
 				timeval timeout{};
 				timeout.tv_sec = 0;
@@ -166,12 +168,12 @@ namespace Detail
 					}
 					break;
 				}
-				if (result == 0 || !FD_ISSET(g_httpListenSocket, &readSet))
+				if (result == 0 || !FD_ISSET(listenSocket, &readSet))
 				{
 					continue;
 				}
 
-				SOCKET clientSocket = accept(g_httpListenSocket, nullptr, nullptr);
+				SOCKET clientSocket = accept(listenSocket, nullptr, nullptr);
 				if (clientSocket == INVALID_SOCKET)
 				{
 					const int error = WSAGetLastError();
@@ -182,7 +184,19 @@ namespace Detail
 					continue;
 				}
 
-				HandleHttpClient(clientSocket);
+				// An idle reader/writer must not hold the only HTTP worker forever.
+				// These bounds also let StopHttpServer join without closing a socket
+				// from underneath an in-flight request.
+				if (setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO,
+					reinterpret_cast<const char*>(&kHttpIoTimeoutMs), sizeof(kHttpIoTimeoutMs)) == SOCKET_ERROR
+					|| setsockopt(clientSocket, SOL_SOCKET, SO_SNDTIMEO,
+						reinterpret_cast<const char*>(&kHttpIoTimeoutMs), sizeof(kHttpIoTimeoutMs)) == SOCKET_ERROR)
+				{
+					LOG_WARN("HTTP client timeout setup failed: %d", WSAGetLastError());
+					closesocket(clientSocket);
+					continue;
+				}
+				if (!g_httpStopRequested.load()) HandleHttpClient(clientSocket);
 				closesocket(clientSocket);
 			}
 		}
@@ -248,7 +262,7 @@ namespace Detail
 		}
 
 		g_httpStopRequested = false;
-		g_httpThread = std::thread(HttpServerMain);
+		g_httpThread = std::thread(HttpServerMain, g_httpListenSocket);
 		LOG_INFO("HTTP cargo endpoint listening on http://%s:%d", kLoopbackAddress, g_httpPort);
 		return true;
 	}
@@ -256,14 +270,14 @@ namespace Detail
 	void StopHttpServer()
 	{
 		g_httpStopRequested = true;
+		if (g_httpThread.joinable())
+		{
+			g_httpThread.join();
+		}
 		if (g_httpListenSocket != INVALID_SOCKET)
 		{
 			closesocket(g_httpListenSocket);
 			g_httpListenSocket = INVALID_SOCKET;
-		}
-		if (g_httpThread.joinable())
-		{
-			g_httpThread.join();
 		}
 		if (g_wsaStarted)
 		{

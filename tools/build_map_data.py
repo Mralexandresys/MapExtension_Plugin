@@ -6,7 +6,6 @@ Inputs (see analyse_map/readme.md):
     analyse_map/map_v2_resources.jsonl    385k resource instances / points / actors
     analyse_map/map_v2_placements.jsonl   22k buildings, volumes and technical actors
     analyse_map/map_v2_pois.geojson       241 canonical points of interest
-    analyse_map/map_v2_catalog.json       metadata, data layers, rupture rules
 
 Output: mapview/public/map-data/*.js
 
@@ -63,6 +62,15 @@ ORE_SOCKET_RESOURCES = {
 # the socket to the nearest exported collision anchor, because the collision
 # triangles the game ray-traces are absent from the export.
 ORE_JOIN_CONFIDENCE = ("exact", "high", "medium", "low")
+
+# Radius under which an `actor` or `pcg` point describes the same physical vein
+# as a `deposit`. 5 m in decimetres; the coinciding pairs are exact to the
+# centimetre, the PCG anchors sit a few metres off.
+DUPLICATE_MERGE_DM = 50
+
+# Resource ids never published. `unknown_ore` was 389 `BP_OreSocket` anchors
+# that no export identifies: listing them as an ore states something false.
+EXCLUDED_RESOURCE_TYPES = frozenset({"unknown_ore"})
 
 # Extractor buildable per ore. The identifiers and French names come from the
 # vein dataset; only the English side needs a table here.
@@ -295,6 +303,9 @@ def read_ore_veins(
         if x_cm is None or y_cm is None or not resource_id:
             continue
 
+        if resource_id in EXCLUDED_RESOURCE_TYPES:
+            continue
+
         purity = entry.get("purity") or "unknown"
         if purity not in ORE_PURITY_LEVELS:
             purity = "unknown"
@@ -335,6 +346,52 @@ def read_ore_veins(
         extractor["resources"].sort()
 
     return published
+
+
+def drop_duplicate_representations(
+    buckets: dict[tuple[str, str, str], list[tuple[int, int, int, int, int]]],
+) -> int:
+    """Drop the `actor` and `pcg` points that sit on top of a `deposit`.
+
+    The export describes the same physical vein up to three times: goethite,
+    helium-3 and sulphur publish an actor at the exact socket coordinates, and
+    sulphur adds a PCG anchor a few metres away. Publishing all three counted the
+    ore two or three times in the filters, painted a flat dot over the middle of
+    the quality-coded deposit marker, and let a click land on whichever series
+    happened to be nearest. The deposit wins: it alone carries purity and
+    extractor.
+    """
+
+    dropped = 0
+    for category, type_id, kind in list(buckets):
+        if kind == "deposit":
+            continue
+        deposits = buckets.get((category, type_id, "deposit"))
+        if not deposits:
+            continue
+
+        cells: dict[tuple[int, int], list[tuple[int, ...]]] = defaultdict(list)
+        for point in deposits:
+            cells[(point[0] // DUPLICATE_MERGE_DM, point[1] // DUPLICATE_MERGE_DM)].append(point)
+
+        kept = []
+        for point in buckets[(category, type_id, kind)]:
+            cell_x = point[0] // DUPLICATE_MERGE_DM
+            cell_y = point[1] // DUPLICATE_MERGE_DM
+            near = any(
+                abs(other[0] - point[0]) <= DUPLICATE_MERGE_DM
+                and abs(other[1] - point[1]) <= DUPLICATE_MERGE_DM
+                for offset_x in (-1, 0, 1)
+                for offset_y in (-1, 0, 1)
+                for other in cells.get((cell_x + offset_x, cell_y + offset_y), ())
+            )
+            if near:
+                dropped += 1
+            else:
+                kept.append(point)
+        buckets[(category, type_id, kind)] = kept
+
+    return dropped
 
 
 def build_resources(
@@ -379,6 +436,8 @@ def build_resources(
 
         category = CATEGORY_ALIASES.get(entry.get("category") or "unknown", entry.get("category") or "unknown")
         type_id = canonical_resource_id(entry.get("resource_id"))
+        if type_id in EXCLUDED_RESOURCE_TYPES:
+            continue
 
         item_name = ((entry.get("item") or {}).get("item_name")) or {}
         if type_id not in type_items and item_name.get("source"):
@@ -460,6 +519,9 @@ def build_resources(
             ):
                 purity = nearest_purity[1]
 
+            if resource_id in EXCLUDED_RESOURCE_TYPES:
+                continue
+
             type_category.setdefault(resource_id, "mineral")
             buckets[("mineral", resource_id, "deposit")].append(
                 (
@@ -473,9 +535,12 @@ def build_resources(
             socket_count += 1
         source_note = "published from mesh proximity (ore vein export absent)"
 
+    duplicates = drop_duplicate_representations(buckets)
+
     log(
         f"resources: {total} rows, {hism_indexed} mineral HISM instances indexed but not published, "
-        f"{hism_dropped} plant HISM instances excluded, {socket_count} extractor deposits {source_note}"
+        f"{hism_dropped} plant HISM instances excluded, {duplicates} duplicate vein points merged, "
+        f"{socket_count} extractor deposits {source_note}"
     )
 
     groups_by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -667,28 +732,6 @@ def build_pois(path: Path) -> tuple[list[dict[str, Any]], dict[str, int]]:
     return records, dict(counts)
 
 
-# ── Catalog metadata ──────────────────────────────────────────────────────────
-
-
-def build_rupture_rules(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        catalog = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        log(f"catalog: {path.name} is not valid JSON, skipping metadata")
-        return {}
-
-    keys = (
-        "rupture_phase_bits",
-        "rupture_phases",
-        "respawn_rules",
-        "global_seed_change",
-        "depletion_rules",
-    )
-    return {key: catalog[key] for key in keys if key in catalog}
-
-
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 
@@ -800,7 +843,6 @@ def main() -> int:
         "poi_groups": poi_counts,
         "placement_groups": {layer: dict(groups) for layer, groups in placement_counts.items()},
         "parts": parts,
-        "rupture": build_rupture_rules(source / "map_v2_catalog.json"),
     }
     size = write_part(output, "manifest", {"id": "manifest", **manifest})
 

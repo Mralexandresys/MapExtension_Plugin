@@ -31,9 +31,9 @@ Keep the runtime split along these boundaries. Do not move HTTP or JSON formatti
 
 ## Prerequisites
 
-- Visual Studio 2022 (17.8 or newer) with the Desktop development with C++ workload and the Windows 10 SDK.
+- Visual Studio 2022 (17.8 or newer), or a newer Visual Studio with the v143 C++ build tools installed, the Desktop development with C++ workload and the Windows 10 SDK. The project and CI both use v143.
 - SDK layout: `StarRupture-Plugin-SDK` with `include/`, `Shared.props`, and `StarRupture SDK/`
-- Node.js 20.19.0 or newer, or Node.js 22.12.0 or newer, and pnpm 10.14.0 for the `mapview` build; run `node --version` before working to ensure you are not on an unsupported runtime.
+- Node.js `^20.19.0 || >=22.12.0` and pnpm 10.14.0 for `mapview`. The root `.nvmrc` selects Node 22.22.1. With nvm installed, run `nvm install && nvm use` from the repository root, then use `corepack pnpm` in `mapview/` (or an installed pnpm 10.14.0). Check `node --version` and `pnpm --version` before building; an older shell default is not a supported validation environment.
 
 ## Plugin build
 
@@ -45,11 +45,11 @@ Use only `Server Release|x64` for server builds so the output matches the packag
 
 The project resolves these SDK paths:
 
-- `PluginSdkSharedProps=..\StarRupture-Plugin-SDK\Shared.props`
-- `PluginApiIncludeDir=..\StarRupture-Plugin-SDK\include\`
-- `StarRuptureSdkBaseDir=..\StarRupture-Plugin-SDK\StarRupture SDK\`
+- `PluginSdkSharedProps=StarRupture-Plugin-SDK\Shared.props`
+- `PluginApiIncludeDir=StarRupture-Plugin-SDK\include\`
+- `StarRuptureSdkBaseDir=StarRupture-Plugin-SDK\StarRupture SDK\`
 
-The helper scripts at the repository root set these properties for you.
+These defaults are relative to the project directory and match `build.sh`. Use `./build.sh ... --sdk-root <path>` or override `PluginSdkRootDir` in MSBuild for another checkout. SDK tag selection remains independent of these paths and the compiler toolset.
 
 The DLL is written to `build\\<Configuration>\\Plugins\\MapExtension_Plugin.dll`.
 
@@ -62,7 +62,7 @@ The DLL is written to `build\\<Configuration>\\Plugins\\MapExtension_Plugin.dll`
   - `./build.sh client release --build-tag "ML-2026.04.04-214044-v0.2" --build-author "Mralexandresys"`
 - or call MSBuild directly with properties such as `/p:ModLoaderBuildTag=ML-2026.04.04-214044-v0.2 /p:ModLoaderBuildAuthor=Mralexandresys`.
 
-If the tag macro is not set, builds fall back to `"dev"`. If the author macro is not set, builds fall back to `"Mralexandresys"`.
+If no build tag is supplied, `Client Release` can use the fallback in `PropertySheet.props`; configurations without that property sheet fall back to `"dev"` in the source. These identifiers do not establish the SDK revision used for the build. If the author macro is not set, builds fall back to `"Mralexandresys"`.
 
 ## Standalone developer workflow
 
@@ -73,7 +73,7 @@ Expected checkout layout:
 ```text
 workspace/
   MapExtension_Plugin/
-  StarRupture-Plugin-SDK/
+    StarRupture-Plugin-SDK/
 ```
 
 Equivalent layouts are supported as long as the MSBuild include/props/SDK properties point at the right roots.
@@ -81,7 +81,7 @@ Equivalent layouts are supported as long as the MSBuild include/props/SDK proper
 Workflow:
 
 1. Clone `MapExtension_Plugin`.
-2. Clone `StarRupture-Plugin-SDK` next to it.
+2. Clone `StarRupture-Plugin-SDK` inside it, at `MapExtension_Plugin/StarRupture-Plugin-SDK/`.
 3. Open `MapExtension_Plugin/MapExtension_Plugin.sln`.
 4. Build the desired client or server configuration.
 
@@ -102,6 +102,25 @@ To inspect the latest build logs manually:
 ./summarize_build.sh client
 ./summarize_build.sh server
 ```
+
+## HTTP regression test without the game
+
+`tools/tests/http_server_smoke.cpp` uses the production HTTP implementation with
+capture/JSON stubs and an unused loopback port. It checks that a silent connection
+cannot indefinitely block the next request or shutdown, that a non-reading client
+cannot block shutdown, and that the server can restart. It does not modify the game.
+
+From an x64 Visual Studio Developer Command Prompt with v143 selected, at the repository root:
+
+```bat
+if not exist build\http-smoke mkdir build\http-smoke
+cl /nologo /std:c++20 /EHsc /MD /I. /IStarRupture-Plugin-SDK\include /I"StarRupture-Plugin-SDK\StarRupture SDK\Client" /I"StarRupture-Plugin-SDK\StarRupture SDK\Client\SDK" tools\tests\http_server_smoke.cpp map_state_http.cpp plugin_config.cpp /Fo:build\http-smoke\ /Fe:build\http-smoke\http_server_smoke.exe
+build\http-smoke\http_server_smoke.exe
+```
+
+Successful output ends with `HTTP smoke checks passed`; the test does not replace
+client/server builds or validation in the game. The generated SDK may emit its
+existing enum warning C4369 in this standalone build.
 
 ## Frontend build
 
@@ -128,7 +147,9 @@ The build output also includes `mapview/dist/map-tiles/` and `mapview/dist/map-d
 - `analyse_map/map_v2_resources.jsonl`
 - `analyse_map/map_v2_placements.jsonl`
 - `analyse_map/map_v2_pois.geojson`
-- `analyse_map/map_v2_catalog.json`
+- `analyse_map/map_v2_ore_veins.jsonl` (preferred deposit source; optional fallback if absent)
+
+`analyse_map/map_v2_catalog.json` remains useful reference material but is not a build input.
 
 Run it from the repository root:
 
@@ -136,9 +157,9 @@ Run it from the repository root:
 python3 tools/build_map_data.py
 ```
 
-`analyse_map/` is a strictly local, ignored input and must not be committed. The generated `mapview/public/map-data/*.js` files are build inputs and must be committed because CI does not have the raw exports.
+`analyse_map/` is a strictly local, ignored input and must not be committed. Previously tracked exports were removed from the index while retaining local files; this does not remove them from older Git history. The generated `mapview/public/map-data/*.js` files are build inputs and must be committed because CI does not have the raw exports.
 
-The format uses integer world decimetres, metre altitudes, dictionary/group indexes, locality sorting, and delta-encoded coordinate arrays. Hand-mineable HISM rocks are not published. Instead, each `resource_deposit_socket` becomes one `deposit` resource point for an extractor building; specialized socket classes provide the resource, while generic sockets use the nearest mineral HISM solely for classification. An optional parallel array carries purity inferred from the nearest explicit same-resource mesh marker (`unknown`, `impure`, `normal`, or `pure`). Placements are split into building, zone, and technical parts, and supported box shapes retain a projected ground footprint.
+The format uses integer world decimetres, metre altitudes, dictionary/group indexes, locality sorting, and delta-encoded coordinate arrays. Hand-mineable HISM rocks are not published. The preferred ore-vein export supplies 660 individual deposit sockets with resource, purity, extractor and join confidence. When absent, the generator falls back to classifying sockets using nearby mineral meshes; uncertain purity stays `unknown`. Actor/PCG points of the same resource within the deduplication tolerance (500 cm on each horizontal axis) of a deposit are removed, and `unknown_ore` is never published. The current catalog contains 57,147 resources, 21,751 placements and 241 canonical POIs. Placements are split into building, zone and technical parts; supported boxes retain a projected ground footprint. The manifest no longer carries unused rupture rules.
 
 The files contain compact JSON wrapped as `SRMAPDATA(<payload>);`. This JSONP wrapper is intentional: browsers commonly block `fetch()` from a page opened through `file://`, while classic relative `<script src>` loading remains available. Do not replace it with `fetch()` unless the distribution model changes to an HTTP-served viewer.
 
@@ -196,7 +217,7 @@ The server build ships no sidecar and is not auto-updated. Sync protocol v5 requ
 
 ## Plant and rupture-resource POI capture
 
-Plant POIs are deliberately limited by the reward class in `ACrGatherableBaseActor::InteractionRewardResource`, not by localized display text. The accepted classes are `I_Hydrobulb_C`, `I_Polifruit_C`, `I_Oxallop_C`, `I_Purplant_C`, `I_SerpentRoot_C`, `I_Prickler_C`, `I_PrismHerb_C`, and `I_Sulheart_C`. The same gatherable scan identifies Star Tears only when `InteractionRewardResource` is `I_StarTears_C`; the ore scan identifies Ignitium only when `ACrOreActor::Resource` is `I_FireWaveOre_C` (including `BP_FireWaveMeteOreChunk_C`).
+Plant POIs are deliberately limited by the reward class in `ACrGatherableBaseActor::InteractionRewardResource`, not by localized display text. The accepted classes are `I_Hydrobulb_C`, `I_Polifruit_C`, `I_Oxallop_C`, `I_Purplant_C`, `I_SerpentRoot_C`, `I_Prickler_C`, `I_PrismHerb_C`, and `I_Sulheart_C`. Explicit gatherable actor classes additionally cover Gold Fruit, Thornfruit, Sikkim Rhubarb, Nootka Lupine and the generic Plant. The same gatherable scan identifies Star Tears only when `InteractionRewardResource` is `I_StarTears_C`; the ore scan identifies Ignitium only when `ACrOreActor::Resource` is `I_FireWaveOre_C` (including `BP_FireWaveMeteOreChunk_C`).
 
 The packaged static world catalog is the complete source for pre-generated plant and POI locations. The dynamic-resource inclusion/exclusion volumes do not contain exact runtime spawn points and must not be connected to the Ignitium or Star Tears visibility filters or turned into resource markers. Do not reintroduce a World Partition full-map scan, player movement, rupture-cycle pausing, or per-save POI cache to populate that data.
 
@@ -210,7 +231,7 @@ The catalog is sorted by public key and assigned a stable 64-bit FNV-1a content 
 
 Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker, and cargo-connection stream; protocol v3 added POI pagination and a per-recipient "self" player flag; protocol v4 added exact POI-catalog revision tracking; protocol v5 extends the POI enum with `ignitium` and `star_tears` and keeps the exact-match requirement:
 
-- `kRequestFlagPois` and `kSnapshotHasPois` identify POI content. All request flags are reserved; the server intentionally ignores `request_flags` and returns a complete snapshot.
+- `kSnapshotHasPois` identifies POI content in responses. All request flags are reserved; the server intentionally ignores `request_flags` and returns a complete snapshot.
 - POIs are paginated: each `ClientSnapshotRequestPacket` carries a `poi_page`, and the server responds with at most `kPoiPageCapacity` POIs (currently 64, i.e. `kPoiChunksPerPage` = 16 chunks) for that page. `ServerSnapshotBeginPacket` declares the page slice via `pois_count`/`pois_chunk_count` plus `poi_page`, `poi_page_count`, `pois_total_count`, and `poi_revision`; `ServerSnapshotEndPacket` repeats the page counters, total, and revision.
 - The client retains pages only for the exact `(world, poi_revision, poi_page_count, pois_total_count)` tuple. A changed revision clears every retained page before the new page is published, preventing removals or index shifts from leaving stale or duplicate markers. The client rejects duplicate/empty public keys and validates the fully assembled total.
 - `ServerPlayerEntry` carries a `flags` byte; `kPlayerEntrySelf` marks the marker that belongs to the requesting player. The server matches the requesting player controller against the captured player keys, so each connected client sees its own marker flagged.
@@ -230,7 +251,9 @@ Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker
 
 `/rupture-cycle` remains a separate endpoint consumed by the frontend for the timeline view.
 
-The frontend endpoint is editable in the UI, but defaults to `http://127.0.0.1:9000`.
+The frontend endpoint is editable in the UI, but defaults to `http://127.0.0.1:9000`. Accepted HTTP sockets have a one-second receive/send inactivity timeout. Shutdown signals the worker, waits for bounded I/O to finish, then closes the listener.
+
+`generation` identifies refreshes, not content changes: it can advance while entities or a cached server snapshot stay unchanged. The POI content revision serves the separate purpose of invalidating paginated content. Cargo connections publish requested items and amounts, not measured throughput or items physically in transit.
 
 ### `/cargo` POI contract
 

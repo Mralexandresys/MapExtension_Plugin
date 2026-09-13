@@ -260,6 +260,8 @@ if $WRITE_LOG; then
   echo "Log : $LOG_PATH"
   mkdir -p "$(dirname "$LOG_PATH")"
   LOG_WIN_PATH="$(wslpath -w "$LOG_PATH")"
+  # A failed MSBuild launch must not reuse a previous successful build log.
+  : > "$LOG_PATH"
   BUILD_CMD+=(/fileLogger "/fileLoggerParameters:LogFile=$LOG_WIN_PATH;Verbosity=normal")
   TMP_LOG="$(mktemp)"
   persist_log() {
