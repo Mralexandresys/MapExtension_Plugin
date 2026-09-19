@@ -369,6 +369,8 @@ export type StaticFilterScope =
     | "placementGroup";
 
 export interface StaticFilterToggle {
+    /** Explicit target for group actions, independent of sibling changes. */
+    enabled?: boolean;
     scope: StaticFilterScope;
     key: string;
     /** Only set for placement groups, which are namespaced per layer. */

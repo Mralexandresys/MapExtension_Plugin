@@ -45,9 +45,7 @@
 
     /* Typographie */
     --font-mono:      "JetBrains Mono", "Fira Code", "SFMono-Regular", "Consolas", monospace;
-    --font-display:   "Orbitron", "Rajdhani", "Exo 2", "Bahnschrift",
-                      "Segoe UI Variable Display", "Avenir Next Condensed",
-                      "Ubuntu Condensed", "DejaVu Sans Condensed", sans-serif;
+    --font-display:   "Segoe UI", "Inter", sans-serif;
     --font-body:      "IBM Plex Sans", "Inter", "Segoe UI", sans-serif;
 
     font-family: var(--font-body);
@@ -164,7 +162,7 @@ h3,
     /* Width of the filters sidebar, and the left inset the centred overlays must
        respect. Without it the map toolbar centres on the whole stage and lands
        visibly off-centre over the actually visible map. */
-    --sidebar-width: min(392px, calc(100% - 420px));
+    --sidebar-width: min(328px, calc(100% - 380px));
     --sidebar-inset: 46px;
 }
 
@@ -1092,7 +1090,7 @@ textarea:focus-visible,
     }
 
     .map-stage {
-        --sidebar-width: min(356px, calc(100% - 380px));
+        --sidebar-width: min(320px, calc(100% - 380px));
     }
 
 }
@@ -1232,3 +1230,23 @@ textarea:focus-visible,
         scroll-behavior: auto !important;
     }
 }
+
+/* Refined control shapes retain the original blue and cyan palette. */
+.floating-panel { clip-path: none; border-radius: 10px; }
+.floating-panel::before { display: none; }
+.button, .chip-button, .tab-button {
+    border-radius: 6px;
+    border-left-width: 1px;
+    font-family: var(--font-body);
+    font-size: 0.84rem;
+    letter-spacing: 0;
+    text-transform: none;
+}
+.button:hover { box-shadow: none; }
+button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+}
+.filter-row { border-radius: 6px; }
+.filter-row-count { border-radius: 4px; font-variant-numeric: tabular-nums; }
+.filters-sidebar-body { scrollbar-width: thin; scrollbar-color: var(--dim) transparent; }

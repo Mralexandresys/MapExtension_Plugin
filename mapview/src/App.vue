@@ -406,6 +406,9 @@ const landmarkFilterChips = computed<ActiveFilterChip[]>(() => {
 });
 
 function handlePresetChange(next: MapPreset): void {
+    harvestResource.value = null;
+    userAnnotationsOnly.value = false;
+    staticFilters.resetFilters();
     setPreset(next);
     staticFilters.applyPreset(next, harvestResource.value);
     clearAllSelection();
@@ -414,6 +417,7 @@ function handlePresetChange(next: MapPreset): void {
 function handleHarvestSelect(typeId: string | null): void {
     harvestResource.value = typeId;
     staticFilters.selectSingleResource(typeId);
+    entityVisibility.plantResource = typeId !== null;
 }
 
 const staticFiltersModel = useStaticFiltersModel({
@@ -431,15 +435,15 @@ const staticFiltersModel = useStaticFiltersModel({
 const developerMode = computed(() => PRESET_DEFINITIONS[preset.value].developerMode);
 
 function isStaticSeriesVisible(entry: StaticPointSeries): boolean {
-    return staticFilters.isSeriesVisible(entry);
+    return !userAnnotationsOnly.value && staticFilters.isSeriesVisible(entry);
 }
 
 function isStaticPlacementVisible(entry: StaticPlacement): boolean {
-    return staticFilters.isPlacementVisible(entry);
+    return !userAnnotationsOnly.value && staticFilters.isPlacementVisible(entry);
 }
 
 function isStaticPoiVisible(entry: StaticMapPoiView): boolean {
-    return staticFilters.isPoiGroupEnabled(entry.group);
+    return !userAnnotationsOnly.value && staticFilters.isPoiGroupEnabled(entry.group);
 }
 
 function pickStatic(
@@ -600,8 +604,28 @@ function clearStaticSelection(): void {
 }
 
 function handleStaticFilterToggle(toggle: StaticFilterToggle): void {
+    harvestResource.value = null;
     applyStaticFilterToggle(staticFilters, toggle);
 }
+
+function resetAllFilters(): void {
+    clearFilters();
+    harvestResource.value = null;
+    staticFilters.resetFilters();
+    staticFilters.applyPreset(preset.value, null);
+}
+
+function setAllStaticFilters(enabled: boolean): void {
+    harvestResource.value = null;
+    staticFilters.setAll(enabled);
+}
+
+function setResourceFilters(enabled: boolean): void {
+    harvestResource.value = null;
+    staticFilters.setResources(enabled);
+    entityVisibility.plantResource = enabled;
+}
+
 
 function centerCurrentSelection(): void {
     const selection = staticSelection.value;
@@ -624,7 +648,9 @@ const controlDockPanel = computed<MapControlDockModel>(() => ({
     mapMetaLabel: mapMetaLabel.value,
     statusTone: statusTone.value,
     statusBadgeLabel: statusBadgeLabel.value,
-    commandStats: commandStats.value,
+    commandStats: commandStats.value.map((stat) => stat.key === "filters"
+        ? { ...stat, label: ui.value.filters.visibleCatalog, value: staticVisibleCount.value.toLocaleString(ui.value.locale) }
+        : stat),
     endpointDraft: endpointDraft.value,
     defaultEndpoint: DEFAULT_ENDPOINT,
     endpointHasPendingChanges: endpointHasPendingChanges.value,
@@ -853,7 +879,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 :panel="filtersPanel"
                 @toggle-collapse="toggleFiltersPanel"
                 @update:tab="setFilterTab"
-                @clear="clearFilters"
+                @clear="resetAllFilters"
                 @toggle-entity="toggleEntity"
                 @update:show-all-links="showAllLinks = $event"
                 @update:highlight-orphans="highlightOrphans = $event"
@@ -863,8 +889,10 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @update:harvest-resource="handleHarvestSelect"
                 @static-toggle="handleStaticFilterToggle"
                 @update:static-search="staticFilters.search.value = $event"
-                @static-show-all="staticFilters.setAll(true)"
-                @static-hide-all="staticFilters.setAll(false)"
+                @static-show-all="setResourceFilters(true)"
+                @static-hide-all="setResourceFilters(false)"
+                @advanced-show-all="setAllStaticFilters(true)"
+                @advanced-hide-all="setAllStaticFilters(false)"
             />
         </section>
 

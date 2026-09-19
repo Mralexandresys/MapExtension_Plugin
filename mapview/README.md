@@ -1,5 +1,9 @@
 # mapview
 
+Les trois onglets permanents sont Filtres (logistique, reperes, observations live et ressources), Affichage (liens, orphelins, annotations et focus) et Avance (couches et representations). Les prereglages ne masquent plus les onglets. Les actions sur toutes les ressources ne touchent ni aux reperes ni aux couches techniques ; les actions sur toutes les couches sont dans Avance. Reinitialiser restaure aussi les filtres statiques et les puretes. Isoler une ressource est un raccourci : un ajustement manuel efface cette selection indicative. Le compteur global indique les points du monde plutot qu’un nombre incomplet de filtres. Le panneau replie est inerte au clavier et le focus revient sur sa poignee.
+
+La presentation privilegie la carte : barre de session compacte, panneau de filtres bleu nuit et accents cyan. La frequence de rafraichissement se regle dans les parametres. La timeline de rupture reste visible dans la barre superieure.
+
 Frontend Vue 3 + Vite de l'interface web locale de `MapExtension_Plugin`.
 
 ## Objectif
@@ -72,34 +76,31 @@ Le viewer charge un catalogue compact pre-genere depuis `public/map-data/`. Il c
 
 Dans la couche `building`, le frontend rend uniquement les placements dont l'`actorType` contient `KeyCard`, `Coralion_Egg` ou `Spawner`, sans distinction de casse. Les couches `zone` et `technical` conservent tous leurs placements.
 
-Le volet `Filtres` s'ouvre sur un prereglage, puis sur des onglets : `Carte`, `Recolte` (mode Recolte
-uniquement), `Catalogue` (masque en prereglage `Reseau`) et `Options`. Un seul onglet est affiche a la
-fois, donc chaque liste dispose de toute la hauteur du volet au lieu d'une pile de sections repliables.
-Chaque en-tete d'onglet porte son propre resume (elements actifs sur total, ressource choisie, elements
-dessines), afin qu'un onglet hors ecran continue d'annoncer les filtres actifs qu'il contient. L'onglet
-courant est persiste avec les autres preferences (`filterTab`), et les choix de filtres restent
-persistants sous la cle `mapview.static-filters.v2`.
+Le volet propose trois onglets permanents : `Filtres`, `Affichage` et `Avance`.
+Le prereglage modifie la selection, jamais les onglets disponibles. L'ancien onglet
+`Recolte` restaure est affiche dans `Filtres`. Les cles de preferences et de filtres
+(`filterTab`, `mapview.static-filters.v2`) sont conservees.
 
-Chaque entree de liste est une ligne pleine largeur : case d'etat, icone de legende, libelle et
-compteur (groupe par milliers selon la locale, un libelle tronque garde son nom complet en infobulle).
-Chaque groupe propose `Tout` / `Aucun`, qui rejouent les bascules individuelles du groupe. Une
-categorie du catalogue active dont certains types sont masques affiche un tiret plutot qu'une coche :
-elle n'est ni tout affiche ni tout masque. Dans l'onglet `Catalogue`, le champ de recherche reste
-epingle pendant que les listes defilent et ne filtre que les listes du catalogue.
+La recherche epinglee de `Filtres` parcourt les types live, reperes et ressources.
+Chaque entree conserve sa case d'etat, son icone et son compteur. Les actions
+`Tout` / `Aucun` d'un groupe ciblent les entrees listees, meme apres une recherche.
+Les actions globales sur les ressources ne modifient pas les autres couches.
+Activer un type reactive sa couche et sa categorie si necessaire.
 
-La barre d'onglets se parcourt aux fleches, `Home` et `End`, comme un `tablist` standard. L'en-tete du
-volet ne garde qu'un compteur de filtres actifs et `Reinitialiser` : la liste de chips retirables a ete
-supprimee, chaque filtre s'annulant desormais depuis la ligne qui l'a pose (prereglage, onglet `Carte`
-ou onglet `Options`).
+Les fleches, `Home` et `End` parcourent les onglets. Le panneau replie devient
+inerte et le focus revient sur sa poignee. `Reinitialiser`, toujours accessible,
+restaure les reglages live et statiques du prereglage courant et efface la recherche.
 
-L'onglet `Carte` regroupe en trois familles de sens ce qui etait auparavant reparti entre
-la visibilite des entites live et le catalogue :
-
-| Famille | Contenu |
+| Famille de Filtres | Contenu |
 |---|---|
 | `Logistique` | Cargo Dispatchers, Cargo Receivers, Teleporteurs, Joueurs |
 | `Reperes` | Grottes, Obelisques, Geoscanneurs, Bases abandonnees, Forgotten Engine, Orbital Lander |
-| `Ressources` | Ressources vegetales, Ignitium, Star Tears |
+| `Observations en direct` | Ressources vegetales observees, Ignitium, Star Tears |
+| `Gisements pour extracteurs` | Minerais et puretes |
+| `Recolte a la main` | Plantes, minerais et ressources animales |
+
+`Isoler une ressource` est un raccourci de selection unique. Une modification
+manuelle permet ensuite une selection multiple et efface l'indication du raccourci.
 
 Les six familles de reperes sont les POI canoniques : elles sont accessibles en un clic au premier
 niveau, et non plus a trois niveaux de profondeur dans le catalogue. `Bases abandonnees` est un seul
@@ -110,9 +111,9 @@ Chaque repere possede une silhouette propre definie une seule fois dans `src/lib
 emise en `<symbol>` par `MapCanvas.vue` et reprise a l'identique dans les lignes du volet : la liste
 des filtres sert donc aussi de legende et ne peut pas diverger de la carte.
 
-Le resume de l'onglet `Catalogue` indique le nombre d'elements reellement dessines, pas le nombre
-charge. Les couches brutes de l'export (representations PCG/acteur, placements, zones, elements
-techniques) ne sont listees qu'en prereglage `Technique`.
+Le compteur `Points du monde` indique les points des couches statiques activees.
+Les controles bruts de couches et de representations restent dans `Avance`,
+quel que soit le prereglage. Les actions sur toutes les couches y sont explicites.
 
 Les quatre prereglages repondent chacun a une question de joueur et pilotent d'un seul geste les entites live et les filtres du catalogue :
 
@@ -120,10 +121,10 @@ Les quatre prereglages repondent chacun a une question de joueur et pilotent d'u
 |---|---|---|
 | `Reseau` (defaut) | Ou suis-je, comment circulent mes ressources ? | Entites live completes + les 241 POI canoniques |
 | `Exploration` | Ou construire, quel objectif vaut le deplacement ? | POI canoniques + minerais, reseau cargo masque |
-| `Recolte` | Ou est la ressource que je collecte maintenant ? | Une seule ressource a la fois + grottes |
+| `Recolte` | Ou est la ressource que je collecte maintenant ? | Grottes + choix de ressources dans Filtres |
 | `Technique` | Que contient l'export brut ? | Placements, zones, sockets et proxies (mode developpeur) |
 
-Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` est exclu du catalogue. L'export dedie attribue les 12 anciens sockets non identifies au tungstene, qui compte ainsi 107 gisements. Le compteur de filtres actifs de l'en-tete ne compte que les ecarts par rapport au prereglage courant.
+Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` est exclu du catalogue. L'export dedie attribue les 12 anciens sockets non identifies au tungstene, qui compte ainsi 107 gisements.
 
 ### Zones et elements de generation
 
@@ -190,7 +191,7 @@ sans filtre separe : chaque minerai correspond deja a une seule machine.
 La qualite se lit directement sur la carte, sans ouvrir le panneau : le marqueur
 garde la couleur de son minerai et la qualite joue sur sa luminosite et sa taille
 (pur = plus clair et plus gros, impur = plus sombre et plus petit). Elle est aussi
-filtrable dans le bloc `Gisements pour extracteurs` de l'onglet `Catalogue`, au-dessus
+filtrable dans le bloc `Gisements pour extracteurs` de l'onglet `Filtres`, au-dessus
 des types de minerai. Les compteurs de purete suivent les minerais actives et la recherche.
 Le filtre agit sur les gisements ; les ressources recoltees a la main restent dans un bloc
 separe. La recherche prend en compte les deux blocs, sans afficher « aucun resultat »

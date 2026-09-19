@@ -341,6 +341,10 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
             state.resourceCategories[key] = true;
         }
         state.layers.resource = typeId !== null;
+        if (typeId !== null) {
+            for (const kind of STATIC_RESOURCE_KINDS) state.resourceKinds[kind] = true;
+            for (const level of STATIC_ORE_PURITY_LEVELS) state.orePurities[level] = true;
+        }
     }
 
     function toggleLayer(layer: StaticLayerKey): void {
@@ -348,11 +352,24 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
     }
 
     function toggleResourceCategory(category: string): void {
-        state.resourceCategories[category] = state.resourceCategories[category] === false;
+        const enabled = !state.layers.resource || state.resourceCategories[category] === false;
+        state.resourceCategories[category] = enabled;
+        if (enabled) state.layers.resource = true;
+    }
+
+    function setResourceType(typeId: string, enabled: boolean): void {
+        const category = manifest.value?.resource_types[typeId]?.category ?? "plant";
+        state.resourceTypes[typeId] = enabled;
+        if (enabled) {
+            state.layers.resource = true;
+            state.resourceCategories[category] = true;
+            for (const kind of STATIC_RESOURCE_KINDS) state.resourceKinds[kind] = true;
+        }
     }
 
     function toggleResourceType(typeId: string): void {
-        state.resourceTypes[typeId] = state.resourceTypes[typeId] === false;
+        const category = manifest.value?.resource_types[typeId]?.category ?? "plant";
+        setResourceType(typeId, !state.layers.resource || !isResourceTypeEnabled(typeId, category));
     }
 
     function toggleResourceKind(kind: StaticResourceKind): void {
@@ -360,12 +377,16 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
     }
 
     function togglePoiGroup(group: string): void {
-        state.poiGroups[group] = state.poiGroups[group] === false;
+        const enabled = !isPoiGroupEnabled(group);
+        state.poiGroups[group] = enabled;
+        if (enabled) state.layers.poi = true;
     }
 
     function togglePlacementGroup(layer: StaticLayerKey, group: string): void {
         const key = `${layer}:${group}`;
-        state.placementGroups[key] = state.placementGroups[key] === false;
+        const enabled = !state.layers[layer] || state.placementGroups[key] === false;
+        state.placementGroups[key] = enabled;
+        if (enabled) state.layers[layer] = true;
     }
 
     function setAll(enabled: boolean): void {
@@ -390,6 +411,17 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
             for (const group of Object.keys(groups)) {
                 state.placementGroups[`${layer}:${group}`] = enabled;
             }
+        }
+    }
+
+    // Ordinary bulk controls affect resources only, never hidden technical layers.
+    function setResources(enabled: boolean): void {
+        state.layers.resource = enabled;
+        for (const key of Object.keys(state.resourceTypes)) state.resourceTypes[key] = enabled;
+        for (const key of Object.keys(state.resourceCategories)) state.resourceCategories[key] = enabled;
+        if (enabled) {
+            for (const kind of STATIC_RESOURCE_KINDS) state.resourceKinds[kind] = true;
+            for (const level of STATIC_ORE_PURITY_LEVELS) state.orePurities[level] = true;
         }
     }
 
@@ -448,10 +480,12 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         toggleLayer,
         toggleResourceCategory,
         toggleResourceType,
+        setResourceType,
         toggleResourceKind,
         togglePoiGroup,
         togglePlacementGroup,
         setAll,
+        setResources,
         resetFilters,
     };
 }
@@ -512,7 +546,7 @@ export function useStaticFiltersModel(options: {
                 key: group,
                 label: messages.groups[group as keyof typeof messages.groups] ?? group,
                 count,
-                enabled: filters.state.poiGroups[group] !== false,
+                enabled: filters.isPoiGroupEnabled(group),
                 color: groupColor(group),
             }))
             // Deliberately not filtered by `needle`: the search box lives in the
@@ -524,13 +558,13 @@ export function useStaticFiltersModel(options: {
         for (const [typeId, entry] of Object.entries(catalog?.resource_types ?? {})) {
             // Veins live in the deposits block; a type is only listed here for
             // the points that are actually gathered by hand.
-            const handCount = filters.resourceTypeCount(typeId) - (entry.counts.deposit ?? 0);
+            const handCount = (entry.counts.actor ?? 0) + (entry.counts.pcg ?? 0);
             if (handCount <= 0) continue;
             const option: StaticFilterOption = {
                 key: typeId,
                 label: french ? entry.fr : entry.en,
                 count: handCount,
-                enabled: filters.state.resourceTypes[typeId] !== false,
+                enabled: filters.isLayerEnabled("resource") && filters.isResourceTypeEnabled(typeId, entry.category),
                 color: resourceColor(typeId),
             };
             if (!matchesSearch(option.label, option.key, needle)) continue;
@@ -547,7 +581,7 @@ export function useStaticFiltersModel(options: {
                 key: typeId,
                 label: french ? entry.fr : entry.en,
                 count: entry.count,
-                enabled: filters.state.resourceTypes[typeId] !== false,
+                enabled: filters.isLayerEnabled("resource") && filters.isResourceTypeEnabled(typeId, "plant"),
                 color: resourceColor(typeId),
             };
             if (!matchesSearch(option.label, option.key, needle)) continue;
@@ -566,7 +600,7 @@ export function useStaticFiltersModel(options: {
                             category as keyof typeof messages.categories
                         ] ?? category,
                     count: types.reduce((total, type) => total + type.count, 0),
-                    enabled: filters.state.resourceCategories[category] !== false,
+                    enabled: filters.isLayerEnabled("resource") && filters.state.resourceCategories[category] !== false,
                     types,
                 };
             })
@@ -602,7 +636,7 @@ export function useStaticFiltersModel(options: {
                 key: typeId,
                 label: french ? entry.fr : entry.en,
                 count: entry.counts.deposit ?? 0,
-                enabled: filters.state.resourceTypes[typeId] !== false,
+                enabled: filters.isLayerEnabled("resource") && filters.isResourceTypeEnabled(typeId, entry.category),
                 color: resourceColor(typeId),
                 purityCounts: STATIC_ORE_PURITY_LEVELS.map((level) => ({
                     key: level,
@@ -658,7 +692,7 @@ export function useStaticFiltersModel(options: {
                             group,
                         count,
                         enabled:
-                            filters.state.placementGroups[`${layer}:${group}`] !== false,
+                            filters.isPlacementGroupEnabled(layer, group),
                         color: groupColor(group),
                     }))
                     .filter((option) => matchesSearch(option.label, option.key, needle))
@@ -687,6 +721,22 @@ export function applyStaticFilterToggle(
     filters: StaticMapFilters,
     toggle: StaticFilterToggle,
 ): void {
+    if (toggle.enabled !== undefined) {
+        const state = filters.state;
+        let current: boolean;
+        switch (toggle.scope) {
+            case "layer": current = state.layers[toggle.key] === true; break;
+            case "poiGroup": current = filters.isPoiGroupEnabled(toggle.key); break;
+            case "resourceCategory": current = state.layers.resource && state.resourceCategories[toggle.key] !== false; break;
+            case "resourceType":
+                filters.setResourceType(toggle.key, toggle.enabled);
+                return;
+            case "representation": current = state.resourceKinds[toggle.key] !== false; break;
+            case "orePurity": current = state.orePurities[toggle.key] !== false; break;
+            case "placementGroup": current = filters.isPlacementGroupEnabled((toggle.layer ?? "building") as StaticLayerKey, toggle.key); break;
+        }
+        if (current === toggle.enabled) return;
+    }
     switch (toggle.scope) {
         case "layer":
             filters.toggleLayer(toggle.key as StaticLayerKey);

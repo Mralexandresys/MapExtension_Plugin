@@ -1,5 +1,9 @@
 # MapExtension_Plugin
 
+Filters, Display and Advanced are always available, regardless of the preset. Resource bulk actions only affect resources; Advanced contains the global layer controls. Reset restores both live and static filters to the current preset, including purity. Isolating a resource is a shortcut that can then be refined. Collapsed filters leave the keyboard focus order.
+
+The viewer uses a compact session bar, a dark blue filter sidebar and cyan selection accents. Refresh timing is available in Settings; the rupture timeline stays visible above the map.
+
 French README: `README.fr.md`
 
 `MapExtension_Plugin` exposes StarRupture map data through a local HTTP endpoint and includes `mapview`, a local web interface used to display the map, entities, their connections, and the rupture cycle timeline.

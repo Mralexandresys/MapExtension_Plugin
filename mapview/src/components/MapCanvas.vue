@@ -1306,7 +1306,7 @@ defineExpose({
       </g>
     </svg>
 
-    <div v-if="!cargo && !loading" class="map-empty-state">
+    <div v-if="!cargo && !loading && !staticPois?.length && !staticSeries?.length && !staticPlacements?.length" class="map-empty-state">
       <strong>{{ ui.map.emptyTitle }}</strong>
       <span>{{ ui.map.emptyBody }}</span>
     </div>

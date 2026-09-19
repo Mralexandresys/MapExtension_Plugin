@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, nextTick } from "vue";
 
 import teleporterSvg from "../../assets/teleporter.svg?raw";
 import type {
@@ -36,6 +36,8 @@ const emit = defineEmits<{
     "update:static-search": [value: string];
     "static-show-all": [];
     "static-hide-all": [];
+    "advanced-show-all": [];
+    "advanced-hide-all": [];
 }>();
 
 const behaviorOptions = computed(() => [
@@ -73,20 +75,25 @@ const RESOURCE_KEYS: EntityToggleKey[] = [
     "starTears",
 ];
 
+function matchesSearch(label: string): boolean {
+    const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
+    return normalize(label).includes(normalize(props.panel.staticFilters?.search.trim() ?? ""));
+}
+
 const logisticsOptions = computed(() =>
     props.panel.entityToggleOptions.filter((option) =>
-        LOGISTICS_KEYS.includes(option.key),
+        LOGISTICS_KEYS.includes(option.key) && matchesSearch(option.label),
     ),
 );
 
 const resourceOptions = computed(() =>
     props.panel.entityToggleOptions.filter((option) =>
-        RESOURCE_KEYS.includes(option.key),
+        RESOURCE_KEYS.includes(option.key) && matchesSearch(option.label),
     ),
 );
 
 /** The 241 canonical POI, promoted from three levels deep in the catalog. */
-const landmarkOptions = computed(() => props.panel.staticFilters?.poiGroups ?? []);
+const landmarkOptions = computed(() => (props.panel.staticFilters?.poiGroups ?? []).filter(option => matchesSearch(option.label)));
 
 const presetDefinition = computed(() => PRESET_DEFINITIONS[props.panel.preset]);
 
@@ -98,116 +105,18 @@ function entityRowTitle(key: EntityToggleKey, label: string): string {
         : label;
 }
 
-// ── Tabs ────────────────────────────────────────────────────────────────────
-// One list at a time, each with the full height of the sidebar. Every tab
-// carries its own summary so a hidden tab never hides the fact that filters are
-// active inside it.
-
-interface FilterTab {
-    key: FilterTabKey;
-    label: string;
-    summary: string;
-    /** True when the tab holds at least one non-default choice. */
-    dirty: boolean;
-}
-
-const entityEnabledCount = computed(
-    () =>
-        [...logisticsOptions.value, ...resourceOptions.value].filter(
-            (option) => props.panel.entityVisibility[option.key],
-        ).length + landmarkOptions.value.filter((option) => option.enabled).length,
-);
-
-const entityTotalCount = computed(
-    () =>
-        logisticsOptions.value.length +
-        resourceOptions.value.length +
-        landmarkOptions.value.length,
-);
-
-const harvestSummary = computed(() => {
-    const selected = props.panel.harvestOptions.find(
-        (option) => option.id === props.panel.harvestResource,
-    );
-    return selected ? selected.label : "--";
-});
-
-const behaviorCheckedCount = computed(
-    () =>
-        [
-            props.panel.showAllLinks,
-            props.panel.highlightOrphans,
-            props.panel.userAnnotationsOnly,
-        ].filter(Boolean).length,
-);
-
-const behaviorChangedFromDefault = computed(
-    () =>
-        !props.panel.showAllLinks ||
-        props.panel.highlightOrphans ||
-        props.panel.userAnnotationsOnly,
-);
-
-// What is drawn, not what was fetched.
-const catalogSummary = computed(() => {
-    const model = props.panel.staticFilters;
-    if (!model || !model.available) return "--";
-    return props.panel.staticVisibleCount.toLocaleString(props.panel.ui.locale);
-});
-
-const tabs = computed<FilterTab[]>(() => {
-    const ui = props.panel.ui.filters;
-    const list: FilterTab[] = [
-        {
-            key: "map",
-            label: ui.tabs.map,
-            summary: ui.groupCount(entityEnabledCount.value, entityTotalCount.value),
-            dirty: entityEnabledCount.value < entityTotalCount.value,
-        },
-    ];
-
-    if (presetDefinition.value.singleResource) {
-        list.push({
-            key: "harvest",
-            label: ui.tabs.harvest,
-            summary: harvestSummary.value,
-            dirty: !!props.panel.harvestResource,
-        });
-    }
-
-    // Nothing to refine in Network: that preset draws the canonical POI only,
-    // and those live in the Map tab.
-    if (props.panel.staticFilters && props.panel.preset !== "network") {
-        list.push({
-            key: "catalog",
-            label: ui.tabs.catalog,
-            summary: catalogSummary.value,
-            dirty: false,
-        });
-    }
-
-    list.push({
-        key: "behavior",
-        label: ui.tabs.behavior,
-        summary: ui.groupCount(behaviorCheckedCount.value, 3),
-        dirty: behaviorChangedFromDefault.value,
-    });
-
-    return list;
-});
-
-/** Presets remove whole tabs; fall back rather than showing an empty body. */
-const activeTab = computed<FilterTabKey>(() => {
-    const available = tabs.value;
-    return available.some((tab) => tab.key === props.panel.activeTab)
-        ? props.panel.activeTab
-        : (available[0]?.key ?? "map");
-});
+// Stable tabs: presets change visibility, never access to controls.
+const tabs = computed(() => [
+    { key: "map" as const, label: props.panel.ui.filters.tabs.map },
+    { key: "behavior" as const, label: props.panel.ui.filters.tabs.behavior },
+    { key: "catalog" as const, label: props.panel.ui.filters.tabs.catalog },
+]);
+const activeTab = computed(() => props.panel.activeTab === "harvest" ? "map" : props.panel.activeTab);
 
 // A tablist is expected to move with the arrow keys, Home and End; without it
 // only the selected tab is reachable and the others cannot be read at all.
 function handleTabKeydown(event: KeyboardEvent, key: FilterTabKey): void {
-    const keys = tabs.value.map((tab) => tab.key);
+    const keys: FilterTabKey[] = tabs.value.map((tab) => tab.key);
     const current = keys.indexOf(key);
     let next = -1;
 
@@ -252,7 +161,7 @@ function setEntityGroup(
 function setLandmarkGroup(enabled: boolean): void {
     for (const option of landmarkOptions.value) {
         if (option.enabled !== enabled) {
-            emit("static-toggle", { scope: "poiGroup", key: option.key });
+            emit("static-toggle", { scope: "poiGroup", key: option.key, enabled });
         }
     }
 }
@@ -264,28 +173,12 @@ function entityGroupCount(options: Array<{ key: EntityToggleKey }>): string {
     return props.panel.ui.filters.groupCount(enabled, options.length);
 }
 
-const commonHarvestOptions = computed(() =>
-    props.panel.harvestOptions.filter((option) => option.common),
-);
-
-const rareHarvestOptions = computed(() =>
-    props.panel.harvestOptions.filter((option) => !option.common),
-);
-
-// Rare first: those are the ones worth a per-point marker. Commons are shown
-// but flagged, because each is tens of thousands of points.
-const harvestGroups = computed(() => [
-    {
-        key: "rare",
-        title: props.panel.ui.harvestRare,
-        options: rareHarvestOptions.value,
-    },
-    {
-        key: "common",
-        title: props.panel.ui.harvestCommon,
-        options: commonHarvestOptions.value,
-    },
-]);
+async function toggleDrawer(): Promise<void> {
+    emit("toggle-collapse");
+    await nextTick();
+    document.querySelector<HTMLButtonElement>(props.panel.collapsed
+        ? ".drawer-handle-left-rail" : ".panel-edge-toggle-left-sidebar")?.focus();
+}
 </script>
 
 <template>
@@ -295,7 +188,7 @@ const harvestGroups = computed(() => [
             class="drawer-handle drawer-handle-left-rail"
             type="button"
             :aria-expanded="!panel.collapsed"
-            @click="emit('toggle-collapse')"
+            @click="toggleDrawer"
         >
             <span class="collapse-arrow right" aria-hidden="true"></span>
             {{ panel.ui.handles.filters }}
@@ -304,13 +197,14 @@ const harvestGroups = computed(() => [
         <section
             class="floating-panel filters-panel filters-sidebar"
             :class="{ collapsed: panel.collapsed }"
+            :inert="panel.collapsed"
         >
             <button
                 class="panel-edge-toggle panel-edge-toggle-left-sidebar"
                 type="button"
                 :aria-label="panel.ui.buttons.collapse"
                 :title="panel.ui.buttons.collapse"
-                @click="emit('toggle-collapse')"
+                @click="toggleDrawer"
             >
                 <span class="collapse-arrow left" aria-hidden="true"></span>
             </button>
@@ -322,16 +216,9 @@ const harvestGroups = computed(() => [
                 <div class="panel-top-row compact filters-sidebar-head">
                     <div>
                         <h2>{{ panel.ui.handles.filters }}</h2>
-                        <p>
-                            {{
-                                panel.activeFilterCount
-                                    ? panel.ui.format.activeFilterCount(panel.activeFilterCount)
-                                    : panel.ui.filters.noneActive
-                            }}
-                        </p>
+                        <p>{{ panel.ui.filters.onMapHelp }}</p>
                     </div>
                     <button
-                        v-if="panel.activeFilterCount"
                         class="button subtle small filters-reset-button"
                         type="button"
                         @click="emit('clear')"
@@ -341,15 +228,14 @@ const harvestGroups = computed(() => [
                 </div>
 
                 <div class="preset-block">
-                    <div class="preset-grid" role="radiogroup" :aria-label="panel.ui.presetsTitle">
+                    <div class="preset-grid" role="group" :aria-label="panel.ui.presetsTitle">
                         <button
                             v-for="option in MAP_PRESETS"
                             :key="option"
                             class="preset-button"
                             :class="{ active: panel.preset === option }"
                             type="button"
-                            role="radio"
-                            :aria-checked="panel.preset === option"
+                            :aria-pressed="panel.preset === option"
                             :title="panel.ui.presets[option].help"
                             @click="emit('update:preset', option)"
                         >
@@ -372,7 +258,7 @@ const harvestGroups = computed(() => [
                         :id="`filter-tab-${tab.key}`"
                         :key="tab.key"
                         class="filter-tab"
-                        :class="{ active: activeTab === tab.key, dirty: tab.dirty }"
+                        :class="{ active: activeTab === tab.key }"
                         type="button"
                         role="tab"
                         :aria-selected="activeTab === tab.key"
@@ -382,7 +268,6 @@ const harvestGroups = computed(() => [
                         @keydown="handleTabKeydown($event, tab.key)"
                     >
                         <span class="filter-tab-label">{{ tab.label }}</span>
-                        <span class="filter-tab-summary">{{ tab.summary }}</span>
                     </button>
                 </div>
             </div>
@@ -394,9 +279,13 @@ const harvestGroups = computed(() => [
                 :aria-labelledby="`filter-tab-${activeTab}`"
             >
                 <div v-if="activeTab === 'map'" class="filter-tab-body">
-                    <p class="filter-section-help">{{ panel.ui.filters.onMapHelp }}</p>
+                    <label v-if="panel.staticFilters" class="filter-search field compact">
+                        <span class="sr-only">{{ panel.ui.filters.searchAll }}</span>
+                        <input type="search" :placeholder="panel.ui.filters.searchAll" :value="panel.staticFilters.search"
+                            @input="emit('update:static-search', ($event.target as HTMLInputElement).value)" />
+                    </label>
 
-                    <section class="filter-group">
+                    <section v-if="logisticsOptions.length" class="filter-group">
                         <header class="filter-group-head">
                             <h4>{{ panel.ui.filters.familyLogistics }}</h4>
                             <span class="filter-group-count">
@@ -527,7 +416,7 @@ const harvestGroups = computed(() => [
                         </div>
                     </section>
 
-                    <section class="filter-group">
+                    <section v-if="resourceOptions.length" class="filter-group">
                         <header class="filter-group-head">
                             <h4>{{ panel.ui.filters.familyResources }}</h4>
                             <span class="filter-group-count">
@@ -584,65 +473,32 @@ const harvestGroups = computed(() => [
                             </button>
                         </div>
                     </section>
-                </div>
-
-                <div v-else-if="activeTab === 'harvest'" class="filter-tab-body">
-                    <p class="filter-section-help">{{ panel.ui.harvestHelp }}</p>
-
-                    <p v-if="!panel.harvestResource" class="filter-section-help harvest-empty">
-                        {{ panel.ui.harvestPick }}
-                    </p>
-
-                    <section
-                        v-for="group in harvestGroups"
-                        v-show="group.options.length"
-                        :key="group.key"
-                        class="filter-group"
-                    >
-                        <header class="filter-group-head">
-                            <h4>{{ group.title }}</h4>
-                            <span class="filter-group-count">{{ group.options.length }}</span>
-                        </header>
-
-                        <div class="filter-rows" role="radiogroup" :aria-label="group.title">
-                            <button
-                                v-for="option in group.options"
-                                :key="option.id"
-                                class="filter-row radio"
-                                :class="{ active: panel.harvestResource === option.id }"
-                                type="button"
-                                role="radio"
-                                :aria-checked="panel.harvestResource === option.id"
-                                @click="emit(
-                                    'update:harvest-resource',
-                                    panel.harvestResource === option.id ? null : option.id,
-                                )"
-                            >
-                                <span class="filter-row-check" aria-hidden="true"></span>
-                                <span
-                                    class="filter-row-swatch"
-                                    aria-hidden="true"
-                                    :style="{ '--swatch': option.color }"
-                                ></span>
-                                <span class="filter-row-label" :title="option.label">
-                                    {{ option.label }}
-                                </span>
-                                <span class="filter-row-count">
-                                    {{ formatCount(option.count) }}
-                                </span>
-                            </button>
-                        </div>
-                    </section>
+                    <label class="field compact">
+                        <span>{{ panel.ui.filters.isolateResource }}</span>
+                        <select :value="panel.harvestResource ?? ''" @change="emit('update:harvest-resource', ($event.target as HTMLSelectElement).value || null)">
+                            <option value="" disabled>{{ panel.ui.harvestPick }}</option>
+                            <option v-for="option in panel.harvestOptions" :key="option.id" :value="option.id">{{ option.label }}</option>
+                        </select>
+                    </label>
+                    <MapStaticFilters
+                        v-if="panel.staticFilters"
+                        :model="panel.staticFilters"
+                        :developer-mode="false"
+                        @toggle="emit('static-toggle', $event)"
+                        @update:search="emit('update:static-search', $event)"
+                        @show-all="emit('static-show-all')"
+                        @hide-all="emit('static-hide-all')"
+                    />
                 </div>
 
                 <MapStaticFilters
                     v-else-if="activeTab === 'catalog' && panel.staticFilters"
                     :model="panel.staticFilters"
-                    :developer-mode="presetDefinition.developerMode"
+                    :developer-mode="true"
                     @toggle="emit('static-toggle', $event)"
                     @update:search="emit('update:static-search', $event)"
-                    @show-all="emit('static-show-all')"
-                    @hide-all="emit('static-hide-all')"
+                    @show-all="emit('advanced-show-all')"
+                    @hide-all="emit('advanced-hide-all')"
                 />
 
                 <div v-else-if="activeTab === 'behavior'" class="filter-tab-body">
@@ -689,10 +545,18 @@ const harvestGroups = computed(() => [
 </template>
 
 <style scoped>
+.filter-search {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--panel-strong);
+    padding: 4px 0 8px;
+}
+
 .filters-panel {
     border-left: 0;
     border-bottom: 0;
-    border-radius: 0 24px 0 0;
+    border-radius: 0;
 }
 
 .filters-panel.collapsed {
@@ -703,7 +567,7 @@ const harvestGroups = computed(() => [
     width: 100%;
     height: 100%;
     max-height: 100%;
-    padding: 16px 16px 14px;
+    padding: 14px 14px 12px;
     border: 0;
     border-right: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 0;
@@ -750,17 +614,18 @@ const harvestGroups = computed(() => [
 }
 
 .preset-button {
-    min-height: 32px;
+    min-height: 36px;
+    border-radius: 6px;
     padding: 5px 10px;
     border: 1px solid var(--border);
-    border-left: 2px solid var(--border);
+    border-left: 1px solid var(--border);
     background: rgba(12, 19, 35, 0.86);
     color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
+    font-family: var(--font-body);
+    font-size: 0.84rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    text-transform: none;
     cursor: pointer;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
@@ -796,8 +661,8 @@ const harvestGroups = computed(() => [
 .filter-tabs {
     display: flex;
     gap: 2px;
-    margin: 2px -16px 0;
-    padding: 0 16px;
+    margin: 2px -14px 0;
+    padding: 0 14px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.10);
 }
 
@@ -813,11 +678,11 @@ const harvestGroups = computed(() => [
     border-bottom: 2px solid transparent;
     background: transparent;
     color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
+    font-family: var(--font-body);
+    font-size: 0.84rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    text-transform: none;
     cursor: pointer;
     transition: color 0.15s, background 0.15s, border-color 0.15s;
 }
@@ -1036,6 +901,8 @@ const harvestGroups = computed(() => [
 }
 
 @media (max-width: 720px) {
+    .filters-sidebar-head { flex-direction: row; text-align: left; }
+
     .filters-panel {
         border-radius: 0 20px 0 0;
     }

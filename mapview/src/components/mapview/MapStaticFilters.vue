@@ -64,7 +64,7 @@ function setOptionGroup(
     toggle: (option: StaticFilterOption) => StaticFilterToggle,
 ): void {
     for (const option of options) {
-        if (option.enabled !== enabled) emit("toggle", toggle(option));
+        if (option.enabled !== enabled) emit("toggle", { ...toggle(option), enabled });
     }
 }
 
@@ -86,9 +86,9 @@ function setResourceTypes(category: StaticFilterCategory, enabled: boolean): voi
 const searchHasNoMatch = computed(
     () =>
         props.model.search.trim().length > 0 &&
-        props.model.deposits.types.length === 0 &&
-        props.model.resourceCategories.length === 0 &&
-        (!props.developerMode || props.model.placementSections.length === 0),
+        (props.developerMode
+            ? props.model.placementSections.length === 0
+            : props.model.deposits.types.length === 0 && props.model.resourceCategories.length === 0),
 );
 </script>
 
@@ -99,9 +99,10 @@ const searchHasNoMatch = computed(
         </p>
 
         <template v-if="model.available">
+            <p v-if="props.developerMode" class="filter-section-help">{{ model.ui.developerModeWarning }}</p>
             <!-- Search and bulk actions stay in reach while the lists scroll. -->
             <div class="static-toolbar">
-                <label class="static-search-field">
+                <label v-if="props.developerMode" class="static-search-field">
                     <span class="sr-only">
                         {{ model.ui.staticFilters.searchLabel }}
                     </span>
@@ -115,10 +116,10 @@ const searchHasNoMatch = computed(
                 </label>
                 <div class="static-bulk-actions">
                     <button class="button subtle small" type="button" @click="emit('show-all')">
-                        {{ model.ui.staticFilters.showAll }}
+                        {{ props.developerMode ? model.ui.staticFilters.showAllLayers : model.ui.staticFilters.showAll }}
                     </button>
                     <button class="button subtle small" type="button" @click="emit('hide-all')">
-                        {{ model.ui.staticFilters.hideAll }}
+                        {{ props.developerMode ? model.ui.staticFilters.hideAllLayers : model.ui.staticFilters.hideAll }}
                     </button>
                 </div>
             </div>
@@ -130,7 +131,7 @@ const searchHasNoMatch = computed(
                 {{ model.error }}
             </p>
             <p v-else-if="searchHasNoMatch" class="filter-section-help static-nomatch">
-                {{ model.ui.staticFilters.noMatch }}
+                {{ props.developerMode ? model.ui.staticFilters.noMatchAdvanced : model.ui.staticFilters.noMatch }}
             </p>
 
             <section v-if="props.developerMode && model.layers.length" class="filter-group">
@@ -213,7 +214,7 @@ const searchHasNoMatch = computed(
             <!-- The only catalog elements carrying a quality, and the only
                  ones a base is built around. Quality filters this block alone,
                  so ticking "Pure" no longer leaves every other ore on screen. -->
-            <section v-if="model.deposits.types.length" class="filter-group">
+            <section v-if="!props.developerMode && model.deposits.types.length" class="filter-group">
                 <header class="filter-group-head">
                     <h4>{{ model.ui.staticFilters.depositsTitle }}</h4>
                     <span class="filter-group-count">
@@ -277,7 +278,7 @@ const searchHasNoMatch = computed(
                 </div>
             </section>
 
-            <section v-if="model.resourceCategories.length" class="filter-group">
+            <section v-if="!props.developerMode && model.resourceCategories.length" class="filter-group">
                 <header class="filter-group-head">
                     <h4>{{ model.ui.staticFilters.resourcesTitle }}</h4>
                     <span class="filter-group-count">

@@ -85,7 +85,6 @@ function handleFileChange(event: Event): void {
         <div class="command-header">
             <div class="command-header-main">
                 <div class="command-header-brand">
-                    <span class="panel-kicker">{{ panel.ui.hero.eyebrow }}</span>
                     <div class="command-header-title-row">
                         <h1>{{ panel.ui.hero.title }}</h1>
                         <span class="status-inline status-pill" :class="panel.statusTone">
@@ -115,21 +114,7 @@ function handleFileChange(event: Event): void {
                         }}
                     </button>
 
-                    <label class="refresh-interval-inline" :title="panel.ui.hero.refreshIntervalHelp">
-                        <span class="refresh-interval-inline-label">
-                            {{ panel.ui.hero.refreshInterval }}
-                        </span>
-                        <input
-                            class="refresh-interval-inline-input"
-                            :value="panel.refreshIntervalMs / 1000"
-                            type="number"
-                            min="0.5"
-                            max="60"
-                            step="0.5"
-                            @input="handleRefreshIntervalInput"
-                        />
-                        <span class="refresh-interval-inline-unit">s</span>
-                    </label>
+
 
                     <!-- Export annotations -->
                     <button
@@ -255,6 +240,21 @@ function handleFileChange(event: Event): void {
                 </label>
 
                 <div class="control-dock-utility-row">
+                    <label class="refresh-interval-inline" :title="panel.ui.hero.refreshIntervalHelp">
+                        <span class="refresh-interval-inline-label">
+                            {{ panel.ui.hero.refreshInterval }}
+                        </span>
+                        <input
+                            class="refresh-interval-inline-input"
+                            :value="panel.refreshIntervalMs / 1000"
+                            type="number"
+                            min="0.5"
+                            max="60"
+                            step="0.5"
+                            @input="handleRefreshIntervalInput"
+                        />
+                        <span class="refresh-interval-inline-unit">s</span>
+                    </label>
                     <button
                         class="button subtle small auto-refresh-toggle"
                         :class="{ active: panel.autoRefresh }"
@@ -344,7 +344,7 @@ function handleFileChange(event: Event): void {
     position: relative;
     display: block;
     width: 100%;
-    padding: 12px 14px 14px;
+    padding: 10px 16px 0;
     border-radius: 0;
     background: rgba(12, 20, 38, 0.99);
     border-bottom: 1px solid var(--border-strong);
@@ -355,14 +355,16 @@ function handleFileChange(event: Event): void {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
-    align-items: start;
-    min-height: 52px;
+    align-items: center;
+    min-height: 38px;
 }
 
 .command-header-brand {
     min-width: 0;
-    display: grid;
-    gap: 6px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 16px;
 }
 
 .command-header-actions {
@@ -462,12 +464,12 @@ function handleFileChange(event: Event): void {
 .command-header h1 {
     margin: 0;
     /* Was 0.85rem, i.e. smaller than every h2 on screen. */
-    font-size: 1.05rem;
+    font-size: 1rem;
     line-height: 1.1;
     white-space: nowrap;
     font-family: var(--font-display);
     text-transform: uppercase;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.04em;
 }
 
 .control-dock-meta {
@@ -480,7 +482,7 @@ function handleFileChange(event: Event): void {
 
 .command-stat {
     min-width: 94px;
-    padding: 12px 14px;
+    padding: 7px 14px;
     display: grid;
     gap: 4px;
     border-right: 1px solid rgba(255, 255, 255, 0.08);
@@ -517,15 +519,16 @@ function handleFileChange(event: Event): void {
     min-width: 260px;
     display: flex;
     align-items: stretch;
-    padding: 6px 0;
+    padding: 4px 0 4px 16px;
 }
 
 .command-stats-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
+    gap: 0;
     align-items: stretch;
-    padding: 6px 16px;
+    padding: 0;
+    margin-top: 8px;
     border-top: 1px solid var(--border-strong);
     background: rgba(14, 22, 42, 0.96);
     font-family: var(--font-mono);
@@ -557,7 +560,7 @@ function handleFileChange(event: Event): void {
 
 .control-dock-utility-row {
     display: grid;
-    grid-template-columns: max-content minmax(120px, 160px) minmax(200px, 260px);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     justify-content: start;
     gap: 10px 18px;
     align-items: start;
@@ -597,7 +600,7 @@ function handleFileChange(event: Event): void {
     height: 34px;
     padding: 0;
     border: 1px solid var(--border);
-    border-radius: 0;
+    border-radius: 6px;
     background: rgba(12, 19, 35, 0.86);
     color: var(--muted);
     cursor: pointer;
@@ -637,6 +640,14 @@ function handleFileChange(event: Event): void {
 }
 
 @media (max-width: 720px) {
+    .control-dock-meta { display: none; }
+    .command-header-brand { gap: 0; }
+    .command-header-alert-copy span { overflow-wrap: anywhere; }
+    .command-header-alert { max-height: 112px; overflow-y: auto; gap: 6px; padding: 8px; }
+    .command-header-alert-copy span:not(.command-header-alert-hint) { display: none; }
+    .command-header-title-row { gap: 8px; }
+    .command-header h1 { font-size: 0.9rem; }
+    .command-stat { display: flex; flex-wrap: wrap; gap: 2px 8px; }
     .command-header {
         padding: 10px 12px 12px;
     }
@@ -693,9 +704,10 @@ function handleFileChange(event: Event): void {
     }
 
     .command-settings-popover {
-        position: static;
-        width: 100%;
-        margin-top: 10px;
+        position: absolute;
+        width: calc(100% - 16px);
+        max-height: 60dvh;
+        overflow-y: auto;
     }
 }
 </style>

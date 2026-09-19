@@ -70,18 +70,20 @@ onBeforeUnmount(() => resizeObserver?.disconnect());
 <style scoped>
 .map-toolbar {
     display: flex;
-    gap: 1px;
-    background: var(--border);
-    border-radius: 0;
+    gap: 4px;
+    padding: 5px;
+    background: var(--panel-strong);
+    border-radius: 10px;
     border: 1px solid var(--border-strong);
 }
 
 .toolbar-button {
-    font-family: var(--font-mono);
-    font-size: 0.70rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    padding: 8px 18px;
+    font-family: var(--font-body);
+    font-size: 0.84rem;
+    text-transform: none;
+    letter-spacing: 0;
+    padding: 8px 14px;
+    border-radius: 6px;
     background: var(--panel-strong);
     color: var(--muted);
     border: 0;
