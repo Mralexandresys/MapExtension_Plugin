@@ -288,14 +288,14 @@ const searchHasNoMatch = computed(
                         <button
                             class="group-action"
                             type="button"
-                            @click="setOptionGroup(model.resourceCategories, true, (option) => ({ scope: 'resourceCategory', key: option.key }))"
+                            @click="model.resourceCategories.forEach((category) => setResourceTypes(category, true))"
                         >
                             {{ model.ui.filters.selectAll }}
                         </button>
                         <button
                             class="group-action"
                             type="button"
-                            @click="setOptionGroup(model.resourceCategories, false, (option) => ({ scope: 'resourceCategory', key: option.key }))"
+                            @click="model.resourceCategories.forEach((category) => setResourceTypes(category, false))"
                         >
                             {{ model.ui.filters.selectNone }}
                         </button>
@@ -318,7 +318,7 @@ const searchHasNoMatch = computed(
                             }"
                             type="button"
                             :aria-pressed="isMixed(category) ? 'mixed' : category.enabled"
-                            @click="emit('toggle', { scope: 'resourceCategory', key: category.key })"
+                            @click="setResourceTypes(category, !category.enabled)"
                         >
                             <span class="filter-row-check" aria-hidden="true"></span>
                             <span class="filter-row-label" :title="category.label">

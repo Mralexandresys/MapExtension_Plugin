@@ -26,7 +26,7 @@ export const fr = {
         details: "Details",
         hideDetails: "Masquer details",
         center: "Centrer",
-        centerPlayer: "Joueur",
+        centerPlayer: "Moi",
         focusSelection: "Focus selection",
         showAll: "Tout afficher",
         deselect: "Deselectionner",
@@ -349,8 +349,8 @@ export const fr = {
                 description: "Recentre la carte sur la selection active.",
             },
             centerPlayer: {
-                label: "Centrer sur le joueur",
-                description: "Recentre la carte sur la position du joueur.",
+                label: "Centrer sur moi",
+                description: "Recentre la carte sur ta position.",
             },
             reset: {
                 label: "Reset map",

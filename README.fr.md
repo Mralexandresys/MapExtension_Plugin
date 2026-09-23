@@ -17,7 +17,7 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local,
 - Voir les objets et quantites demandes dans les connexions cargo (sans mesure du debit reel)
 - Afficher la position des `teleporteurs`
 - Afficher la position des `joueurs`, avec son propre joueur mis en avant dans une couleur distincte
-- Afficher les bases abandonnees, les plantes recoltables prises en charge, Ignitium et Star Tears comme points d'interet (POI), dont Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb et Nootka Lupine
+- Afficher les bases abandonnees, les plantes recoltables prises en charge, Ignitium et Star Tears comme points d'interet (POI), dont Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Grubbler et Glowcap
 - Parcourir un catalogue du monde pre-genere contenant les POI principaux, plantes, minerais, ressources animales, batiments, zones et elements techniques optionnels, avec des filtres persistants et une recherche
 - Cumuler les ressources observees en direct dans les zones chargees au lieu de retirer leurs marqueurs quand le joueur quitte le rayon de chargement courant
 - Conserver la position des ressources epuisees ou recoltees observees dans le monde actif avec un etat visuel distinct
@@ -58,7 +58,7 @@ Le catalogue statique fourni avec l'interface contient les donnees pre-generees 
 
 Le snapshot live peut toujours capturer les instances `ACrGatherableBaseActor` et `ACrOreActor` prises en charge dans les zones deja chargees afin de refleter le monde actif. Ces observations restent uniquement en memoire pour le monde courant ; l'etat des acteurs vivants et les donnees repliquees des emplacements epuises conservent les dernieres positions connues. Les observations Ignitium et Star Tears sont supprimees lorsque le seed PCG global replique change. En solo, ou ce replicateur est absent, l'entree en Heat/Moving ouvre une nouvelle generation locale. Les acteurs deja observes et encore en attente de suppression sont exclus de la nouvelle generation. Ce secours ne detecte pas un changement force du seed solo sans transition de phase.
 
-La detection par classe de recompense publie Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb et Sulheart. Des classes d'acteur gatherable explicites ajoutent Gold Fruit, Thornfruit, Sikkim Rhubarb, Nootka Lupine et le gatherable generique `Plant_h` du jeu. Les acteurs dont `InteractionRewardResource` vaut `I_StarTears_C` publient Star Tears ; les `ACrOreActor` dont `Resource` vaut `I_FireWaveOre_C` publient Ignitium.
+La detection par classe de recompense publie Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb et Sulheart. Des classes d'acteur gatherable explicites ajoutent l'arbre a Grubbler, Prickler, Glowcap, Prism Herb et le gatherable generique `Plant_h` du jeu. Les acteurs dont `InteractionRewardResource` vaut `I_StarTears_C` publient Star Tears ; les `ACrOreActor` dont `Resource` vaut `I_FireWaveOre_C` publient Ignitium.
 
 ## Donnees POI de `/cargo`
 

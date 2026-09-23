@@ -372,14 +372,21 @@ export function useStaticMapFilters(
         state.layers[layer] = !state.layers[layer];
     }
 
-    function toggleResourceCategory(category: string): void {
-        const enabled = !state.layers.resource || state.resourceCategories[category] === false;
-        state.resourceCategories[category] = enabled;
-        if (enabled) state.layers.resource = true;
-    }
-
     function setResourceType(typeId: string, enabled: boolean): void {
-        const category = manifest.value?.resource_types[typeId]?.category ?? "plant";
+        const categoryOf = (id: string) => manifest.value?.resource_types[id]?.category ?? "plant";
+        const category = categoryOf(typeId);
+        if (enabled) {
+            // Revealing the layer or a hidden category must not bring back the
+            // other types it was hiding: Quartz and the ore deposits share
+            // `mineral`, so ticking Sulphur used to show every Quartz point.
+            const layerHidden = !state.layers.resource;
+            const categoryHidden = state.resourceCategories[category] === false;
+            for (const id of Object.keys(state.resourceTypes)) {
+                if (layerHidden || (categoryHidden && categoryOf(id) === category)) {
+                    state.resourceTypes[id] = false;
+                }
+            }
+        }
         state.resourceTypes[typeId] = enabled;
         if (enabled) {
             state.layers.resource = true;
@@ -500,7 +507,6 @@ export function useStaticMapFilters(
         isResourceTypeEnabled,
         resourceTypeCount,
         toggleLayer,
-        toggleResourceCategory,
         toggleResourceType,
         setResourceType,
         toggleResourceKind,
@@ -622,7 +628,9 @@ export function useStaticFiltersModel(options: {
                             category as keyof typeof messages.categories
                         ] ?? category,
                     count: types.reduce((total, type) => total + type.count, 0),
-                    enabled: filters.isResourceCategoryEnabled(category),
+                    // Driven by its hand-gathered types: the category itself is
+                    // shared with the deposits of the same ores.
+                    enabled: types.some((type) => type.enabled),
                     types,
                 };
             })
@@ -749,7 +757,6 @@ export function applyStaticFilterToggle(
         switch (toggle.scope) {
             case "layer": current = state.layers[toggle.key] === true; break;
             case "poiGroup": current = filters.isPoiGroupEnabled(toggle.key); break;
-            case "resourceCategory": current = state.layers.resource && state.resourceCategories[toggle.key] !== false; break;
             case "resourceType":
                 filters.setResourceType(toggle.key, toggle.enabled);
                 return;
@@ -765,9 +772,6 @@ export function applyStaticFilterToggle(
             return;
         case "poiGroup":
             filters.togglePoiGroup(toggle.key);
-            return;
-        case "resourceCategory":
-            filters.toggleResourceCategory(toggle.key);
             return;
         case "resourceType":
             filters.toggleResourceType(toggle.key);

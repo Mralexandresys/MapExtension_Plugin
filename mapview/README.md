@@ -85,7 +85,10 @@ La recherche epinglee de `Filtres` parcourt les types live, reperes et ressource
 Chaque entree conserve sa case d'etat, son icone et son compteur. Les actions
 `Tout` / `Aucun` d'un groupe ciblent les entrees listees, meme apres une recherche.
 Les actions globales sur les ressources ne modifient pas les autres couches.
-Activer un type reactive sa couche et sa categorie si necessaire.
+Activer un type reactive sa couche et sa categorie si necessaire, sans reafficher
+les autres types que cette couche ou categorie masquait : cocher `Sulphur Ore`
+n'affiche plus le quartz. Les lignes de ressources recoltees a la main agissent sur
+leurs types, pas sur la categorie partagee avec les gisements du meme minerai.
 
 Les fleches, `Home` et `End` parcourent les onglets. Le panneau replie devient
 inerte et le focus revient sur sa poignee. `Reinitialiser`, toujours accessible,
@@ -169,10 +172,13 @@ fichier est absent, le build retombe sur l'ancienne methode (jointure du socket 
 mesh HISM le plus proche), qui laissait 283 filons en qualite `Inconnue` et 12
 sockets en `Minerai inconnu`.
 
-Chaque filon porte une qualite, les trois niveaux de `EOrePurityLevel` cote jeu :
-`Impure`, `Normale` ou `Pure` : 201 impurs, 373 normaux, 86 purs. La goethite,
-l'helium 3 et le soufre utilisent des classes de socket dediees et n'ont qu'un seul
-grade de materiau physique, donc leur qualite est exacte. Le titane, le wolfram et
+Les filons de titane, de wolfram et de calcium portent une qualite, les trois
+niveaux de `EOrePurityLevel` cote jeu : `Impure`, `Normale` ou `Pure` : 106 impurs,
+197 normaux, 86 purs. La goethite, l'helium 3 et le soufre utilisent des classes de
+socket dediees et n'ont qu'un seul grade de materiau physique : ils sont publies
+sans qualite, car ce grade unique (`PM_SulphurImpureInfiniteOre` pour le soufre) ne
+distingue aucun filon et l'extracteur a un debit fixe. Ils restent dessines comme des
+gisements, hors des filtres de qualite. Le titane, le wolfram et
 le calcium passent par des `BP_OreSocket` generiques : leur minerai et leur qualite
 sont deduits en joignant le socket a l'ancrage de collision exporte le plus proche,
 la geometrie des triangles de collision etant absente de l'export.
@@ -202,10 +208,11 @@ moins de 500 cm sur chacun des deux axes horizontaux d'un gisement. Le catalogue
 courant retire ainsi 366 doublons sans retirer les 660 gisements.
 
 Les libelles EN/FR viennent des tables d'items du jeu embarquees dans l'export
-(`item.item_name`), donc le catalogue affiche les noms officiels : `Minerai de
-tungstene` pour `wolfram`, `Ophidine` pour `serpent_root`, `Pourprier` pour
-`purplant`. Seuls les noms absents des tables, ou errones ("Polufruit"), sont
-surcharges dans `tools/build_map_data.py`.
+(`item.item_name`), donc le catalogue affiche les noms officiels, par exemple
+`Minerai de tungstene` pour `wolfram`, `Ophidine` pour `Serpent Root`,
+`Epineron` pour `Prickler`, `Sulcarde` pour `Sulheart`. Seuls les noms
+absents des tables, ou errones ("Polufruit"), sont surcharges dans
+`tools/build_map_data.py`.
 
 Les observations live de plantes recues dans `/cargo` sont appariees au point statique du meme type le plus proche dans un rayon de 150 cm. L'etat observe enrichit ce point, meme lorsqu'il est masque, sans creer de second marqueur. Masquer `Plantes`, un type comme `Hydrobulb` ou la couche `Ressources` masque les positions correspondantes quelle que soit leur source. Une observation sans correspondance ajoute une position sous ces memes filtres. La bascule prend effet sans attendre un nouveau snapshot. Dans `Avance`, un point apparie garde la representation du catalogue ; une position uniquement observee utilise `Acteurs et ancres`. Masquer une representation ne recree pas son point via le live.
 
@@ -265,8 +272,9 @@ d'interet :
 
 - les bases abandonnees utilisent une icone de batiment fissure distincte ;
 - le plugin courant publie les plantes disponibles Hydrobulb, Polifruit, Oxallop,
-  Purplant, Serpent Root, Prickler, Prism Herb et Sulheart, ainsi que Gold Fruit,
-  Thornfruit, Sikkim Rhubarb, Nootka Lupine et Plant par classes d'acteur ; il publie aussi les
+  Purplant, Serpent Root, Prickler, Prism Herb et Sulheart, ainsi que Grubbler, Prickler,
+  Glowcap, Prism Herb et Plant par classes d'acteur (noms des items en jeu ; les anciens
+  noms Gold Fruit, Sikkim Rhubarb, Nootka Lupine restent reconnus) ; il publie aussi les
   acteurs live Ignitium (`ACrOreActor::Resource == I_FireWaveOre_C`) et Star Tears
   (`InteractionRewardResource == I_StarTears_C`) avec leurs positions exactes ;
 - les grands volumes PCG d'inclusion et d'exclusion ne sont pas relies a ces filtres :

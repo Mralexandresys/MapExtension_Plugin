@@ -322,7 +322,7 @@ const ORE_PURITY_COLORS: Record<StaticOrePurity, string> = {
 /** Brightness applied to the ore colour, per quality level. */
 export const ORE_PURITY_BRIGHTNESS: Record<StaticOrePurity, number> = {
     unknown: 0.7,
-    impure: 0.55,
+    impure: 0.8,
     normal: 1,
     pure: 1.6,
 };
@@ -562,6 +562,8 @@ export function buildResourceLabelIndex(
     if (!manifest) return index;
     for (const [typeId, entry] of Object.entries(manifest.resource_types)) {
         index.set(typeId.toLowerCase(), typeId);
+        // Plugin builds before the in-game names sent "Gold Fruit", "Sikkim Rhubarb"...
+        index.set(typeId.replace(/_/g, " ").toLowerCase(), typeId);
         index.set(entry.en.toLowerCase(), typeId);
         index.set(entry.fr.toLowerCase(), typeId);
     }

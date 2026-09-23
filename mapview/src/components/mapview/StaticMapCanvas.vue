@@ -169,6 +169,18 @@ const puritySizeBonus = STATIC_ORE_PURITY_LEVELS.map(
   (level) => ORE_PURITY_SIZE_BONUS[level],
 );
 
+function fillSquare(left: number, top: number, size: number, color: number, width: number, height: number): void {
+  if (!pixels) return;
+  const endX = Math.min(width - 1, left + size - 1);
+  const endY = Math.min(height - 1, top + size - 1);
+  for (let row = Math.max(0, top); row <= endY; row += 1) {
+    const offset = row * width;
+    for (let column = Math.max(0, left); column <= endX; column += 1) {
+      pixels[offset + column] = color;
+    }
+  }
+}
+
 function drawResources(transform: DeviceTransform): void {
   if (!context || !pixels || !imageData) return;
 
@@ -183,6 +195,7 @@ function drawResources(transform: DeviceTransform): void {
 
   const depleted = packedColor(STATE_COLORS.depleted ?? '#6b7280');
   const available = packedColor(STATE_COLORS.available ?? '#4ade80');
+  const outline = packedColor('#0b1220');
 
   for (const entry of visibleSeries.value) {
     const base = packedColor(entry.color);
@@ -191,13 +204,16 @@ function drawResources(transform: DeviceTransform): void {
     // are drawn larger than a plant dot, and their ore quality is legible
     // without opening the selection panel.
     const palette = purity ? purityPalette(entry.color) : null;
+    // Single-grade ores (Sulphur, Goethite, Helium-3) are deposits without a quality.
+    const deposit = entry.kind === 'deposit';
+    const normalLevel = STATIC_ORE_PURITY_LEVELS.indexOf('normal');
 
     for (let index = 0; index < count; index += 1) {
-      const level = purity ? purity[index] : 0;
+      const level = purity ? purity[index] : normalLevel;
       if (purity && !props.isOrePurityVisible(level)) continue;
 
-      const size = purity ? dotSize + puritySizeBonus[level] : dotSize;
-      const offsetHalf = purity ? Math.floor(size / 2) : half;
+      const size = deposit ? dotSize + puritySizeBonus[level] : dotSize;
+      const offsetHalf = deposit ? Math.floor(size / 2) : half;
 
       const px = (x[index] * ax + bx) | 0;
       if (px < -size || px >= width + size) continue;
@@ -209,17 +225,10 @@ function drawResources(transform: DeviceTransform): void {
       if (observed === 2) color = depleted;
       else if (observed === 1) color = available;
 
-      const startX = Math.max(0, px - offsetHalf);
-      const endX = Math.min(width - 1, px - offsetHalf + size - 1);
-      const startY = Math.max(0, py - offsetHalf);
-      const endY = Math.min(height - 1, py - offsetHalf + size - 1);
-
-      for (let row = startY; row <= endY; row += 1) {
-        const offset = row * width;
-        for (let column = startX; column <= endX; column += 1) {
-          pixels[offset + column] = color;
-        }
-      }
+      // Sulphur and calcium are yellows close to the terrain: without a dark
+      // rim their deposits disappear into the map.
+      if (deposit) fillSquare(px - offsetHalf - 1, py - offsetHalf - 1, size + 2, outline, width, height);
+      fillSquare(px - offsetHalf, py - offsetHalf, size, color, width, height);
     }
   }
 

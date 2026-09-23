@@ -127,11 +127,15 @@ RESOURCE_ALIASES = {
 
 RESOURCE_LABELS_EN = {
     "unknown_ore": "Unknown Ore",
-    "nootka_lupine": "Nootka Lupine",
-    "thornfruit": "Thornfruit",
-    "sikkim_rhubarb": "Sikkim Rhubarb",
+    # These plants carry no item link in the export; the names are the
+    # `I_*` items they yield (Items/*.json ItemName), matched on the asset path
+    # (CrookedTree -> Grubbler) and on where the game says they grow (Glowcap
+    # only in caves, Prism Herb far east near water, Prickler in the plains).
+    "thornfruit": "Prickler",
+    "nootka_lupine": "Prism Herb",
+    "sikkim_rhubarb": "Glowcap",
+    "gold_fruit": "Grubbler",
     "aggressive_plant": "Aggressive Plant",
-    "gold_fruit": "Gold Fruit",
     # The item table spells it "Polufruit"; the in-game UI and the wiki do not.
     "polifruit": "Polifruit",
     # `soulheart` is the asset id, "Sulheart" the displayed name.
@@ -140,13 +144,14 @@ RESOURCE_LABELS_EN = {
 
 RESOURCE_LABELS_FR = {
     "unknown_ore": "Minerai inconnu",
-    "nootka_lupine": "Lupin de Nootka",
-    "thornfruit": "Ronce-fruit",
-    "sikkim_rhubarb": "Rhubarbe du Sikkim",
+    # French `ItemName` of the same `I_*` items as RESOURCE_LABELS_EN.
+    "thornfruit": "Épineron",
+    "nootka_lupine": "Prismacée",
+    "sikkim_rhubarb": "Palme-d’aube",
+    "gold_fruit": "Limacier",
     "aggressive_plant": "Plante agressive",
-    "gold_fruit": "Fruit d'or",
     "polifruit": "Polyfruit",
-    "soulheart": "Cœur d'âme",
+    "soulheart": "Sulcarde",
     # The item table leaves the English name in the French column.
     "skylisk": "Viande de skylisk",
 }
@@ -319,7 +324,10 @@ def read_ore_veins(
                 quantize(x_cm, POSITION_SCALE_CM),
                 quantize(y_cm, POSITION_SCALE_CM),
                 quantize(position.get("z"), ALTITUDE_SCALE_CM),
-                ORE_PURITY_LEVELS.index(purity),
+                # Sulphur, Goethite and Helium-3 have a single grade: its asset
+                # name ("PM_SulphurImpureInfiniteOre") is not a quality the
+                # player can choose between, and the extractor rate is fixed.
+                ORE_PURITY_LEVELS.index(purity) if entry.get("purity_tiered", True) else None,
                 ORE_JOIN_CONFIDENCE.index(confidence),
             )
         )
@@ -559,7 +567,7 @@ def build_resources(
             "n": len(points),
             **encoded,
         }
-        if kind == "deposit":
+        if kind == "deposit" and points[0][3] is not None:
             group["p"] = [point[3] for point in points]
             # Join confidence rides along only when at least one vein is not
             # exact, so an export without inferred joins stays byte-identical.

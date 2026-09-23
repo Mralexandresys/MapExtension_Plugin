@@ -364,7 +364,6 @@ export interface MapFiltersPanelModel {
 export type StaticFilterScope =
     | "layer"
     | "poiGroup"
-    | "resourceCategory"
     | "resourceType"
     | "representation"
     | "orePurity"

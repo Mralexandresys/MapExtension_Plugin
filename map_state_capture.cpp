@@ -2658,11 +2658,11 @@ namespace
 
 	constexpr TrackedPlantDefinition kTrackedPlantActorDefinitions[] =
 	{
-		{ "BP_Gatherable_GoldFruitTree_Large_A_C", "Gold Fruit" },
-		{ "BP_Gatherable_GoldFruitTree_Large_F_C", "Gold Fruit" },
-		{ "BP_SikkimRhubarb_Fruit_C", "Sikkim Rhubarb" },
-		{ "BP_Gatherable_Thornfruit_Fruit_C", "Thornfruit" },
-		{ "BP_Gatherable_NootkaLupine_Fruit_C", "Nootka Lupine" },
+		{ "BP_Gatherable_GoldFruitTree_Large_A_C", "Grubbler" },
+		{ "BP_Gatherable_GoldFruitTree_Large_F_C", "Grubbler" },
+		{ "BP_SikkimRhubarb_Fruit_C", "Glowcap" },
+		{ "BP_Gatherable_Thornfruit_Fruit_C", "Prickler" },
+		{ "BP_Gatherable_NootkaLupine_Fruit_C", "Prism Herb" },
 		{ "BP_Gatherable_Plant_h_C", "Plant" }
 	};
 

@@ -336,6 +336,11 @@ async function toggleDrawer(): Promise<void> {
                                 ></span>
                                 <span class="filter-row-label" :title="option.label">
                                     {{ option.label }}
+                                    <!-- Legend only: the local player is drawn in its own colour. -->
+                                    <span v-if="option.key === 'player'" class="self-legend">
+                                        <span class="filter-option-icon player self" aria-hidden="true"></span>
+                                        {{ panel.ui.selection.selfPlayer }}
+                                    </span>
                                 </span>
                                 <span class="filter-row-count">
                                     {{ formatCount(option.count) }}
@@ -848,6 +853,20 @@ async function toggleDrawer(): Promise<void> {
     border-right: 7px solid transparent;
     border-bottom: 12px solid var(--player);
     filter: drop-shadow(0 0 0.5px #d8fff0);
+}
+
+.filter-option-icon.player.self::before {
+    border-bottom-color: var(--player-self);
+    filter: drop-shadow(0 0 3px var(--player-self));
+}
+
+.self-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 8px;
+    color: var(--player-self);
+    font-size: 0.78rem;
 }
 
 .filter-option-icon.abandonedBase::before {

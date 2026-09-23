@@ -17,7 +17,7 @@ The plugin works in both single-player and multiplayer. For solo/local sessions,
 - See the items and amounts requested by cargo connections (without measuring actual throughput)
 - Display the positions of `teleporters`
 - Display the positions of `players`, with your own player highlighted in a distinct color
-- Display abandoned bases, supported gatherable plants, Ignitium, and Star Tears as points of interest (POIs), including Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb, and Nootka Lupine
+- Display abandoned bases, supported gatherable plants, Ignitium, and Star Tears as points of interest (POIs), including Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Grubbler, and Glowcap
 - Browse a pre-generated world catalog containing major POIs, plants, minerals, animal resources, buildings, zones, and optional technical elements, with searchable persistent filters
 - Accumulate live resource observations across streamed areas instead of dropping markers when the player leaves the current loading radius
 - Keep depleted or permanently gathered resource positions observed during the active world on the map with a distinct depleted state
@@ -58,7 +58,7 @@ The bundled static world catalog provides the complete pre-generated map data fo
 
 The live snapshot can still capture supported `ACrGatherableBaseActor` and `ACrOreActor` instances in already loaded areas to reflect the active world. Those observations stay in memory only for the current world; live actor state and the game's replicated depleted-location data retain the last known positions of depleted resources. Ignitium and Star Tears observations are discarded when the replicated global PCG seed changes. In solo play, where that replica is absent, entering Heat/Moving starts a new local generation. Previously sampled actors still awaiting removal are excluded from the new generation. A forced solo seed change without a phase transition is not detected by this fallback.
 
-Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart. Explicit gatherable actor classes additionally cover Gold Fruit, Thornfruit, Sikkim Rhubarb, Nootka Lupine, and the game's generic `Plant_h` gatherable. Actors whose `InteractionRewardResource` is `I_StarTears_C` publish Star Tears; `ACrOreActor` instances whose `Resource` is `I_FireWaveOre_C` publish Ignitium.
+Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart. Explicit gatherable actor classes additionally cover the Grubbler tree, Prickler, Glowcap, Prism Herb, and the game's generic `Plant_h` gatherable. Actors whose `InteractionRewardResource` is `I_StarTears_C` publish Star Tears; `ACrOreActor` instances whose `Resource` is `I_FireWaveOre_C` publish Ignitium.
 
 ## `/cargo` POI data
 

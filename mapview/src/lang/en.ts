@@ -28,7 +28,7 @@ export const en = {
         details: "Details",
         hideDetails: "Hide details",
         center: "Center",
-        centerPlayer: "Player",
+        centerPlayer: "Me",
         focusSelection: "Focus selection",
         showAll: "Show all",
         deselect: "Deselect",
@@ -350,8 +350,8 @@ export const en = {
                 description: "Center the map on the active selection.",
             },
             centerPlayer: {
-                label: "Center on player",
-                description: "Center the map on the player position.",
+                label: "Center on me",
+                description: "Center the map on your position.",
             },
             reset: {
                 label: "Reset map",
