@@ -2,6 +2,7 @@
 
 #include "Basic.hpp"
 #include "CoreUObject_structs.hpp"
+#include "shared/resource_observation.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -53,6 +54,21 @@ namespace Detail
 		std::string PublicKey;
 	};
 
+	inline std::string CargoKindToString(CargoKind kind)
+	{
+		return kind == CargoKind::Sender ? "sender" : "receiver";
+	}
+
+	inline std::string ComposeMarkerDisplayName(const CargoMarker& marker)
+	{
+		if (marker.Kind == CargoKind::Sender && !marker.ResourceSummary.empty())
+		{
+			return marker.DisplayName + " - " + marker.ResourceSummary;
+		}
+
+		return marker.DisplayName;
+	}
+
 	struct CargoConnection
 	{
 		std::string SenderKey;
@@ -80,9 +96,32 @@ namespace Detail
 
 	struct PlayerMarker
 	{
+		bool IsSelf = false;
 		SDK::FVector WorldLocation{};
 		SDK::FVector2f MapLocation{};
 		std::string DisplayName;
+		std::string Source;
+		std::string InternalKey;
+		std::string PublicKey;
+	};
+
+	enum class PoiKind : uint8_t
+	{
+		AbandonedBase,
+		PlantResource,
+		Ignitium,
+		StarTears
+	};
+
+	struct PoiMarker
+	{
+		PoiKind Kind = PoiKind::AbandonedBase;
+		bool Depleted = false;
+		MapResources::Harvestability Harvestability = MapResources::Harvestability::Available;
+		SDK::FVector WorldLocation{};
+		SDK::FVector2f MapLocation{};
+		std::string DisplayName;
+		std::string ResourceName;
 		std::string Source;
 		std::string InternalKey;
 		std::string PublicKey;
@@ -103,6 +142,7 @@ namespace Detail
 	struct CargoSnapshot
 	{
 		uint64_t Generation = 0;
+		uint64_t PoiRevision = 0;
 		std::string Reason;
 		std::string WorldName;
 		bool UsedReplicator = false;
@@ -117,10 +157,15 @@ namespace Detail
 		int ActorSenderCount = 0;
 		int TeleporterCount = 0;
 		int PlayerCount = 0;
+		int AbandonedBaseCount = 0;
+		int PlantResourceCount = 0;
+		int IgnitiumCount = 0;
+		int StarTearsCount = 0;
 		std::vector<CargoMarker> Markers;
 		std::vector<CargoConnection> Connections;
 		std::vector<TeleporterMarker> Teleporters;
 		std::vector<PlayerMarker> Players;
+		std::vector<PoiMarker> Pois;
 		RuptureCycleSnapshot RuptureCycle;
 	};
 

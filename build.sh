@@ -5,14 +5,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOLUTION_PATH="$SCRIPT_DIR/MapExtension_Plugin.sln"
 VSWWHERE_PATH="/mnt/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
-DEFAULT_LOG_PATH="$SCRIPT_DIR/build_client.log"
 DEFAULT_SDK_ROOT="$SCRIPT_DIR/StarRupture-Plugin-SDK"
 
 usage() {
   cat <<'EOF'
-Usage: ./build_client.sh <debug|release> [--sdk-root <path>] [--log] [--log-file <path>] [--summary] [--build-tag <tag>] [--build-author <author>]
+Usage: ./build.sh <client|server> <debug|release> [--sdk-root <path>] [--log] [--log-file <path>] [--summary] [--build-tag <tag>] [--build-author <author>]
 
-Builds the MapExtension_Plugin C++ project from the plugin repository using Windows MSBuild.
+Builds the MapExtension_Plugin C++ project for the given target using Windows MSBuild.
+The default log file is build_client.log or build_server.log, matching ./summarize_build.sh <target>.
 EOF
 }
 
@@ -53,10 +53,11 @@ if [[ $# -lt 1 ]]; then
   exit 1
 fi
 
+TARGET=""
 BUILD_KIND=""
 WRITE_LOG=false
 SHOW_SUMMARY=false
-LOG_PATH="$DEFAULT_LOG_PATH"
+LOG_PATH=""
 BUILD_TAG=""
 BUILD_AUTHOR=""
 SDK_ROOT="$DEFAULT_SDK_ROOT"
@@ -64,6 +65,14 @@ SDK_ROOT="$DEFAULT_SDK_ROOT"
 while [[ $# -gt 0 ]]; do
   ARG="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
   case "$ARG" in
+    client|server)
+      if [[ -n "$TARGET" ]]; then
+        echo "Cible deja definie: $TARGET" >&2
+        exit 1
+      fi
+      TARGET="$ARG"
+      shift
+      ;;
     debug|release)
       if [[ -n "$BUILD_KIND" ]]; then
         echo "Configuration deja definie: $BUILD_KIND" >&2
@@ -126,20 +135,41 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -z "$TARGET" ]]; then
+  echo "Cible manquante: client ou server." >&2
+  usage >&2
+  exit 1
+fi
+
 if [[ -z "$BUILD_KIND" ]]; then
   echo "Configuration manquante: debug ou release." >&2
   usage >&2
   exit 1
 fi
 
-case "$BUILD_KIND" in
-  debug)
-    CONFIGURATION="Client Debug"
+case "$TARGET" in
+  client)
+    CONFIGURATION="Client"
+    SDK_TARGET_DIR="Client"
     ;;
-  release)
-    CONFIGURATION="Client Release"
+  server)
+    CONFIGURATION="Server"
+    SDK_TARGET_DIR="Server"
     ;;
 esac
+
+case "$BUILD_KIND" in
+  debug)
+    CONFIGURATION="$CONFIGURATION Debug"
+    ;;
+  release)
+    CONFIGURATION="$CONFIGURATION Release"
+    ;;
+esac
+
+if [[ -z "$LOG_PATH" ]]; then
+  LOG_PATH="$SCRIPT_DIR/build_$TARGET.log"
+fi
 
 if [[ ! -f "$SOLUTION_PATH" ]]; then
   echo "Solution introuvable: $SOLUTION_PATH" >&2
@@ -175,8 +205,8 @@ if [[ ! -f "$PLUGIN_API_INCLUDE_DIR/plugin_network_helpers.h" ]]; then
   exit 1
 fi
 
-if [[ ! -d "$STARRUPTURE_SDK_BASE_DIR/Client/SDK" ]]; then
-  echo "SDK client introuvable: $STARRUPTURE_SDK_BASE_DIR/Client/SDK" >&2
+if [[ ! -d "$STARRUPTURE_SDK_BASE_DIR/$SDK_TARGET_DIR/SDK" ]]; then
+  echo "SDK $TARGET introuvable: $STARRUPTURE_SDK_BASE_DIR/$SDK_TARGET_DIR/SDK" >&2
   exit 1
 fi
 
@@ -230,6 +260,8 @@ if $WRITE_LOG; then
   echo "Log : $LOG_PATH"
   mkdir -p "$(dirname "$LOG_PATH")"
   LOG_WIN_PATH="$(wslpath -w "$LOG_PATH")"
+  # A failed MSBuild launch must not reuse a previous successful build log.
+  : > "$LOG_PATH"
   BUILD_CMD+=(/fileLogger "/fileLoggerParameters:LogFile=$LOG_WIN_PATH;Verbosity=normal")
   TMP_LOG="$(mktemp)"
   persist_log() {

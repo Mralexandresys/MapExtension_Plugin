@@ -8,15 +8,21 @@ import {
 } from "vue";
 
 import { fetchJson, normalizeEndpoint } from "../lib/api";
+import { clamp } from "../lib/formatters";
 import { VIEWER_CONTRACT_VERSION } from "../lib/viewerContract";
 import { applyLanguage, getMessages, resolveInitialLanguage } from "../lang";
 import type { Language } from "../lang";
+import {
+    DEFAULT_MAP_PRESET,
+    MAP_PRESETS,
+    type MapPreset,
+} from "../lib/mapPresets";
 import type {
     EntityVisibility,
+    FilterTabKey,
     HealthResponse,
     CargoResponse,
     RuptureCycleResponse,
-    ViewMode,
 } from "../lib/types";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:9000";
@@ -25,22 +31,40 @@ const MIN_REFRESH_INTERVAL_MS = 500;
 const MAX_REFRESH_INTERVAL_MS = 60000;
 const STORAGE_KEY = "starrupture-mapview:v3";
 const LANGUAGE_OPTIONS: Language[] = ["en", "fr"];
+const FILTER_TABS: FilterTabKey[] = ["map", "harvest", "catalog", "behavior"];
 const DEFAULT_ICON_SCALE = 1;
 const MIN_ICON_SCALE = 0.75;
 const MAX_ICON_SCALE = 2;
 
+/** Older builds stored one of four view modes; map them onto the presets. */
+const LEGACY_VIEW_MODE_TO_PRESET: Record<string, MapPreset> = {
+    network: "network",
+    resources: "harvest",
+    teleporters: "network",
+    players: "network",
+};
+
+function resolvePreset(saved: PersistedPreferences): MapPreset {
+    if (saved.preset && MAP_PRESETS.includes(saved.preset)) return saved.preset;
+    if (saved.viewMode) {
+        return LEGACY_VIEW_MODE_TO_PRESET[saved.viewMode] ?? DEFAULT_MAP_PRESET;
+    }
+    return DEFAULT_MAP_PRESET;
+}
+
 function clampIconScale(value: unknown): number {
-    const numericValue = typeof value === "number" ? value : Number(value);
+    const numericValue = Number(value);
     if (!Number.isFinite(numericValue)) return DEFAULT_ICON_SCALE;
-    return Math.min(MAX_ICON_SCALE, Math.max(MIN_ICON_SCALE, numericValue));
+    return clamp(numericValue, MIN_ICON_SCALE, MAX_ICON_SCALE);
 }
 
 function clampRefreshIntervalMs(value: unknown): number {
-    const numericValue = typeof value === "number" ? value : Number(value);
+    const numericValue = Number(value);
     if (!Number.isFinite(numericValue)) return LIVE_REFRESH_MS;
-    return Math.min(
+    return clamp(
+        Math.round(numericValue),
+        MIN_REFRESH_INTERVAL_MS,
         MAX_REFRESH_INTERVAL_MS,
-        Math.max(MIN_REFRESH_INTERVAL_MS, Math.round(numericValue)),
     );
 }
 
@@ -58,9 +82,14 @@ interface PersistedPreferences {
     iconScale?: number;
     showAllLinks?: boolean;
     highlightOrphans?: boolean;
-    viewMode?: ViewMode;
+    preset?: MapPreset;
+    harvestResource?: string | null;
+    /** Legacy key: the four view modes became presets. */
+    viewMode?: string;
     lang?: Language;
     entityVisibility?: Partial<EntityVisibility>;
+    filtersPanelCollapsed?: boolean;
+    filterTab?: FilterTabKey;
 }
 
 export function useMapViewDataSource() {
@@ -77,13 +106,27 @@ export function useMapViewDataSource() {
     const iconScale = ref(DEFAULT_ICON_SCALE);
     const lastUpdatedAt = ref(0);
     const now = ref(Date.now());
-    const viewMode = ref<ViewMode>("network");
+    const preset = ref<MapPreset>(DEFAULT_MAP_PRESET);
+    /** Harvest preset draws one resource type at a time; null means none picked. */
+    const harvestResource = ref<string | null>(null);
+    // Open on first run: the world catalog (241 POI and ~80k elements) was only
+    // reachable through a 46px vertical rail, so most of the product was
+    // invisible by default. The user's choice is persisted from then on.
+    const filtersPanelCollapsed = ref(false);
+
+    // One tab at a time, so each list gets the full height of the sidebar
+    // instead of a few scrollable rows at the bottom of a stack of sections.
+    const filterTab = ref<FilterTabKey>("map");
 
     const entityVisibility = reactive<EntityVisibility>({
         sender: true,
         receiver: true,
         teleporter: true,
         player: true,
+        abandonedBase: true,
+        plantResource: true,
+        ignitium: true,
+        starTears: true,
     });
 
     const status = reactive<MapViewStatus>({
@@ -97,7 +140,6 @@ export function useMapViewDataSource() {
     let clockTimer: number | null = null;
 
     const ui = computed(() => getMessages(lang.value));
-    const languageOptions: Language[] = ["en", "fr"];
     const normalizedEndpoint = computed(() => normalizeEndpoint(endpoint.value));
     const normalizedDraftEndpoint = computed(() =>
         normalizeEndpoint(endpointDraft.value),
@@ -130,8 +172,6 @@ export function useMapViewDataSource() {
     );
 
     function loadPreferences(): void {
-        if (typeof localStorage === "undefined") return;
-
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (!raw) return;
@@ -147,7 +187,15 @@ export function useMapViewDataSource() {
             iconScale.value = clampIconScale(saved.iconScale);
             showAllLinks.value = saved.showAllLinks ?? true;
             highlightOrphans.value = saved.highlightOrphans ?? false;
-            viewMode.value = saved.viewMode || "network";
+            preset.value = resolvePreset(saved);
+            harvestResource.value =
+                typeof saved.harvestResource === "string"
+                    ? saved.harvestResource
+                    : null;
+            filtersPanelCollapsed.value = saved.filtersPanelCollapsed ?? false;
+            filterTab.value = FILTER_TABS.includes(saved.filterTab as FilterTabKey)
+                ? (saved.filterTab as FilterTabKey)
+                : "map";
             if (saved.lang && LANGUAGE_OPTIONS.includes(saved.lang as Language)) {
                 lang.value = saved.lang as Language;
             }
@@ -155,6 +203,14 @@ export function useMapViewDataSource() {
             entityVisibility.receiver = saved.entityVisibility?.receiver ?? true;
             entityVisibility.teleporter = saved.entityVisibility?.teleporter ?? true;
             entityVisibility.player = saved.entityVisibility?.player ?? true;
+            entityVisibility.abandonedBase =
+                saved.entityVisibility?.abandonedBase ?? true;
+            entityVisibility.plantResource =
+                saved.entityVisibility?.plantResource ?? true;
+            entityVisibility.ignitium =
+                saved.entityVisibility?.ignitium ?? true;
+            entityVisibility.starTears =
+                saved.entityVisibility?.starTears ?? true;
         } catch {
             endpoint.value = DEFAULT_ENDPOINT;
             endpointDraft.value = DEFAULT_ENDPOINT;
@@ -162,8 +218,6 @@ export function useMapViewDataSource() {
     }
 
     function savePreferences(): void {
-        if (typeof localStorage === "undefined") return;
-
         localStorage.setItem(
             STORAGE_KEY,
             JSON.stringify({
@@ -173,9 +227,12 @@ export function useMapViewDataSource() {
                 iconScale: iconScale.value,
                 showAllLinks: showAllLinks.value,
                 highlightOrphans: highlightOrphans.value,
-                viewMode: viewMode.value,
+                preset: preset.value,
+                harvestResource: harvestResource.value,
                 lang: lang.value,
                 entityVisibility: { ...entityVisibility },
+                filtersPanelCollapsed: filtersPanelCollapsed.value,
+                filterTab: filterTab.value,
             }),
         );
     }
@@ -276,6 +333,10 @@ export function useMapViewDataSource() {
         }
     }
 
+    // Restore preferences before the app's catalog watchers can change live
+    // visibility and persist defaults over the user's saved settings.
+    loadPreferences();
+
     watch(
         () => ({
             endpoint: endpoint.value,
@@ -283,9 +344,12 @@ export function useMapViewDataSource() {
             refreshIntervalMs: refreshIntervalMs.value,
             showAllLinks: showAllLinks.value,
             highlightOrphans: highlightOrphans.value,
-            viewMode: viewMode.value,
+            preset: preset.value,
+            harvestResource: harvestResource.value,
             lang: lang.value,
             entityVisibility: { ...entityVisibility },
+            filtersPanelCollapsed: filtersPanelCollapsed.value,
+            filterTab: filterTab.value,
         }),
         savePreferences,
         { deep: true },
@@ -305,7 +369,6 @@ export function useMapViewDataSource() {
     watch([autoRefresh, refreshIntervalMs], updateAutoRefresh);
 
     onMounted(() => {
-        loadPreferences();
         updateAutoRefresh();
         clockTimer = window.setInterval(() => {
             now.value = Date.now();
@@ -332,11 +395,14 @@ export function useMapViewDataSource() {
         iconScale,
         lastUpdatedAt,
         now,
-        viewMode,
+        preset,
+        harvestResource,
+        filtersPanelCollapsed,
+        filterTab,
         entityVisibility,
         status,
         ui,
-        languageOptions,
+        languageOptions: LANGUAGE_OPTIONS,
         normalizedEndpoint,
         endpointHasPendingChanges,
         pluginVersion,

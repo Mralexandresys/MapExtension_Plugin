@@ -33,9 +33,18 @@ mapview/.eslintcache
 # Local SDK checkout
 StarRupture-Plugin-SDK/
 
+# Local raw exports; only mapview/public/map-data/ is distributed
+analyse_map/
+
 # Misc editor/system files
 .DS_Store
 Thumbs.db
 
+# Python bytecode
+__pycache__/
+
 # Local working notes
 *.local
+
+outputs
+.tgrep/

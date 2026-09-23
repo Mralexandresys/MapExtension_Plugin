@@ -1,0 +1,65 @@
+{
+  "world": "ChimeraMain",
+  "reason": "legacy_no_pois_fixture",
+  "generation": 1,
+  "counts": {
+    "markers": 2,
+    "senders": 1,
+    "receivers": 1,
+    "connections": 1,
+    "teleporters": 1,
+    "players": 1
+  },
+  "markers": [
+    {
+      "unique_key": "sender_legacy_1",
+      "kind": "sender",
+      "label": "Cargo Dispatcher 1",
+      "display_name": "Cargo Dispatcher 1",
+      "resource": "Helium3",
+      "source": "package_transport_replicator.sender",
+      "world": { "x": -325700.0, "y": -145900.0, "z": 5420.0 },
+      "map": { "x": 680.0, "y": 2438.9 }
+    },
+    {
+      "unique_key": "receiver_legacy_1",
+      "kind": "receiver",
+      "label": "HE2",
+      "display_name": "HE2",
+      "resource": "Helium3",
+      "source": "package_transport_replicator.receiver",
+      "world": { "x": -302500.0, "y": -42300.0, "z": 4020.0 },
+      "map": { "x": 1159.8, "y": 4582.4 }
+    }
+  ],
+  "connections": [
+    {
+      "sender_key": "sender_legacy_1",
+      "receiver_key": "receiver_legacy_1",
+      "sender_label": "Cargo Dispatcher 1",
+      "receiver_label": "HE2",
+      "item": "Helium3",
+      "requested_amount": 100,
+      "sender": { "world": { "x": -325700.0, "y": -145900.0, "z": 5420.0 }, "map": { "x": 680.0, "y": 2438.9 } },
+      "receiver": { "world": { "x": -302500.0, "y": -42300.0, "z": 4020.0 }, "map": { "x": 1159.8, "y": 4582.4 } }
+    }
+  ],
+  "teleporters": [
+    {
+      "unique_key": "teleporter_legacy_1",
+      "label": "FER MAX",
+      "source": "teleport_replicator",
+      "world": { "x": -149700.0, "y": -42800.0, "z": 7730.0 },
+      "map": { "x": 4319.6, "y": 4572.0 }
+    }
+  ],
+  "players": [
+    {
+      "unique_key": "player_legacy_1",
+      "label": "Alexandre",
+      "source": "actor_scan.player",
+      "world": { "x": -304759.6, "y": -67135.8, "z": 1561.9 },
+      "map": { "x": 1113.0, "y": 4068.5 }
+    }
+  ]
+}

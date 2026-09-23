@@ -34,6 +34,7 @@
     --receiver:       #fb923c;
     --teleporter:     #a78bfa;
     --player:         #34d399;
+    --player-self:    #fbbf24;
     --line:           #22d3ee;
 
     /* Glow */
@@ -44,7 +45,7 @@
 
     /* Typographie */
     --font-mono:      "JetBrains Mono", "Fira Code", "SFMono-Regular", "Consolas", monospace;
-    --font-display:   "Orbitron", "Rajdhani", "Exo 2", sans-serif;
+    --font-display:   "Segoe UI", "Inter", sans-serif;
     --font-body:      "IBM Plex Sans", "Inter", "Segoe UI", sans-serif;
 
     font-family: var(--font-body);
@@ -53,6 +54,18 @@
 
 * {
     box-sizing: border-box;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 html,
@@ -111,10 +124,17 @@ h3,
 }
 
 .app-shell {
-    width: 100vw;
+    /* 100vw includes the vertical scrollbar gutter and caused a few pixels of
+       horizontal overflow, which shifted the whole shell left. */
+    width: 100%;
     height: 100vh;
     padding: 0;
     display: grid;
+    /* An implicit grid column is `auto`, i.e. at least max-content: the header
+       row widened the column past the viewport and every child inherited it,
+       which is why the map stage, the filters drawer and the map toolbar all
+       hung off the right edge on a phone. `width: 100%` does not cap it. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     gap: 0;
 }
@@ -138,6 +158,16 @@ h3,
     background: #0a1018;
     border: 0;
     border-radius: 0;
+
+    /* Width of the filters sidebar, and the left inset the centred overlays must
+       respect. Without it the map toolbar centres on the whole stage and lands
+       visibly off-centre over the actually visible map. */
+    --sidebar-width: min(328px, calc(100% - 380px));
+    --sidebar-inset: 46px;
+}
+
+.map-stage.sidebar-open {
+    --sidebar-inset: var(--sidebar-width);
 }
 
 /* map-stage : pas de pseudo-éléments de fond (quadrillage supprimé) */
@@ -165,21 +195,11 @@ h3,
     display: flex;
 }
 
-.overlay-top-left {
-    top: 0;
-    left: 0;
-    width: min(390px, calc(100% - 340px));
-    align-items: flex-start;
-}
-
-.overlay-top-center {
-    top: 0;
-    left: 0;
-    right: 0;
-    justify-content: center;
-    align-items: flex-start;
-}
-
+/* The layer itself must never capture pointer events: it spans the full height
+   of the map even when the panel inside it is small or absent, and any
+   `pointer-events: auto` here turns that whole band into a dead zone where the
+   map can no longer be panned, clicked or zoomed. Interactivity belongs to
+   `.floating-panel`, which already opts in. */
 .overlay-top-right {
     top: 14px;
     right: 0;
@@ -187,44 +207,28 @@ h3,
     width: min(380px, calc(100% - 18px));
     justify-content: flex-end;
     align-items: flex-start;
-    overflow-y: auto;
-    overflow-x: hidden;
     padding-right: 10px;
-    scrollbar-gutter: stable;
-    pointer-events: auto;
 }
 
-.overlay-bottom-left {
-    left: 0;
-    bottom: 0;
-    width: min(320px, calc(100% - 220px));
-    align-items: flex-end;
-}
-
-.overlay-bottom-left.expanded {
-    width: min(380px, calc(100% - 180px));
-}
-
+/* Structural panel, kept above the floating overlays. Its width is shared with
+   the centred overlays through --sidebar-width. */
 .overlay-left-sidebar {
     top: 0;
     left: 0;
     bottom: 0;
-    width: min(320px, calc(100% - 420px));
+    width: var(--sidebar-width);
     align-items: stretch;
-    pointer-events: auto;
-    z-index: 11;
+    z-index: 15;
 }
 
+/* Centred on the visible map, not on the stage: the sidebar occupies the left
+   edge and used to push this off-centre by its full width. */
 .overlay-bottom-center {
-    left: 50%;
+    left: var(--sidebar-inset, 0px);
+    right: 0;
     bottom: 18px;
-    transform: translateX(-50%);
     justify-content: center;
     align-items: flex-end;
-}
-
-.timeline-layer {
-    top: 0;
 }
 
 .floating-panel {
@@ -263,34 +267,6 @@ h3,
     z-index: 1;
 }
 
-.control-dock {
-    width: 100%;
-    gap: 9px;
-    border-top: 0;
-    border-left: 0;
-    border-radius: 0 24px 24px 0;
-}
-
-
-.timeline-panel {
-    width: calc(100% - 32px);
-    gap: 12px;
-    padding-bottom: 22px;
-    border-top: 0;
-    border-radius: 0 0 18px 18px;
-    overflow: visible;
-    /* Pas de clip-path : le bouton replier doit pouvoir dépasser en bas */
-    clip-path: none;
-}
-
-
-.control-dock.collapsed {
-    transform: translateY(calc(-100% + 8px));
-}
-
-.timeline-panel.collapsed {
-    transform: translateY(calc(-100% + 8px));
-}
 
 .panel-top-row,
 .section-header-row {
@@ -309,42 +285,24 @@ h3,
     align-items: center;
 }
 
+/* 0.62rem resolved to ~8.7px at the 14px root, below the readable floor once
+   uppercased and tracked out. */
 .eyebrow,
 .panel-kicker,
-.field span,
-.mini-field span {
+.field span {
     color: var(--accent);
     text-transform: uppercase;
-    letter-spacing: 0.14em;
-    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    font-size: 0.72rem;
     font-weight: 700;
     font-family: var(--font-mono);
 }
 
 
-.control-dock h1 {
-    margin: 0;
-    font-size: 0.85rem;
-    line-height: 1.1;
-    white-space: nowrap;
-    font-family: var(--font-display);
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-}
-
-.timeline-panel h2 {
-    font-size: clamp(1rem, 1.6vw, 1.2rem);
-    margin-top: 4px;
-}
-
-.control-dock p,
-.timeline-panel p,
 .selection-panel p,
-.entity-meta,
 .fact-card span,
 .details-grid span,
-.inline-note span,
-.stat-pill span {
+.inline-note span {
     color: var(--muted);
 }
 
@@ -366,7 +324,6 @@ h3,
 .status-pill.stale   { border-color: var(--warn);   color: var(--warn); }
 .status-pill.offline { border-color: var(--bad);    color: var(--bad); }
 
-.status-dot { border-radius: 50%; background: currentColor; width: 6px; height: 6px; display: inline-block; }
 .status-pill.online .status-dot,
 .status-pill.loading .status-dot { animation: led-blink 1.4s ease-in-out infinite; }
 @keyframes led-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
@@ -378,10 +335,6 @@ h3,
     gap: 8px;
     align-items: center;
     justify-content: flex-end;
-}
-
-.control-dock .panel-top-row {
-    padding-right: 46px;
 }
 
 
@@ -415,13 +368,6 @@ h3,
     border-color: var(--border-strong);
     background: rgba(10, 18, 34, 0.98);
     box-shadow: 0 16px 34px rgba(0, 0, 0, 0.34);
-}
-
-.drawer-handle-top-left {
-    top: 12px;
-    left: 0;
-    border-left: 0;
-    border-radius: 0 14px 14px 0;
 }
 
 .drawer-handle-top-center {
@@ -468,30 +414,6 @@ h3,
     letter-spacing: 0.12em;
 }
 
-.drawer-handle-right {
-    top: 24px;
-    right: 0;
-    min-width: 40px;
-    min-height: 108px;
-    padding: 9px 7px;
-    border-right: 0;
-    border-radius: 14px 0 0 14px;
-    writing-mode: vertical-rl;
-    text-orientation: mixed;
-}
-
-.drawer-handle-bottom-left,
-.drawer-handle-bottom-right {
-    bottom: 0;
-    min-width: 92px;
-    border-bottom: 0;
-    border-radius: 14px 14px 0 0;
-}
-
-.drawer-handle-bottom-left {
-    left: 12px;
-}
-
 .drawer-handle-left-rail {
     top: 0;
     left: 0;
@@ -512,10 +434,6 @@ h3,
     text-orientation: mixed;
 }
 
-.drawer-handle-bottom-right {
-    right: 12px;
-}
-
 .drawer-body {
     display: grid;
     gap: 10px;
@@ -533,8 +451,7 @@ h3,
     pointer-events: none;
 }
 
-.status-inline,
-.meta-chip {
+.status-inline {
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -579,19 +496,12 @@ h3,
     background: var(--warn);
 }
 
-.floating-fields {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-}
-
 .field {
     display: grid;
     gap: 6px;
 }
 
 .field span,
-.mini-field span,
 .section-header-row p {
     color: var(--muted);
 }
@@ -641,8 +551,7 @@ h3,
 
 .button,
 .chip-button,
-.tab-button,
-.entity-item {
+.tab-button {
     border: 1px solid var(--border);
     border-radius: 0;
     color: var(--text);
@@ -734,13 +643,6 @@ h3,
     transform: scale(1.04);
 }
 
-.panel-edge-toggle-top-left,
-.panel-edge-toggle-bottom-left,
-.panel-edge-toggle-bottom-right {
-    top: 12px;
-    right: 12px;
-}
-
 .panel-edge-toggle-bottom-center {
     right: auto;
     top: auto;
@@ -753,32 +655,25 @@ h3,
     transform: translate(-50%, 50%) scale(1.04);
 }
 
-.panel-edge-toggle-right {
-    top: 12px;
-    left: 12px;
-}
-
 .panel-edge-toggle-left-sidebar {
     top: 12px;
     right: 12px;
 }
 
-.button:focus-visible,
-.chip-button:focus-visible,
-.tab-button:focus-visible,
-.drawer-handle:focus-visible,
-.panel-edge-toggle:focus-visible,
-.field input:focus-visible,
-.field select:focus-visible {
-    outline: none;
+/* Single focus ring for every interactive control. Previously only .button,
+   .chip-button, .tab-button, .drawer-handle, .panel-edge-toggle and .field
+   inputs were covered, which left the map toolbar, the import/export icon
+   buttons, the annotation FAB, the timeline buttons and the catalog search with
+   no visible focus at all. */
+button:focus-visible,
+a[href]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
     border-color: var(--border-strong);
-    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2);
-}
-
-.button.primary {
-    background: rgba(34, 211, 238, 0.18);
-    color: var(--text);
-    border-color: var(--accent);
 }
 
 .button.small {
@@ -786,7 +681,6 @@ h3,
     padding: 4px 10px;
 }
 
-.button:disabled,
 .chip-button:disabled {
     opacity: 0.35;
     cursor: not-allowed;
@@ -816,15 +710,18 @@ h3,
 }
 
 .hero-fact-card span {
-    order: -1;
     min-width: 0;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
 }
 
-.fact-card,
-.stat-pill {
+.fact-card {
+    /* Label above value. Side by side (`auto 1fr`) let a long label such as
+       "Description" collide with its own value in the narrow selection panel. */
     display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 2px 12px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
     font-family: var(--font-mono);
     font-size: 0.76rem;
     padding: 8px 12px;
@@ -837,13 +734,230 @@ h3,
 
 .fact-card strong,
 .details-grid strong,
-.stat-pill strong,
-.entity-line strong,
 .section-header-row h3 {
     font-size: 0.86rem;
 }
 
 
+
+/* ── Filter lists ────────────────────────────────────────────────────────
+   Shared by the filters sidebar and the world catalog: one readable line per
+   filter (state box, legend icon, label, count) instead of a wrapped chip
+   grid, plus the group header that carries its counter and bulk actions. */
+
+.filter-group {
+    display: grid;
+    gap: 6px;
+}
+
+.filter-group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 22px;
+}
+
+.filter-group-head h4 {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9fb2d4;
+}
+
+.filter-group-count {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--dim);
+}
+
+.filter-group-actions {
+    flex: 0 0 auto;
+    display: inline-flex;
+    gap: 4px;
+}
+
+.group-action {
+    min-height: 20px;
+    padding: 1px 7px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.group-action:hover {
+    color: var(--text);
+    background: rgba(34, 211, 238, 0.12);
+    border-color: var(--border-strong);
+}
+
+.filter-rows {
+    display: grid;
+    gap: 3px;
+}
+
+.filter-row {
+    display: grid;
+    grid-template-columns: 16px auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 38px;
+    padding: 4px 10px;
+    border: 1px solid transparent;
+    border-left: 2px solid transparent;
+    background: rgba(255, 255, 255, 0.028);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.84rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.14s, border-color 0.14s, opacity 0.14s;
+}
+
+/* Rows without a legend icon keep the label aligned with the ones that have. */
+.filter-row.no-icon {
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+}
+
+.filter-row:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: var(--border);
+}
+
+.filter-row.active {
+    background: var(--accent-soft);
+    border-color: rgba(34, 211, 238, 0.28);
+    border-left-color: var(--accent);
+}
+
+.filter-row:not(.active) {
+    color: var(--muted);
+}
+
+/* Checkbox affordance: the row is a toggle, and used to only differ by a
+   background tint that was easy to miss on a busy map. */
+.filter-row-check {
+    width: 16px;
+    height: 16px;
+    position: relative;
+    border: 1px solid rgba(168, 190, 221, 0.55);
+    background: rgba(8, 14, 26, 0.6);
+    transition: background 0.14s, border-color 0.14s;
+}
+
+.filter-row.active .filter-row-check {
+    border-color: var(--accent);
+    background: var(--accent);
+}
+
+.filter-row.active .filter-row-check::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 0;
+    width: 5px;
+    height: 10px;
+    border: solid #06202b;
+    border-width: 0 2px 2px 0;
+    transform: rotate(42deg);
+}
+
+/* Partial selection: a master switch that is on while some of its children are
+   off is neither state, and a plain tick used to claim "everything shown". */
+.filter-row.mixed .filter-row-check::after {
+    left: 2px;
+    top: 6px;
+    width: 10px;
+    height: 0;
+    border: 0;
+    border-top: 2px solid #06202b;
+    transform: none;
+}
+
+.filter-row.radio .filter-row-check {
+    border-radius: 999px;
+}
+
+.filter-row.radio.active .filter-row-check::after {
+    left: 3px;
+    top: 3px;
+    width: 8px;
+    height: 8px;
+    border: 0;
+    border-radius: 999px;
+    background: #06202b;
+    transform: none;
+}
+
+.filter-row-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Full sentences rather than entity names: let them wrap instead of clipping. */
+.filter-row.wrap {
+    padding: 8px 10px;
+}
+
+.filter-row.wrap .filter-row-label {
+    overflow: visible;
+    white-space: normal;
+    line-height: 1.35;
+}
+
+.filter-row-count {
+    flex: 0 0 auto;
+    min-width: 2.5rem;
+    padding: 2px 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #dbe6ff;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    line-height: 1.3;
+}
+
+.filter-row.active .filter-row-count {
+    background: rgba(34, 211, 238, 0.18);
+}
+
+/* "Enabled but nothing to show" used to look exactly like "enabled with
+   results", so a filter listing 0 elements read as active content. */
+.filter-row.empty .filter-row-label {
+    opacity: 0.45;
+}
+
+.filter-row.empty .filter-row-count {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--dim);
+}
+
+.filter-row-swatch {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 auto;
+    background: var(--swatch, #64748b);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
 
 .quick-filter-group {
     display: flex;
@@ -871,21 +985,6 @@ h3,
     gap: 10px;
 }
 
-.mini-field {
-    min-width: 150px;
-}
-
-.stats-pills {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-}
-
-.compact-pills,
-.footer-pills {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
 .compact-actions {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -904,47 +1003,6 @@ h3,
     border-radius: 14px;
     border: 1px solid var(--border);
     background: rgba(14, 22, 40, 0.80);
-}
-
-.entity-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    overflow: auto;
-}
-
-.compact-entity-list {
-    max-height: 32vh;
-    padding-right: 4px;
-}
-
-.entity-item {
-    display: grid;
-    gap: 6px;
-    width: 100%;
-    padding: 10px 12px;
-    text-align: left;
-    cursor: pointer;
-}
-
-.entity-item.active {
-    border-color: rgba(34, 211, 238, 0.46);
-    background: rgba(20, 33, 58, 0.9);
-}
-
-.entity-item.orphan {
-    border-color: rgba(248, 113, 113, 0.4);
-}
-
-.entity-item.dimmed {
-    opacity: 0.42;
-}
-
-.entity-line {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    align-items: center;
 }
 
 .badge {
@@ -1001,65 +1059,9 @@ h3,
     color: var(--text);
 }
 
-.secondary-chip-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.footer-panel {
-    width: 100%;
-    gap: 10px;
-}
-
-
-
-
-.footer-panel-body {
-    display: grid;
-    gap: 8px;
-}
-
 .footer-actions {
     justify-content: flex-start;
 }
-.legend-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    color: var(--muted);
-}
-
-.legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    max-width: 100%;
-    white-space: normal;
-}
-
-.legend-swatch {
-    width: 10px;
-    height: 10px;
-    border-radius: 999px;
-}
-
-.legend-swatch.sender {
-    background: var(--sender);
-}
-
-.legend-swatch.receiver {
-    background: var(--receiver);
-}
-
-.legend-swatch.teleporter {
-    background: var(--teleporter);
-}
-
-.legend-swatch.player {
-    background: var(--player);
-}
-
 
 .status-footer-dot {
     width: 8px;
@@ -1083,57 +1085,25 @@ h3,
 
 
 @media (max-width: 1260px) {
-    .overlay-top-left {
-        width: min(360px, calc(100% - 280px));
-    }
-
-    .timeline-panel {
-        width: calc(100% - 24px);
-    }
-
     .overlay-top-right {
         width: min(336px, calc(100% - 18px));
     }
 
-    .overlay-left-sidebar {
-        width: min(300px, calc(100% - 380px));
+    .map-stage {
+        --sidebar-width: min(320px, calc(100% - 380px));
     }
 
-    .overlay-bottom-left {
-        width: min(308px, calc(100% - 190px));
-    }
-
-    .compact-pills,
-    .footer-pills {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
 }
 
 @media (max-width: 980px) {
-    .overlay-top-left {
-        width: min(350px, calc(100% - 84px));
-    }
-
-    .timeline-panel {
-        width: calc(100% - 18px);
-    }
-
     .overlay-top-right {
         top: 14px;
         bottom: 18px;
         width: min(360px, calc(100% - 18px));
     }
 
-    .overlay-left-sidebar {
-        width: min(280px, calc(100% - 400px));
-    }
-
-    .overlay-bottom-left {
-        width: min(300px, calc(100% - 164px));
-    }
-
-    .overlay-bottom-left.expanded {
-        width: min(360px, calc(100% - 120px));
+    .map-stage {
+        --sidebar-width: min(324px, calc(100% - 340px));
     }
 
     .panel-top-row,
@@ -1143,9 +1113,6 @@ h3,
     }
 
     .floating-actions,
-    .compact-pills,
-    .footer-pills,
-    .stats-pills,
     .compact-actions {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1155,48 +1122,44 @@ h3,
     }
 
     .overlay-bottom-center {
-        left: 18px;
+        left: calc(var(--sidebar-inset, 0px) + 18px);
         right: 18px;
-        transform: none;
         justify-content: center;
     }
 
 }
 
 @media (max-width: 720px) {
-    body {
-        overflow: auto;
-    }
-
     .app-shell {
         padding: 0;
         gap: 0;
         grid-template-rows: auto minmax(0, 1fr);
+        /* Dynamic viewport unit: mobile browser chrome collapses on scroll and
+           `100vh` leaves a strip of the map permanently under it. */
+        height: 100dvh;
     }
 
     .app-header {
-        padding: 12px 12px 0;
+        padding: 0;
     }
 
     .map-stage,
     .map-stage > .map-canvas {
-        min-height: calc(100vh - 92px);
-        height: calc(100vh - 92px);
+        min-height: 0;
         border-radius: 0;
     }
 
-    .overlay-top-left,
-    .overlay-top-center,
+    .map-stage,
+    .map-stage.sidebar-open {
+        --sidebar-width: calc(100% - 56px);
+        --sidebar-inset: 0px;
+    }
+
     .overlay-top-right,
     .overlay-left-sidebar,
-    .overlay-bottom-left,
     .overlay-bottom-center {
         left: 0;
         right: 0;
-    }
-
-    .overlay-top-left {
-        width: calc(100% - 56px);
     }
 
     .overlay-top-right {
@@ -1205,28 +1168,16 @@ h3,
         width: calc(100% - 38px);
     }
 
-    .overlay-top-center {
-        justify-content: center;
-    }
-
-    .overlay-bottom-left {
-        width: calc(100% - 56px);
-    }
-
     .overlay-left-sidebar {
-        top: auto;
-        bottom: 0;
-        width: calc(100% - 56px);
+        top: 0;
+        bottom: calc(var(--map-toolbar-height, 100px) + 16px);
         align-items: flex-end;
     }
 
-    .overlay-bottom-left.expanded {
-        width: calc(100% - 18px);
-    }
-
     .overlay-bottom-center {
-        bottom: 78px;
-        transform: none;
+        left: 8px;
+        bottom: 8px;
+        right: 64px;
     }
 
     .floating-panel {
@@ -1238,35 +1189,15 @@ h3,
         padding: 8px 10px;
     }
 
-    .drawer-handle-right {
-        min-height: 120px;
-    }
-
-    .control-dock {
-        border-radius: 0 20px 20px 0;
-    }
-
-    .timeline-panel {
-        width: calc(100% - 12px);
-        border-radius: 0 0 20px 20px;
-    }
-
-    .stats-pills,
-    .compact-pills,
-    .footer-pills,
     .floating-actions,
     .compact-actions {
         grid-template-columns: 1fr;
     }
 
-    .control-dock.collapsed {
-        transform: translateY(calc(-100% + 8px));
-    }
-
     .drawer-handle-left-rail {
         top: auto;
         left: 12px;
-        bottom: 0;
+        bottom: calc(var(--map-toolbar-height, 100px) + 16px);
         min-width: 92px;
         min-height: 38px;
         padding: 8px 11px;
@@ -1286,3 +1217,36 @@ h3,
 .floating-panel:not(.collapsed) {
     animation: panel-appear 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+/* The viewer runs several looping animations at once (status LED, rupture
+   marker pulse, loading scan). Honour the OS-level preference. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Refined control shapes retain the original blue and cyan palette. */
+.floating-panel { clip-path: none; border-radius: 10px; }
+.floating-panel::before { display: none; }
+.button, .chip-button, .tab-button {
+    border-radius: 6px;
+    border-left-width: 1px;
+    font-family: var(--font-body);
+    font-size: 0.84rem;
+    letter-spacing: 0;
+    text-transform: none;
+}
+.button:hover { box-shadow: none; }
+button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+}
+.filter-row { border-radius: 6px; }
+.filter-row-count { border-radius: 4px; font-variant-numeric: tabular-nums; }
+.filters-sidebar-body { scrollbar-width: thin; scrollbar-color: var(--dim) transparent; }

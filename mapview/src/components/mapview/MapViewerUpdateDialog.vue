@@ -182,12 +182,15 @@ onBeforeUnmount(() => {
     display: grid;
     place-items: center;
     padding: 20px;
+    overflow: auto;
     background: rgba(2, 4, 12, 0.82);
     backdrop-filter: blur(6px);
 }
 
 .viewer-update-dialog {
     width: min(640px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
     box-sizing: border-box;
     padding: 20px;
     background: var(--panel-strong);

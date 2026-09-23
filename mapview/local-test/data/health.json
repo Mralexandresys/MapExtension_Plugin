@@ -1,11 +1,16 @@
 {
-    "connection_count": 86,
-    "marker_count": 215,
+    "connection_count": 60,
+    "marker_count": 214,
     "ok": true,
     "player_count": 1,
     "plugin": "MapExtension_Plugin",
+    "plugin_version": "dev",
     "port": 9000,
-    "snapshot_generation": 117,
-    "teleporter_count": 18,
+    "snapshot_generation": 649,
+    "teleporter_count": 19,
+    "viewer_contract_version": 2,
+    "viewer_update": {
+        "mod_page_url": "https://www.nexusmods.com/starrupture/mods/91"
+    },
     "world": "ChimeraMain"
 }

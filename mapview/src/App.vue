@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, readonly, ref } from "vue";
+import { computed, readonly, ref, watch } from "vue";
 
 import MapAnnotationFab from "./components/mapview/MapAnnotationFab.vue";
 import MapCanvas from "./components/MapCanvas.vue";
@@ -12,8 +12,35 @@ import MapSelectionPanel from "./components/mapview/MapSelectionPanel.vue";
 import MapShortcutDialog from "./components/mapview/MapShortcutDialog.vue";
 import MapViewerUpdateDialog from "./components/mapview/MapViewerUpdateDialog.vue";
 import { useMapViewState } from "./composables/useMapViewState";
+import {
+    useStaticMapData,
+    type StaticMapPoiView,
+    type StaticSelection,
+} from "./composables/useStaticMapData";
+import {
+    applyStaticFilterToggle,
+    useStaticFiltersModel,
+    useStaticMapFilters,
+} from "./composables/useStaticMapFilters";
 import { useUserAnnotations } from "./composables/useUserAnnotations";
+import {
+    COMMON_RESOURCE_POINT_THRESHOLD,
+    PRESET_DEFINITIONS,
+    RESOURCE_TYPES_HIDDEN_BY_DEFAULT,
+    type MapPreset,
+} from "./lib/mapPresets";
+import { resolveMapProjection, worldToMap } from "./lib/mapProjection";
+import {
+    LIVE_ONLY_RESOURCE_LABELS,
+    resourceColor,
+    resourceTypeIdFromLabel,
+    type StaticPlacement,
+    type StaticPointSeries,
+} from "./lib/staticMapCatalog";
 import type {
+    ActiveFilterChip,
+    DetailRow,
+    HarvestOption,
     MapCanvasHandle,
     MapCanvasToolbarModel,
     MapControlDockModel,
@@ -23,6 +50,7 @@ import type {
     MapSelectionPanelModel,
     MapViewerUpdateDialogModel,
     Rect2D,
+    StaticFilterToggle,
     UserAnnotationDraft,
     UserAnnotationSelection,
 } from "./lib/types";
@@ -36,15 +64,18 @@ const {
     lang,
     showAllLinks,
     highlightOrphans,
+    userAnnotationsOnly,
     focusMode,
-    viewMode,
+    preset,
+    harvestResource,
     autoRefresh,
     refreshIntervalMs,
     iconScale,
     selectedKey,
     hoveredKey,
     controlSettingsOpen,
-    rupturePanelCollapsed,
+    ruptureDetailsOpen,
+    filterTab,
     detailsPanelExpanded,
     filtersPanelCollapsed,
     shortcutsOpen,
@@ -65,6 +96,9 @@ const {
     visibleCargoConnections,
     displayedTeleporters,
     displayedPlayers,
+    displayedPois,
+    livePlantResourceCounts,
+    plantResourceFilter,
     selectedEntity,
     orphanKeySet,
     focusKeys,
@@ -91,7 +125,6 @@ const {
     rupturePhases,
     ruptureMarkerPercent,
     ruptureHasLiveData,
-    ruptureTimelineTicks,
     ruptureMarkerLabel,
     handleEndpointKeydown,
     updateRefreshInterval,
@@ -100,10 +133,15 @@ const {
     clearSelection,
     selectEntity,
     toggleControlSettings,
-    toggleRupturePanel,
+    toggleRuptureDetails,
+    closeRuptureDetails,
+    setFilterTab,
     toggleDetailsPanel,
     centerSelection,
+    canCenterOnPlayer,
+    centerOnPlayer,
     toggleFocusMode,
+    setPreset,
     clearFilters,
     toggleFiltersPanel,
     toggleEntity,
@@ -111,7 +149,16 @@ const {
     openShortcuts,
     closeShortcuts,
     dismissViewerUpdate,
-} = useMapViewState(mapCanvasRef);
+} = useMapViewState(mapCanvasRef, () => {
+    // Catalog data is declared below and read only on user interaction.
+    const selection = staticSelection.value;
+    return selection
+        ? worldToMap(
+              { x: selection.x * 10, y: selection.y * 10 },
+              projection.value,
+          )
+        : null;
+});
 
 // ── Annotations ───────────────────────────────────────────────────────────────
 
@@ -138,7 +185,7 @@ const {
     deleteSelectedAnnotation,
     exportAnnotations,
     importAnnotations,
-} = useUserAnnotations();
+} = useUserAnnotations(ui);
 
 function handleAnnotationSelect(sel: UserAnnotationSelection): void {
     if (!sel) {
@@ -147,37 +194,34 @@ function handleAnnotationSelect(sel: UserAnnotationSelection): void {
     }
     if (sel.type === "marker") selectMarker(sel.id);
     else selectZone(sel.id);
-    // clear entity selection when an annotation is selected
     clearSelection();
+    clearStaticSelection();
 }
 
 function handleEntitySelect(key: string): void {
     clearAnnotationSelection();
+    setAnnotationMode("idle");
     selectEntity(key);
 }
 
 function clearAllSelection(): void {
     clearSelection();
     clearAnnotationSelection();
+    clearStaticSelection();
 }
 
-function centerSelectedAnnotation(): void {
-    const sel = selectedAnnotation.value;
-    if (!sel) return;
-    if (sel.type === "marker") {
-        const m = userMarkers.value.find((x) => x.id === sel.id);
-        if (m) mapCanvasRef.value?.focusPoint(m.map.x, m.map.y);
-    } else {
-        const z = userZones.value.find((x) => x.id === sel.id);
-        if (z) mapCanvasRef.value?.focusPoint(
-            z.rect.x + z.rect.width / 2,
-            z.rect.y + z.rect.height / 2,
-        );
-    }
+// The notes panel and the selection panel share the top-right overlay slot.
+// Entering an annotation mode while an entity was selected mounted both, the
+// notes panel silently covering the selection.
+function handleAnnotationModeToggle(mode: "marker" | "zone"): void {
+    clearSelection();
+    clearStaticSelection();
+    setAnnotationMode(mode);
 }
 
 function handleCreateMarker(point: { x: number; y: number }): void {
     clearSelection();
+    clearStaticSelection();
     addMarker(point);
 }
 
@@ -205,8 +249,388 @@ async function handleImport(file: File): Promise<void> {
 
 function handleCreateZone(rect: Rect2D): void {
     clearSelection();
+    clearStaticSelection();
     addZone(rect);
 }
+
+// ── Static world catalog ───────────────────────────────────────────────
+
+const projection = computed(() => resolveMapProjection(cargo.value?.map));
+const staticData = useStaticMapData(projection);
+const staticFilters = useStaticMapFilters(staticData.manifest, harvestResource);
+const staticSelection = ref<StaticSelection | null>(null);
+const matchedLivePoiKeys = ref<Set<string>>(new Set());
+
+watch(
+    [staticFilters.enabledLayers, staticData.manifest],
+    ([layers]) => {
+        void staticData.ensureLayers(layers);
+    },
+    { immediate: true },
+);
+
+function livePlantTypeId(resource: string): string {
+    return resourceTypeIdFromLabel(resource, staticData.resourceLabelIndex.value);
+}
+
+// One set of resource filters controls both catalog and runtime-only plants.
+plantResourceFilter.value = (resource: string) =>
+    staticFilters.isLiveResourceEnabled(livePlantTypeId(resource));
+
+watch(
+    livePlantResourceCounts,
+    (counts) => {
+        const entries: Record<
+            string,
+            { en: string; fr: string; count: number }
+        > = {};
+        for (const [resource, count] of Object.entries(counts)) {
+            const typeId = livePlantTypeId(resource);
+            if (!typeId) continue;
+            const known = LIVE_ONLY_RESOURCE_LABELS[typeId];
+            const existing = entries[typeId];
+            entries[typeId] = {
+                en: known?.en ?? resource,
+                fr: known?.fr ?? resource,
+                count: (existing?.count ?? 0) + count,
+            };
+        }
+        staticFilters.syncLiveResourceTypes(entries);
+    },
+    { immediate: true, deep: true },
+);
+
+// Update states even when hidden, without bypassing a catalog point's filters.
+watch(
+    [() => cargo.value?.pois, staticData.series],
+    () => {
+        matchedLivePoiKeys.value = staticData.applyDynamicPois(
+            cargo.value?.pois ?? [],
+        );
+    },
+    { immediate: true },
+);
+
+watch(selectedKey, (key) => {
+    if (key) staticSelection.value = null;
+});
+
+const visiblePois = computed(() =>
+    displayedPois.value.filter(
+        (poi) => !matchedLivePoiKeys.value.has(poi.unique_key),
+    ),
+);
+
+const staticLoadedCount = computed(
+    () =>
+        staticData.totalPointCount.value +
+        staticData.placements.value.length +
+        staticData.pois.value.length,
+);
+
+// Apply the preset before loading too, so runtime-only plants follow it if the
+// catalog is missing. Once loaded, initialize its groups on first run only.
+watch(
+    staticData.manifest,
+    () => {
+        if (staticFilters.hasStoredState) return;
+        staticFilters.applyPreset(preset.value, harvestResource.value);
+    },
+    { immediate: true },
+);
+
+/** Harvest picker entries: rare resources first, commons flagged apart. */
+const harvestOptions = computed<HarvestOption[]>(() => {
+    const catalog = staticData.manifest.value;
+    if (!catalog) return [];
+    return Object.entries(catalog.resource_types)
+        .filter(([typeId]) => !RESOURCE_TYPES_HIDDEN_BY_DEFAULT.includes(typeId))
+        .map(([typeId, entry]) => ({
+            id: typeId,
+            label: lang.value === "fr" ? entry.fr : entry.en,
+            category: entry.category,
+            count: entry.total,
+            common: entry.total >= COMMON_RESOURCE_POINT_THRESHOLD,
+            color: resourceColor(typeId),
+        }))
+        .sort(
+            (a, b) =>
+                Number(a.common) - Number(b.common) ||
+                a.label.localeCompare(b.label),
+        );
+});
+
+/**
+ * Catalog elements actually drawn. `loadedCount` counts what was fetched, which
+ * made the panel advertise 57 483 while a preset was drawing 241 POI.
+ */
+const staticVisibleCount = computed(() => {
+    let total = 0;
+    for (const entry of staticData.series.value) {
+        if (isStaticSeriesVisible(entry)) total += entry.count;
+    }
+    for (const entry of staticData.placements.value) {
+        if (isStaticPlacementVisible(entry)) total += 1;
+    }
+    for (const entry of staticData.poiViews.value) {
+        if (isStaticPoiVisible(entry)) total += 1;
+    }
+    return total;
+});
+
+// "Abandoned bases" existed twice: a live toggle reading 0 and a catalog POI
+// group holding the 29 canonical entries. One control now drives both.
+watch(
+    () => staticFilters.isPoiGroupEnabled("abandoned_base"),
+    (enabled) => {
+        entityVisibility.abandonedBase = enabled;
+    },
+    { immediate: true },
+);
+
+/** Whether a preset wants a given landmark group visible. */
+function presetWantsPoiGroup(group: string): boolean {
+    const selection = PRESET_DEFINITIONS[preset.value].poiGroups;
+    if (selection === "all") return true;
+    if (selection === "none") return false;
+    return selection.includes(group);
+}
+
+// Landmark groups are filters like any other: hiding the obelisks has to show
+// up in the active-filter chips, not leave the panel claiming nothing is set.
+const landmarkFilterChips = computed<ActiveFilterChip[]>(() => {
+    const groups = staticFiltersModel.value?.poiGroups ?? [];
+    return groups
+        .filter((group) => group.enabled !== presetWantsPoiGroup(group.key))
+        .map((group) => ({
+            id: `poiGroup:${group.key}`,
+            label: group.enabled
+                ? group.label
+                : ui.value.format.hiddenLabels(group.label),
+            clear: { kind: "poiGroup" as const, key: group.key },
+        }));
+});
+
+function handlePresetChange(next: MapPreset): void {
+    harvestResource.value = null;
+    userAnnotationsOnly.value = false;
+    staticFilters.resetFilters();
+    setPreset(next);
+    staticFilters.applyPreset(next, harvestResource.value);
+    clearAllSelection();
+}
+
+function handleHarvestSelect(typeId: string | null): void {
+    harvestResource.value = typeId;
+    staticFilters.selectSingleResource(typeId);
+}
+
+const staticFiltersModel = useStaticFiltersModel({
+    manifest: staticData.manifest,
+    filters: staticFilters,
+    ui,
+    lang,
+    loading: staticData.loading,
+    error: staticData.error,
+    available: staticData.available,
+    loadedCount: staticLoadedCount,
+});
+
+/** The Technical preset is the only place raw export vocabulary belongs. */
+const developerMode = computed(() => PRESET_DEFINITIONS[preset.value].developerMode);
+
+function isStaticSeriesVisible(entry: StaticPointSeries): boolean {
+    return !userAnnotationsOnly.value && staticFilters.isSeriesVisible(entry);
+}
+
+function isStaticPlacementVisible(entry: StaticPlacement): boolean {
+    return !userAnnotationsOnly.value && staticFilters.isPlacementVisible(entry);
+}
+
+function isStaticPoiVisible(entry: StaticMapPoiView): boolean {
+    return !userAnnotationsOnly.value && staticFilters.isPoiGroupEnabled(entry.group);
+}
+
+function pickStatic(
+    x: number,
+    y: number,
+    radius: number,
+): StaticSelection | null {
+    return staticData.findNearest(
+        x,
+        y,
+        radius,
+        isStaticSeriesVisible,
+        isStaticPlacementVisible,
+        staticFilters.isOrePurityVisible,
+    );
+}
+
+function staticGroupLabel(key: string): string {
+    const groups = ui.value.staticFilters.groups as Record<string, string>;
+    return groups[key] ?? key;
+}
+
+function staticResourceLabel(typeId: string): string {
+    const entry = staticData.manifest.value?.resource_types?.[typeId];
+    if (!entry) return typeId;
+    return lang.value === "fr" ? entry.fr : entry.en;
+}
+
+function staticTitle(selection: StaticSelection): string {
+    if (selection.kind === "resource") return staticResourceLabel(selection.group);
+    if (selection.kind === "poi") {
+        return selection.label || staticGroupLabel(selection.group);
+    }
+    return selection.label || selection.actorType || staticGroupLabel(selection.group);
+}
+
+function staticDetailRows(selection: StaticSelection): DetailRow[] {
+    const messages = ui.value.staticFilters;
+    const rows: DetailRow[] = [];
+
+    if (selection.kind === "resource") {
+        // Quality and extractor lead: on a vein they are what the click was
+        // for. The taxonomy rows that used to head the list -- catalog, group,
+        // representation -- describe how the catalog is built, not the spot.
+        if (selection.purity) {
+            rows.push({
+                label: messages.details.purity,
+                value: messages.purities[selection.purity],
+            });
+        }
+        const extractorId = staticFilters.resourceExtractor(selection.group);
+        const extractor = extractorId
+            ? staticData.manifest.value?.extractors?.[extractorId]
+            : undefined;
+        if (extractor) {
+            rows.push({
+                label: messages.extractorTitle,
+                value: lang.value === "fr" ? extractor.fr : extractor.en,
+            });
+        }
+        rows.push({
+            label: ui.value.selection.state,
+            value: messages.states[staticData.getSelectionState(selection)],
+        });
+    } else {
+        rows.push({
+            label: messages.details.group,
+            value: staticGroupLabel(selection.group),
+        });
+    }
+
+    const poi = selection.poi;
+    if (poi) {
+        const description =
+            lang.value === "fr"
+                ? poi.descriptionFr || poi.descriptionEn
+                : poi.descriptionEn || poi.descriptionFr;
+        if (description) {
+            rows.push({
+                label: messages.details.description,
+                value: description,
+            });
+        }
+    }
+
+    rows.push({
+        label: messages.details.position,
+        value: `X ${Math.round(selection.x / 10)} m | Y ${Math.round(selection.y / 10)} m`,
+    });
+    rows.push({
+        label: messages.details.altitude,
+        value: `${selection.z} m`,
+    });
+
+    // How the catalog names and derives this element. Useful to check an
+    // export, never to a player, so it rides with the Technical preset.
+    if (developerMode.value) {
+        rows.push({
+            label: messages.details.catalog,
+            value: messages.layers[selection.layer],
+        });
+        if (selection.kind === "resource") {
+            const categories = messages.categories as Record<string, string>;
+            rows.push({
+                label: messages.details.group,
+                value: categories[selection.category ?? ""] ?? selection.category ?? "",
+            });
+            if (selection.representation) {
+                rows.push({
+                    label: messages.details.representation,
+                    value: messages.representations[selection.representation],
+                });
+            }
+            if (selection.purityConfidence) {
+                rows.push({
+                    label: messages.details.confidence,
+                    value: selection.purityConfidence,
+                });
+            }
+        }
+        if (selection.actorType) {
+            rows.push({
+                label: messages.details.actorType,
+                value: selection.actorType,
+            });
+        }
+        if (poi?.guid) {
+            rows.push({ label: messages.details.guid, value: poi.guid });
+        }
+    }
+
+    return rows;
+}
+
+/** A hover preview, not a data sheet: the panel holds the full row list. */
+const TOOLTIP_MAX_LINES = 4;
+
+function describeStatic(selection: StaticSelection): {
+    title: string;
+    lines: string[];
+} {
+    return {
+        title: staticTitle(selection),
+        lines: staticDetailRows(selection)
+            .slice(0, TOOLTIP_MAX_LINES)
+            .map((row) => `${row.label}: ${row.value}`),
+    };
+}
+
+function handleStaticSelect(selection: StaticSelection | null): void {
+    clearSelection();
+    clearAnnotationSelection();
+    if (selection) setAnnotationMode("idle");
+    staticSelection.value = selection;
+}
+
+function clearStaticSelection(): void {
+    staticSelection.value = null;
+}
+
+function handleStaticFilterToggle(toggle: StaticFilterToggle): void {
+    harvestResource.value = null;
+    applyStaticFilterToggle(staticFilters, toggle);
+}
+
+function resetAllFilters(): void {
+    clearFilters();
+    harvestResource.value = null;
+    staticFilters.resetFilters();
+    staticFilters.applyPreset(preset.value, null);
+}
+
+function setAllStaticFilters(enabled: boolean): void {
+    harvestResource.value = null;
+    staticFilters.setAll(enabled);
+}
+
+function setResourceFilters(enabled: boolean): void {
+    harvestResource.value = null;
+    staticFilters.setResources(enabled);
+}
+
 
 // ── Panel models ──────────────────────────────────────────────────────────────
 
@@ -216,7 +640,9 @@ const controlDockPanel = computed<MapControlDockModel>(() => ({
     mapMetaLabel: mapMetaLabel.value,
     statusTone: statusTone.value,
     statusBadgeLabel: statusBadgeLabel.value,
-    commandStats: commandStats.value,
+    commandStats: commandStats.value.map((stat) => stat.key === "filters"
+        ? { ...stat, label: ui.value.filters.visibleCatalog, value: staticVisibleCount.value.toLocaleString(ui.value.locale) }
+        : stat),
     endpointDraft: endpointDraft.value,
     defaultEndpoint: DEFAULT_ENDPOINT,
     endpointHasPendingChanges: endpointHasPendingChanges.value,
@@ -234,7 +660,7 @@ const controlDockPanel = computed<MapControlDockModel>(() => ({
 }));
 
 const rupturePanel = computed<MapRupturePanelModel>(() => ({
-    collapsed: rupturePanelCollapsed.value,
+    detailsOpen: ruptureDetailsOpen.value,
     ui: ui.value,
     currentPhaseKey: ruptureCurrentPhaseKey.value,
     currentPhaseLabel: ruptureCurrentPhaseLabel.value,
@@ -243,45 +669,68 @@ const rupturePanel = computed<MapRupturePanelModel>(() => ({
     markerPercent: ruptureMarkerPercent.value,
     markerLabel: ruptureMarkerLabel.value,
     hasLiveData: ruptureHasLiveData.value,
-    timelineTicks: ruptureTimelineTicks.value,
 }));
 
-const selectionPanel = computed<MapSelectionPanelModel>(() => ({
-    detailsExpanded: detailsPanelExpanded.value,
-    ui: ui.value,
-    selectedEntityKeyLabel: selectedEntityKeyLabel.value,
-    selectedEntitySummary: selectedEntitySummary.value,
-    selectedEntityTone: selectedEntityTone.value,
-    selectedDisplayName: selectedDisplayName.value,
-    selectedPreviewFacts: selectedPreviewFacts.value,
-    selectedDetailRows: selectedDetailRows.value,
-    selectedEntityActive: !!selectedEntity.value,
-    canEnableFocusMode: canEnableFocusMode.value,
-    focusMode: focusMode.value,
-    totalCounts: totalCounts.value,
-    visibleCargoConnectionsCount: visibleCargoConnections.value.length,
-    statsOverview: statsOverview.value,
-}));
+const selectionPanel = computed<MapSelectionPanelModel>(() => {
+    const staticEntry = staticSelection.value;
+    const showStatic = !!staticEntry && !selectedEntity.value;
+    const staticRows = showStatic && staticEntry ? staticDetailRows(staticEntry) : [];
+
+    return {
+        detailsExpanded: detailsPanelExpanded.value,
+        ui: ui.value,
+        selectedEntityKeyLabel: showStatic && staticEntry
+            ? staticEntry.key
+            : selectedEntityKeyLabel.value,
+        selectedEntitySummary: showStatic && staticEntry
+            ? ui.value.staticFilters.layers[staticEntry.layer]
+            : selectedEntitySummary.value,
+        selectedEntityTone: showStatic ? "neutral" : selectedEntityTone.value,
+        selectedDisplayName: showStatic && staticEntry
+            ? staticTitle(staticEntry)
+            : selectedDisplayName.value,
+        selectedPreviewFacts: showStatic
+            ? staticRows.slice(0, 3)
+            : selectedPreviewFacts.value,
+        selectedDetailRows: showStatic ? staticRows : selectedDetailRows.value,
+        selectedEntityActive: showStatic || !!selectedEntity.value,
+        canEnableFocusMode: showStatic ? false : canEnableFocusMode.value,
+        focusMode: showStatic ? false : focusMode.value,
+        totalCounts: totalCounts.value,
+        visibleCargoConnectionsCount: visibleCargoConnections.value.length,
+        statsOverview: statsOverview.value,
+    };
+});
 
 const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     collapsed: filtersPanelCollapsed.value,
+    activeTab: filterTab.value,
     ui: ui.value,
-    activeFilterChips: activeFilterChips.value,
-    viewMode: viewMode.value,
+    activeFilterCount:
+        activeFilterChips.value.length + landmarkFilterChips.value.length,
+    preset: preset.value,
+    harvestResource: harvestResource.value,
+    harvestOptions: harvestOptions.value,
+    staticVisibleCount: staticVisibleCount.value,
     entityToggleOptions: entityToggleOptions.value,
     entityVisibility: readonly(entityVisibility),
+    developerMode: developerMode.value,
     showAllLinks: showAllLinks.value,
     highlightOrphans: highlightOrphans.value,
+    userAnnotationsOnly: userAnnotationsOnly.value,
     canEnableFocusMode: canEnableFocusMode.value,
     focusMode: focusMode.value,
+    staticFilters: staticFiltersModel.value,
 }));
 
+const mapToolbarHeight = ref(100);
 const canvasToolbarPanel = computed<MapCanvasToolbarModel>(() => ({
     ui: ui.value,
-    selectedEntityActive: !!selectedEntity.value,
+    selectedEntityActive: !!selectedEntity.value || !!staticSelection.value,
     canEnableFocusMode: canEnableFocusMode.value,
     focusMode: focusMode.value,
     filtersOpen: !filtersPanelCollapsed.value,
+    canCenterOnPlayer: canCenterOnPlayer.value,
 }));
 
 const notesPanel = computed<MapNotesPanelModel>(() => ({
@@ -321,10 +770,22 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @update:lang="lang = $event"
                 @export-json="exportAnnotations"
                 @import-json="handleImport"
-            />
+            >
+                <template #timeline>
+                    <MapRupturePanel
+                        :panel="rupturePanel"
+                        @toggle-details="toggleRuptureDetails"
+                        @close-details="closeRuptureDetails"
+                    />
+                </template>
+            </MapControlDock>
         </header>
 
-        <section class="card map-stage">
+        <section
+            class="card map-stage"
+            :class="{ 'sidebar-open': !filtersPanelCollapsed }"
+            :style="{ '--map-toolbar-height': `${mapToolbarHeight}px` }"
+        >
             <MapCanvas
                 ref="mapCanvasRef"
                 :loading="status.loading"
@@ -333,6 +794,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 :cargo-connections="visibleCargoConnections"
                 :teleporters="displayedTeleporters"
                 :players="displayedPlayers"
+                :pois="visiblePois"
                 :selected-key="selectedKey"
                 :selected-entity="selectedEntity"
                 :orphan-keys="Array.from(orphanKeySet)"
@@ -345,10 +807,22 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 :annotation-mode="annotationMode"
                 :annotation-edit-mode="annotationEditMode"
                 :selected-annotation="selectedAnnotation"
+                :static-series="staticData.series.value"
+                :static-placements="staticData.placements.value"
+                :static-pois="staticData.poiViews.value"
+                :static-state-version="staticData.stateVersion.value"
+                :static-selection="staticSelection"
+                :static-series-visible="isStaticSeriesVisible"
+                :static-placement-visible="isStaticPlacementVisible"
+                :static-ore-purity-visible="staticFilters.isOrePurityVisible"
+                :static-poi-visible="isStaticPoiVisible"
+                :static-pick="pickStatic"
+                :static-describe="describeStatic"
                 @select="handleEntitySelect"
                 @clear-selection="clearAllSelection"
                 @hover="hoveredKey = $event"
                 @select-annotation="handleAnnotationSelect"
+                @select-static="handleStaticSelect"
                 @create-marker="handleCreateMarker"
                 @create-zone="handleCreateZone"
                 @move-marker="handleMoveMarker"
@@ -357,37 +831,30 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
 
             <MapCanvasToolbar
                 :panel="canvasToolbarPanel"
-                @reset="
-                    () => {
-                        clearFilters();
-                        resetMapView();
-                    }
-                "
+                @resize="mapToolbarHeight = $event"
+                @reset="resetMapView"
                 @center="centerSelection"
+                @center-player="centerOnPlayer"
                 @toggle-focus="toggleFocusMode"
                 @toggle-filters="toggleFiltersPanel"
-            />
-
-            <MapRupturePanel
-                :panel="rupturePanel"
-                @toggle-collapse="toggleRupturePanel"
             />
 
             <MapNotesPanel
                 v-if="notesPanel.selectedAnnotation || annotationMode !== 'idle' || notesPanel.importError"
                 :panel="notesPanel"
-                @toggle-mode="setAnnotationMode"
+                @toggle-mode="handleAnnotationModeToggle"
                 @select-annotation="handleAnnotationSelect"
                 @update:draft="handleDraftUpdate"
                 @clear-selection="clearAnnotationSelection"
                 @delete-selected="deleteSelectedAnnotation"
-                @center-selected="startSelectedAnnotationEdit"
+                @edit-selected="startSelectedAnnotationEdit"
                 @toggle-zone-lock="toggleSelectedZoneLock"
             />
 
             <MapAnnotationFab
                 :annotation-mode="annotationMode"
-                @toggle-mode="setAnnotationMode"
+                :ui="ui"
+                @toggle-mode="handleAnnotationModeToggle"
             />
 
             <MapSelectionPanel
@@ -396,19 +863,28 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @toggle-details="toggleDetailsPanel"
                 @center="centerSelection"
                 @toggle-focus="toggleFocusMode"
-                @clear-selection="clearSelection"
+                @clear-selection="clearAllSelection"
                 @open-shortcuts="openShortcuts"
             />
 
             <MapFiltersPanel
                 :panel="filtersPanel"
                 @toggle-collapse="toggleFiltersPanel"
-                @clear="clearFilters"
+                @update:tab="setFilterTab"
+                @clear="resetAllFilters"
                 @toggle-entity="toggleEntity"
-                @update:view-mode="viewMode = $event"
                 @update:show-all-links="showAllLinks = $event"
                 @update:highlight-orphans="highlightOrphans = $event"
+                @update:user-annotations-only="userAnnotationsOnly = $event"
                 @toggle-focus="toggleFocusMode"
+                @update:preset="handlePresetChange"
+                @update:harvest-resource="handleHarvestSelect"
+                @static-toggle="handleStaticFilterToggle"
+                @update:static-search="staticFilters.search.value = $event"
+                @static-show-all="setResourceFilters(true)"
+                @static-hide-all="setResourceFilters(false)"
+                @advanced-show-all="setAllStaticFilters(true)"
+                @advanced-hide-all="setAllStaticFilters(false)"
             />
         </section>
 

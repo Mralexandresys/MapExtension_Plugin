@@ -8,9 +8,16 @@ import {
 } from "vue";
 
 import { formatRelativeAge } from "../lib/formatters";
+import {
+    DEFAULT_MAP_PRESET,
+    PRESET_DEFINITIONS,
+    type MapPreset,
+} from "../lib/mapPresets";
 import type {
     EntityToggleKey,
+    FilterTabKey,
     MapCanvasHandle,
+    Point2D,
     ShortcutItem,
     StatusTone,
 } from "../lib/types";
@@ -31,13 +38,20 @@ function isTypingTarget(target: EventTarget | null): boolean {
     );
 }
 
-export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
+/**
+ * @param getCatalogSelectionPoint Reads the selected catalog element's map
+ * coordinates. Its data lives in the app shell; selection actions are shared
+ * with live entities so buttons and keyboard shortcuts behave alike.
+ */
+export function useMapViewState(
+    mapCanvasRef: Ref<MapCanvasHandle | null>,
+    getCatalogSelectionPoint: () => Point2D | null = () => null,
+) {
+    const dataSource = useMapViewDataSource();
     const {
-        DEFAULT_ENDPOINT,
         cargo,
         health,
         ruptureCycle,
-        endpointDraft,
         lang,
         showAllLinks,
         highlightOrphans,
@@ -46,23 +60,18 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         iconScale,
         lastUpdatedAt,
         now,
-        viewMode,
+        preset,
+        harvestResource,
         entityVisibility,
+        filtersPanelCollapsed,
+        filterTab,
         status,
         ui,
-        languageOptions,
         normalizedEndpoint,
-        endpointHasPendingChanges,
         pluginVersion,
         viewerOutdated,
-        viewerUpdateDownloadUrl,
-        viewerUpdateReleaseUrl,
-        viewerUpdateModPageUrl,
-        handleEndpointKeydown,
-        updateRefreshInterval,
         refreshData,
-        applyEndpoint,
-    } = useMapViewDataSource();
+    } = dataSource;
 
     const { viewerUpdateOpen, dismissViewerUpdate } = useViewerUpdateNotice(
         viewerOutdated,
@@ -70,12 +79,14 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     );
 
     const focusMode = ref(false);
+    const userAnnotationsOnly = ref(false);
     const selectedKey = ref<string | null>(null);
     const hoveredKey = ref<string | null>(null);
     const controlSettingsOpen = ref(false);
-    const rupturePanelCollapsed = ref(false);
+    // Transient: the timeline strip lives in the header, this only controls its
+    // detail dropdown.
+    const ruptureDetailsOpen = ref(false);
     const detailsPanelExpanded = ref(false);
-    const filtersPanelCollapsed = ref(true);
     const shortcutsOpen = ref(false);
 
     const entityToggleOptions = computed<
@@ -85,6 +96,9 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         { key: "receiver", label: ui.value.entityLabels.receiver },
         { key: "teleporter", label: ui.value.entityLabels.teleporter },
         { key: "player", label: ui.value.entityLabels.player },
+        { key: "abandonedBase", label: ui.value.entityLabels.abandonedBase },
+        { key: "ignitium", label: ui.value.entityLabels.ignitium },
+        { key: "starTears", label: ui.value.entityLabels.starTears },
     ]);
 
     const shortcutItems = computed<ShortcutItem[]>(() => [
@@ -119,14 +133,14 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
             description: ui.value.shortcuts.items.filters.description,
         },
         {
-            keys: ["S"],
-            label: ui.value.selection.observabilityTitle,
-            description: ui.value.selection.observabilityHelp,
-        },
-        {
             keys: ["C"],
             label: ui.value.shortcuts.items.center.label,
             description: ui.value.shortcuts.items.center.description,
+        },
+        {
+            keys: ["P"],
+            label: ui.value.shortcuts.items.centerPlayer.label,
+            description: ui.value.shortcuts.items.centerPlayer.description,
         },
         {
             keys: ["0"],
@@ -156,21 +170,39 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         return cargo.value ? "stale" : "offline";
     });
 
+    // Short form on purpose: the freshness value is already shown by the header
+    // meta line and by the "last update" stat card. Repeating it here made the
+    // pill read "OK - Derniere mise a jour : 1,8s" next to the title.
     const statusBadgeLabel = computed(() => {
         if (status.loading) return ui.value.status.sync;
-        if (status.online) return ui.value.format.liveAge(liveAgeLabel.value);
-        if (cargo.value) return ui.value.format.cacheAge(liveAgeLabel.value);
+        if (status.online) return ui.value.status.ok;
+        if (cargo.value) return ui.value.status.cache;
         return ui.value.status.offline;
     });
+
+    const {
+        ruptureCurrentPhaseKey,
+        ruptureCurrentPhaseLabel,
+        ruptureCurrentPhaseRemainingLabel,
+        rupturePhases,
+        ruptureMarkerPercent,
+        ruptureHasLiveData,
+        ruptureMarkerLabel,
+    } = useRuptureTimeline(ruptureCycle, now, ui);
+
+    // Filled in by the app once the catalog filters exist; until then every
+    // observed plant is shown.
+    const plantResourceFilter = ref<((resource: string) => boolean) | null>(null);
 
     const entityState = useMapViewEntities({
         cargo,
         health,
         ui,
         entityVisibility,
-        viewMode,
+        preset,
         showAllLinks,
         highlightOrphans,
+        userAnnotationsOnly,
         focusMode,
         selectedKey,
         hoveredKey,
@@ -181,6 +213,9 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         statusTone,
         now,
         lastUpdatedAt,
+        ruptureCurrentPhaseKey,
+        ruptureHasLiveData,
+        plantResourceFilter,
     });
 
     const {
@@ -188,6 +223,8 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         visibleCargoConnections,
         displayedTeleporters,
         displayedPlayers,
+        displayedPois,
+        livePlantResourceCounts,
         entityFilterCounts,
         visibleEntityKeys,
         selectedEntity,
@@ -209,26 +246,30 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         currentTimeLabel,
     } = entityState;
 
-    const {
-        ruptureCurrentPhaseKey,
-        ruptureCurrentPhaseLabel,
-        ruptureCurrentPhaseRemainingLabel,
-        rupturePhases,
-        ruptureMarkerPercent,
-        ruptureHasLiveData,
-        ruptureTimelineTicks,
-        ruptureMarkerLabel,
-    } = useRuptureTimeline(ruptureCycle, now, ui);
+    /** Applies the live-entity half of a preset. The catalog half lives in
+     *  `useStaticMapFilters.applyPreset`, called from App.vue. */
+    function applyPresetEntities(next: MapPreset): void {
+        const definition = PRESET_DEFINITIONS[next];
+        for (const key of Object.keys(entityVisibility) as EntityToggleKey[]) {
+            entityVisibility[key] = definition.entities[key];
+        }
+    }
 
-    function clearFilters(): void {
+    function setPreset(next: MapPreset): void {
+        preset.value = next;
+        applyPresetEntities(next);
         showAllLinks.value = true;
         highlightOrphans.value = false;
         focusMode.value = false;
-        viewMode.value = "network";
-        entityVisibility.sender = true;
-        entityVisibility.receiver = true;
-        entityVisibility.teleporter = true;
-        entityVisibility.player = true;
+    }
+
+    /** Back to the current preset's own defaults, not to "everything on". */
+    function clearFilters(): void {
+        showAllLinks.value = true;
+        highlightOrphans.value = false;
+        userAnnotationsOnly.value = false;
+        focusMode.value = false;
+        applyPresetEntities(preset.value);
     }
 
     function clearSelection(): void {
@@ -252,7 +293,19 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     }
 
     function centerSelection(): void {
-        mapCanvasRef.value?.focusSelection();
+        const point = selectedEntity.value?.raw.map ?? getCatalogSelectionPoint();
+        if (point) mapCanvasRef.value?.focusPoint(point.x, point.y);
+    }
+
+    const canCenterOnPlayer = computed(
+        () => (cargo.value?.players?.length ?? 0) > 0,
+    );
+
+    function centerOnPlayer(): void {
+        const players = cargo.value?.players ?? [];
+        const player = players.find((entry) => entry.self) ?? players[0];
+        if (!player) return;
+        mapCanvasRef.value?.focusPoint(player.map.x, player.map.y);
     }
 
     function toggleFocusMode(): void {
@@ -261,7 +314,7 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     }
 
     function openPanel(): void {
-        if (!selectedEntity.value) return;
+        if (!selectedEntity.value && !getCatalogSelectionPoint()) return;
         detailsPanelExpanded.value = true;
     }
 
@@ -269,12 +322,20 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         controlSettingsOpen.value = !controlSettingsOpen.value;
     }
 
-    function toggleRupturePanel(): void {
-        rupturePanelCollapsed.value = !rupturePanelCollapsed.value;
+    function toggleRuptureDetails(): void {
+        ruptureDetailsOpen.value = !ruptureDetailsOpen.value;
+    }
+
+    function closeRuptureDetails(): void {
+        ruptureDetailsOpen.value = false;
+    }
+
+    function setFilterTab(key: FilterTabKey): void {
+        filterTab.value = key;
     }
 
     function toggleDetailsPanel(): void {
-        if (!selectedEntity.value) return;
+        if (!selectedEntity.value && !getCatalogSelectionPoint()) return;
         detailsPanelExpanded.value = !detailsPanelExpanded.value;
     }
 
@@ -311,6 +372,10 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
             return;
         }
 
+        // Letter shortcuts used to keep firing behind an open modal, refreshing
+        // or opening panels the user could not see.
+        if (shortcutsOpen.value || viewerUpdateOpen.value) return;
+
         switch (event.key) {
             case "0":
                 event.preventDefault();
@@ -339,20 +404,27 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
                 return;
             case "f":
                 event.preventDefault();
-                filtersPanelCollapsed.value = false;
-                return;
-            case "s":
-                event.preventDefault();
-                openPanel();
+                // Toggle, to match the FILTERS button in the map toolbar.
+                toggleFiltersPanel();
                 return;
             case "c":
                 event.preventDefault();
                 centerSelection();
                 return;
+            case "p":
+                event.preventDefault();
+                centerOnPlayer();
+                return;
             default:
                 return;
         }
     }
+
+    watch(userAnnotationsOnly, (enabled) => {
+        if (enabled) {
+            clearSelection();
+        }
+    });
 
     watch(
         [selectedKey, visibleEntityKeys],
@@ -382,33 +454,17 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
     });
 
     return {
-        DEFAULT_ENDPOINT,
-        cargo,
-        endpointDraft,
-        lang,
-        showAllLinks,
-        highlightOrphans,
+        // Everything the data source already exposes, forwarded as-is.
+        ...dataSource,
+        userAnnotationsOnly,
         focusMode,
-        viewMode,
-        autoRefresh,
-        refreshIntervalMs,
-        iconScale,
         selectedKey,
         hoveredKey,
         controlSettingsOpen,
-        rupturePanelCollapsed,
+        ruptureDetailsOpen,
         detailsPanelExpanded,
-        filtersPanelCollapsed,
         shortcutsOpen,
         viewerUpdateOpen,
-        pluginVersion,
-        viewerUpdateDownloadUrl,
-        viewerUpdateReleaseUrl,
-        viewerUpdateModPageUrl,
-        entityVisibility,
-        status,
-        ui,
-        languageOptions,
         entityToggleOptions: computed(() =>
             entityToggleOptions.value.map((option) => ({
                 ...option,
@@ -416,12 +472,13 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
             })),
         ),
         shortcutItems,
-        endpointHasPendingChanges,
-        normalizedEndpoint,
         displayedCargoMarkers,
         visibleCargoConnections,
         displayedTeleporters,
         displayedPlayers,
+        displayedPois,
+        livePlantResourceCounts,
+        plantResourceFilter,
         selectedEntity,
         orphanKeySet,
         focusKeys,
@@ -448,19 +505,20 @@ export function useMapViewState(mapCanvasRef: Ref<MapCanvasHandle | null>) {
         rupturePhases,
         ruptureMarkerPercent,
         ruptureHasLiveData,
-        ruptureTimelineTicks,
         ruptureMarkerLabel,
-        handleEndpointKeydown,
-        updateRefreshInterval,
-        refreshData,
-        applyEndpoint,
         clearSelection,
         selectEntity,
         toggleControlSettings,
-        toggleRupturePanel,
+        toggleRuptureDetails,
+        closeRuptureDetails,
+        setFilterTab,
         toggleDetailsPanel,
         centerSelection,
+        canCenterOnPlayer,
+        centerOnPlayer,
         toggleFocusMode,
+        setPreset,
+        applyPresetEntities,
         clearFilters,
         toggleFiltersPanel,
         toggleEntity,

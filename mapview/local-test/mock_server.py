@@ -37,8 +37,8 @@ ENDPOINT_FILES = {
 # Must match VIEWER_CONTRACT_VERSION in mapview/src/lib/viewerContract.ts so the
 # default mock payload does NOT trigger the viewer update dialog. To test the
 # dialog locally, drop a local-test/data/health.json with a higher value.
-MOCK_VIEWER_CONTRACT_VERSION = 1
-MOCK_PLUGIN_VERSION = "ML-v1.15.0-v0.4"
+MOCK_VIEWER_CONTRACT_VERSION = 3
+MOCK_PLUGIN_VERSION = "ML-v1.16.0-v0.5"
 MOCK_RELEASE_BASE = (
     "https://github.com/Mralexandresys/MapExtension_Plugin/releases"
 )
@@ -70,24 +70,113 @@ def default_payloads(port: int) -> dict[str, Any]:
         "cargo": {
             "generation": 1,
             "world": "LocalTest",
-            "reason": "mock",
             "counts": {
                 "markers": 0,
                 "teleporters": 0,
-                "players": 0,
+                "players": 2,
+                "pois": 6,
+                "abandoned_bases": 1,
+                "plant_resources": 3,
+                "ignitium": 1,
+                "star_tears": 1,
             },
             "map": {
-                "content_width": 3547,
-                "content_height": 3471,
-                "dst_x1": 380,
-                "dst_y1": 567,
-                "image_width": 4352,
-                "image_height": 5120,
+                "src_x1": -358583.0,
+                "src_y1": -263782.0,
+                "dst_x1": 1518.414983,
+                "dst_y1": 2272.832995,
+                "src_x2": -98583.0,
+                "src_y2": -9439.0,
+                "dst_x2": 6895.078786,
+                "dst_y2": 7535.110312,
+                "content_width": 5376.663803,
+                "content_height": 5262.277317,
+                "image_width": 9019,
+                "image_height": 11691,
             },
             "markers": [],
             "connections": [],
             "teleporters": [],
-            "players": [],
+            "players": [
+                {
+                    "label": "MockSelf",
+                    "source": "local_player_pawn",
+                    "unique_key": "player:mock-self",
+                    "self": True,
+                    "world": {"x": -220000.0, "y": -145000.0, "z": 100.0},
+                    "map": {"x": 2865.8, "y": 2457.5},
+                },
+                {
+                    "label": "MockAlly",
+                    "source": "actor_scan.player",
+                    "unique_key": "player:mock-ally",
+                    "self": False,
+                    "world": {"x": -200000.0, "y": -135000.0, "z": 95.0},
+                    "map": {"x": 3279.4, "y": 2664.4},
+                },
+            ],
+            "pois": [
+                {
+                    "kind": "abandoned_base",
+                    "label": "Abandoned Base",
+                    "resource": "",
+                    "depleted": False,
+                    "source": "actor_scan.abandoned_base",
+                    "unique_key": "poi:mock-abandoned-base-1",
+                    "world": {"x": -230000.0, "y": -150000.0, "z": 120.0},
+                    "map": {"x": 2659.0, "y": 2354.1},
+                },
+                {
+                    "kind": "plant_resource",
+                    "label": "Gold Fruit",
+                    "resource": "Gold Fruit",
+                    "depleted": False,
+                    "source": "actor_scan.gatherable",
+                    "unique_key": "poi:mock-gold-fruit-available",
+                    "world": {"x": -210000.0, "y": -140000.0, "z": 85.0},
+                    "map": {"x": 3072.6, "y": 2561.0},
+                },
+                {
+                    "kind": "plant_resource",
+                    "label": "Gold Fruit",
+                    "resource": "Gold Fruit",
+                    "depleted": True,
+                    "source": "actor_scan.gatherable",
+                    "unique_key": "poi:mock-gold-fruit-depleted",
+                    "world": {"x": -190000.0, "y": -130000.0, "z": 90.0},
+                    "map": {"x": 3486.2, "y": 2767.9},
+                },
+                {
+                    "kind": "plant_resource",
+                    "label": "Plant Fiber",
+                    "resource": "Plant Fiber",
+                    "depleted": False,
+                    "source": "actor_scan.gatherable",
+                    "unique_key": "poi:mock-plant-fiber-available",
+                    "world": {"x": -250000.0, "y": -120000.0, "z": 75.0},
+                    "map": {"x": 2245.4, "y": 2974.8},
+                },
+                {
+                    "kind": "ignitium",
+                    "label": "Ignitium",
+                    "resource": "Ignitium",
+                    "depleted": False,
+                    "source": "actor_scan.ore",
+                    "unique_key": "poi:mock-ignitium-available",
+                    "world": {"x": -180000.0, "y": -110000.0, "z": 140.0},
+                    "map": {"x": 3693.0, "y": 3181.0},
+                },
+                {
+                    "kind": "star_tears",
+                    "label": "Star Tears",
+                    "resource": "Star Tears",
+                    "depleted": False,
+                    "source": "actor_scan.gatherable",
+                    "unique_key": "poi:mock-star-tears-available",
+                    "world": {"x": -170000.0, "y": -100000.0, "z": 145.0},
+                    "map": {"x": 3900.0, "y": 3387.0},
+                },
+            ],
         },
         "rupture-cycle": {
             "ok": True,

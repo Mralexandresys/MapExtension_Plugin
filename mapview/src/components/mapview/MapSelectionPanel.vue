@@ -22,28 +22,16 @@ const emit = defineEmits<{
         >
             <div class="panel-top-row compact selection-top-row">
                 <div class="selection-header-copy">
-                    <div class="selection-identity-row">
-                        <span class="selection-id">{{
-                            panel.selectedEntityKeyLabel
-                        }}</span>
-                        <span
-                            class="badge selection-type-pill"
-                            :class="panel.selectedEntityTone"
-                        >
-                            {{ panel.selectedEntitySummary }}
-                        </span>
-                    </div>
-                    <span class="panel-kicker">{{
-                        panel.ui.handles.selection
-                    }}</span>
+                    <span
+                        class="badge selection-type-pill"
+                        :class="panel.selectedEntityTone"
+                    >
+                        {{ panel.selectedEntitySummary }}
+                    </span>
                     <h2>{{ panel.selectedDisplayName }}</h2>
-                    <p>
-                        {{
-                            panel.selectedEntityActive
-                                ? panel.ui.selection.detailsCurrent
-                                : panel.ui.selection.clickElement
-                        }}
-                    </p>
+                    <span class="selection-id">{{
+                        panel.selectedEntityKeyLabel
+                    }}</span>
                 </div>
                 <div class="panel-top-actions">
                     <button
@@ -189,34 +177,21 @@ const emit = defineEmits<{
     align-self: flex-start;
 }
 
-.selection-identity-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-}
-
 .selection-id {
-    display: inline-flex;
-    align-items: center;
-    min-height: 24px;
-    padding: 4px 9px;
-    border-radius: 0;
-    border: 1px solid var(--border-amber);
-    background: var(--amber-soft);
+    display: block;
     font-family: var(--font-mono);
-    color: var(--amber);
-    text-shadow: 0 0 8px rgba(232, 184, 75, 0.4);
-    font-size: 0.72rem;
-    font-weight: 700;
-    line-height: 1.3;
-    letter-spacing: 0.08em;
+    color: var(--dim);
+    font-size: 0.68rem;
+    line-height: 1.35;
+    letter-spacing: 0.04em;
     max-width: 100%;
-    white-space: normal;
+    user-select: text;
     overflow-wrap: anywhere;
 }
 
 .selection-type-pill {
+    align-self: start;
+    justify-self: start;
     border-left: 3px solid currentColor;
     border-radius: 0;
     padding: 2px 8px 2px 6px;

@@ -122,6 +122,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* Without the scroll, a viewport shorter than the dialog pushed its top edge
+   off-screen with no way to reach it: the page itself is locked to 100vh. */
 .shortcut-backdrop {
     position: fixed;
     inset: 0;
@@ -129,12 +131,15 @@ onBeforeUnmount(() => {
     display: grid;
     place-items: center;
     padding: 20px;
+    overflow: auto;
     background: rgba(2, 4, 12, 0.82);
     backdrop-filter: blur(6px);
 }
 
 .shortcut-dialog {
     width: min(760px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
     box-sizing: border-box;
     padding: 20px;
     background: var(--panel-strong);
@@ -144,16 +149,18 @@ onBeforeUnmount(() => {
 
 .shortcut-list {
     display: grid;
-    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    gap: 8px;
     margin-top: 14px;
 }
 
 .shortcut-row {
     display: grid;
-    grid-template-columns: 160px minmax(0, 1fr);
-    gap: 14px;
-    padding: 14px;
-    border-radius: 16px;
+    grid-template-columns: minmax(88px, auto) minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
     border: 1px solid var(--border);
     background: rgba(8, 14, 26, 0.62);
 }
@@ -190,7 +197,7 @@ onBeforeUnmount(() => {
     font-weight: 700;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 720px) {
     .shortcut-row {
         grid-template-columns: 1fr;
     }

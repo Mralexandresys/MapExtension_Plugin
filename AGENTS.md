@@ -19,7 +19,7 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
 
 ## Technologies
 
-- C++20 plugin built with Visual Studio/MSBuild.
+- C++20 plugin built with Visual Studio/MSBuild and the v143 C++ toolset, matching CI.
 - Local `StarRupture-Plugin-SDK/` checkout inside this project, used for StarRupture Mod Loader plugin interfaces and generated game SDK headers.
 - Local HTTP endpoints: `/health`, `/cargo`, `/rupture-cycle`.
 - Vendored `nlohmann/json` for JSON serialization.
@@ -30,7 +30,7 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
 - `plugin.cpp`: plugin metadata, startup, shutdown, config/runtime registration.
 - `plugin.h`, `dllmain.cpp`: exported plugin entry points and Windows DLL attach/detach plumbing.
 - `plugin_config.h`: config schema and typed config accessors.
-- `plugin_config.cpp`: config hook registration and global config interface storage.
+- `plugin_config.cpp`: storage for the config interface and plugin-self pointers; schema initialization lives in `plugin_config.h`.
 - `plugin_helpers.h`: shared accessors for plugin hooks/self.
 - `map_state_capture.cpp` / `.h`: world scanning, snapshot refresh, local fallback, gameplay callbacks.
 - `map_state_http.cpp` / `.h`: client-only local HTTP server.
@@ -45,16 +45,29 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
 - `mapview/`: local web viewer; follow `mapview/AGENTS.md` for frontend work.
 - `mapview/local-test/`: mock HTTP API and fixture payloads for frontend development without the game/plugin.
 - `mapview/public/map-tiles/`: packaged map tile assets copied next to `MapExtensionViewer.html`.
-- `build_client.sh`, `build_server.sh`, `summarize_build.sh`: root build helpers.
+- `tools/build_map_data.py`: converts the local raw map exports in `analyse_map/` into the compact static catalog under `mapview/public/map-data/`.
+- `build.sh`, `summarize_build.sh`: root build helpers; `./build.sh <client|server> <debug|release>`.
 - `.github/workflows/release.yml`: PowerShell-based release packaging flow.
 - `licenses/`, `THIRD_PARTY_NOTICES.md`, `mapview/THIRD_PARTY_NOTICES.md`: third-party attribution and license notices.
-- `update/`: implementation notes for prior/planned improvement phases; use as context, not as active runtime code.
 - `StarRupture-Plugin-SDK/include/plugin_interface.h`: plugin API, interfaces, callbacks, enums.
 - `StarRupture-Plugin-SDK/include/plugin_network_helpers.h`: typed helpers for client/server plugin-network packets.
 - `StarRupture-Plugin-SDK/StarRupture SDK/`: Dumper-7 generated UE5 SDK headers for client/server targets.
 - `StarRupture-Plugin-SDK/Shared.props`: MSBuild SDK path/build property defaults.
 - `StarRupture-Plugin-SDK/PluginDevelopment.md`: full plugin API reference and hook documentation.
 - `StarRupture-Plugin-SDK/ExamplePlugin/`: minimal starter plugin reference.
+
+## Static map-data conversion
+
+- `tools/build_map_data.py` transforms the very large, local raw exports below into the compact JSONP (`SRMAPDATA(...)`) files used by `mapview`. The JSONP wrapper permits loading data from a viewer opened with `file://`.
+- Raw inputs are intentionally ignored and must remain local; do not commit `analyse_map/`:
+  - `analyse_map/map_v2_resources.jsonl` — very large resource-instance export.
+  - `analyse_map/map_v2_placements.jsonl` — very large placement, volume, and technical-actor export.
+  - `analyse_map/map_v2_pois.geojson` — canonical point-of-interest export.
+  - `analyse_map/map_v2_catalog.json` — map metadata, data layers, and rupture rules. Kept for reference; the catalog build no longer reads it since the viewer never consumed the `rupture` block.
+  - `analyse_map/map_v2_ore_veins.jsonl` — the 660 extractor ore veins, with their exact socket transform, resource, purity, extractor and the confidence of the purity join. Authoritative for the `deposit` points when present; the build falls back to joining sockets to nearby ore meshes when it is absent, which leaves 283 veins at unknown quality. The build also drops the `actor`/`pcg` points within 500 cm on each horizontal axis of a published deposit — the export describes the same vein up to three times — and never publishes `unknown_ore`.
+- Run `python3 tools/build_map_data.py` from the repository root. It regenerates the versioned build inputs in `mapview/public/map-data/`: `manifest.js`, `resources-*.js`, `placements-*.js`, and `pois.js`.
+- Coordinates are compacted to world decimetres, with altitudes in metres, then grouped and delta-encoded. Keep projection assumptions synchronized with `map_state_types.h` and `mapview`.
+- After regenerating data, validate/package the viewer with `cd mapview && pnpm run check && pnpm run build`.
 
 ## Exact commands
 
@@ -63,23 +76,36 @@ Run these from the repository root unless stated otherwise.
 | Change type | Commands |
 | --- | --- |
 | Docs only | No build required |
-| Client-only C++ | `./build_client.sh debug --summary` or `./build_client.sh release --summary`, then `./summarize_build.sh client` |
-| Shared C++, config, protocol, or server-side C++ | Run a client build as above, then `./build_server.sh release --summary` and `./summarize_build.sh server` |
-| `mapview/` only | `cd mapview && npm run check && npm run build` |
+| Client-only C++ | `./build.sh client debug --summary` or `./build.sh client release --summary`, then `./summarize_build.sh client` |
+| Shared C++, config, protocol, or server-side C++ | Run a client build as above, then `./build.sh server release --summary` and `./summarize_build.sh server` |
+| `mapview/` only | `cd mapview && pnpm run check && pnpm run build` |
 
-Server validation command: `./build_server.sh release --summary`.
+Server validation command: `./build.sh server release --summary`.
 
 ## Build mechanics
 
-- C++ builds are launched from Linux/WSL with `build_client.sh` and `build_server.sh`, but they execute Windows `MSBuild.exe`.
-- The local helper scripts do not invoke PowerShell; the GitHub release workflow uses PowerShell, while local Linux/WSL validation calls `MSBuild.exe` directly.
-- The scripts locate Visual Studio/MSBuild with `vswhere.exe` under `/mnt/c/Program Files (x86)/Microsoft Visual Studio/Installer/`, then fall back to common Visual Studio 2022/18 paths.
+- C++ builds are launched from Linux/WSL with `build.sh`, but they execute Windows `MSBuild.exe`.
+- The local helper script does not invoke PowerShell; the GitHub release workflow uses PowerShell, while local Linux/WSL validation calls `MSBuild.exe` directly.
+- The script locates Visual Studio/MSBuild with `vswhere.exe` under `/mnt/c/Program Files (x86)/Microsoft Visual Studio/Installer/`, then falls back to common Visual Studio 2022/18 paths.
 - Paths are converted with `wslpath`; `wslpath` and a Windows Visual Studio/MSBuild installation are required.
 - The default SDK root is `./StarRupture-Plugin-SDK`, but it can be overridden with `--sdk-root <path>`.
 - Client builds use `Client Debug|x64` or `Client Release|x64`; server builds use `Server Debug|x64` or `Server Release|x64`, with release server builds preferred for packaging/validation.
 - Build outputs are written to `build/<Configuration>/Plugins/MapExtension_Plugin.dll`, for example `build/Client Release/Plugins/MapExtension_Plugin.dll` and `build/Server Release/Plugins/MapExtension_Plugin.dll`.
-- `--summary` writes `build_client.log` or `build_server.log` and runs `summarize_build.sh` on it; `summarize_build.sh client|server` can be rerun on an existing log.
+- The solution and `build.sh` both default to the SDK nested under this project. Install the v143 toolset even when using a newer Visual Studio.
+- `--summary` replaces `build_client.log` or `build_server.log` for the current attempt (including launch failures) and runs `summarize_build.sh` on it; `summarize_build.sh client|server` can be rerun on an existing log.
 - Keep shell scripts (`*.sh`) with LF line endings so they run correctly on Linux/WSL. Do not mass-normalize unrelated CRLF Visual Studio/project files unless that is the intended change.
+
+## SDK update analysis and migration
+
+- Treat the SDK version as a build input, not a source-level project constant. Local builds use the checkout selected by `--sdk-root` (or `./StarRupture-Plugin-SDK` by default), while the release workflow uses the requested `modloader_tag` or resolves the latest published SDK release.
+- Never infer the SDK baseline from a MapExtension Git tag, `PropertySheet.props`, a build-tag fallback, documentation example, or plugin version string. Those values identify builds/releases and do not prove which SDK source revision should be compared.
+- Before proposing an SDK migration, identify the exact baseline and target refs. Inspect `.github/workflows/release.yml` and the build helpers, resolve both SDK refs with `git rev-parse`, and use the nested SDK reflog when the question concerns a recently updated local checkout.
+- Compare resolved commits before reading changelogs. If two SDK tags resolve to the same commit, report that there is no SDK source delta and do not modify plugin source, configuration, or compatibility documentation solely because the tag name changed.
+- Separate the two SDK layers during comparison: diff `include/plugin_interface.h` and related public headers for plugin API changes, then compare the `StarRupture SDK` gitlink and relevant generated headers for game-layout changes. A large historical diff must not be attributed to the latest update without proving the selected baseline.
+- `plugin.cpp` publishes the SDK-provided `PLUGIN_INTERFACE_VERSION`, so a build naturally advertises the interface of the SDK selected for that build. A `PLUGIN_INTERFACE_VERSION_MIN/MAX` bump alone does not justify pinning an SDK version, adding a compile-time version guard, or declaring a new minimum ModLoader version in project docs.
+- Determine source impact by checking whether MapExtension actually calls a changed signature or reads a changed generated field/layout. Additive APIs that the plugin does not use are informational only and must not trigger unrelated adoption work.
+- Preserve the dynamic SDK selection in local and release builds unless the user explicitly requests pinning or a reproducibility policy change. Rebuilding for a new ModLoader release and changing MapExtension source are separate decisions.
+- Validate a real migration with the narrowest relevant diff first, then the required client/server builds. Do not make speculative migration edits merely to demonstrate use of a newly added SDK API.
 
 ## Source ownership and build split
 

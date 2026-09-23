@@ -6,13 +6,11 @@
 
 static IPluginLogger* g_logger = nullptr;
 static IPluginConfig* g_config = nullptr;
-static IPluginScanner* g_scanner = nullptr;
 static IPluginHooks* g_hooks = nullptr;
 static const IPluginSelf* g_pluginSelf = nullptr;
 
 IPluginLogger* GetLogger() { return g_logger; }
 IPluginConfig* GetConfig() { return g_config; }
-IPluginScanner* GetScanner() { return g_scanner; }
 IPluginHooks* GetHooks() { return g_hooks; }
 const IPluginSelf* GetPluginSelf() { return g_pluginSelf; }
 
@@ -55,7 +53,6 @@ __declspec(dllexport) bool PluginInit(IPluginSelf* self)
 	g_pluginSelf = self;
 	g_logger = self ? self->logger : nullptr;
 	g_config = self ? self->config : nullptr;
-	g_scanner = self ? self->scanner : nullptr;
 	g_hooks = self ? self->hooks : nullptr;
 
 	LOG_INFO("Plugin initializing...");
@@ -83,7 +80,6 @@ __declspec(dllexport) void PluginShutdown()
 	LOG_INFO("Plugin shutting down");
 
 	g_hooks = nullptr;
-	g_scanner = nullptr;
 	g_config = nullptr;
 	g_logger = nullptr;
 	g_pluginSelf = nullptr;

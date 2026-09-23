@@ -8,8 +8,6 @@ Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Client Debug|x64 = Client Debug|x64
 		Client Release|x64 = Client Release|x64
-		Debug|x64 = Debug|x64
-		Release|x64 = Release|x64
 		Server Debug|x64 = Server Debug|x64
 		Server Release|x64 = Server Release|x64
 	EndGlobalSection
@@ -18,10 +16,6 @@ Global
 		{8D3F8381-4F66-4D99-9C43-5CF09D55F11C}.Client Debug|x64.Build.0 = Client Debug|x64
 		{8D3F8381-4F66-4D99-9C43-5CF09D55F11C}.Client Release|x64.ActiveCfg = Client Release|x64
 		{8D3F8381-4F66-4D99-9C43-5CF09D55F11C}.Client Release|x64.Build.0 = Client Release|x64
-		{8D3F8381-4F66-4D99-9C43-5CF09D55F11C}.Debug|x64.ActiveCfg = Debug|x64
-		{8D3F8381-4F66-4D99-9C43-5CF09D55F11C}.Debug|x64.Build.0 = Debug|x64
-		{8D3F8381-4F66-4D99-9C43-5CF09D55F11C}.Release|x64.ActiveCfg = Release|x64
-		{8D3F8381-4F66-4D99-9C43-5CF09D55F11C}.Release|x64.Build.0 = Release|x64
 		{8D3F8381-4F66-4D99-9C43-5CF09D55F11C}.Server Debug|x64.ActiveCfg = Server Debug|x64
 		{8D3F8381-4F66-4D99-9C43-5CF09D55F11C}.Server Debug|x64.Build.0 = Server Debug|x64
 		{8D3F8381-4F66-4D99-9C43-5CF09D55F11C}.Server Release|x64.ActiveCfg = Server Release|x64

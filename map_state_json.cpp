@@ -27,7 +27,7 @@ namespace Detail
 		// mapview/src/lib/viewerContract.ts to the same value in the same change.
 		// The viewer shows an update prompt when this value is greater than its own.
 		// Purely additive payload fields do not need a bump.
-		constexpr int kViewerContractVersion = 1;
+		constexpr int kViewerContractVersion = 3;
 
 		constexpr const char* kProjectReleasesBaseUrl =
 			"https://github.com/Mralexandresys/MapExtension_Plugin/releases";
@@ -72,21 +72,6 @@ namespace Detail
 				scale *= 10.0;
 			}
 			return std::round(value * scale) / scale;
-		}
-
-		std::string CargoKindToString(CargoKind kind)
-		{
-			return kind == CargoKind::Sender ? "sender" : "receiver";
-		}
-
-		std::string ComposeMarkerDisplayName(const CargoMarker& marker)
-		{
-			if (marker.Kind == CargoKind::Sender && !marker.ResourceSummary.empty())
-			{
-				return marker.DisplayName + " - " + marker.ResourceSummary;
-			}
-
-			return marker.DisplayName;
 		}
 
 		json ToJson(const SDK::FVector& value)
@@ -137,8 +122,40 @@ namespace Detail
 				{"label", player.DisplayName},
 				{"source", player.Source},
 				{"unique_key", player.PublicKey},
+				{"self", player.IsSelf},
 				{"world", ToJson(player.WorldLocation)},
 				{"map", ToJson(player.MapLocation)}
+			};
+		}
+
+		std::string PoiKindToString(PoiKind kind)
+		{
+			switch (kind)
+			{
+			case PoiKind::AbandonedBase:
+				return "abandoned_base";
+			case PoiKind::PlantResource:
+				return "plant_resource";
+			case PoiKind::Ignitium:
+				return "ignitium";
+			case PoiKind::StarTears:
+				return "star_tears";
+			}
+			return "unknown";
+		}
+
+		json ToJson(const PoiMarker& poi)
+		{
+			return json{
+				{"kind", PoiKindToString(poi.Kind)},
+				{"label", poi.DisplayName},
+				{"resource", poi.ResourceName},
+				{"depleted", poi.Depleted},
+				{"state", MapResources::StateName(poi.Depleted, poi.Harvestability)},
+				{"source", poi.Source},
+				{"unique_key", poi.PublicKey},
+				{"world", ToJson(poi.WorldLocation)},
+				{"map", ToJson(poi.MapLocation)}
 			};
 		}
 
@@ -151,12 +168,12 @@ namespace Detail
 				{"receiver_label", connection.ReceiverLabel},
 				{"item", connection.ItemDisplayName},
 				{"requested_amount", connection.RequestedAmount},
+				// Endpoints carry map coordinates only: the viewer draws the link
+				// in map space and never read the world vectors.
 				{"sender", json{
-					{"world", ToJson(connection.SenderWorldLocation)},
 					{"map", ToJson(connection.SenderMapLocation)}
 				}},
 				{"receiver", json{
-					{"world", ToJson(connection.ReceiverWorldLocation)},
 					{"map", ToJson(connection.ReceiverMapLocation)}
 				}}
 			};
@@ -221,17 +238,27 @@ namespace Detail
 			connections.push_back(ToJson(connection));
 		}
 
+		json pois = json::array();
+		for (const PoiMarker& poi : snapshot.Pois)
+		{
+			pois.push_back(ToJson(poi));
+		}
+
 		const json payload = {
 			{"generation", snapshot.Generation},
 			{"world", snapshot.WorldName},
-			{"reason", snapshot.Reason},
+			// Counts the viewer actually reads. `reason`, the per-kind cargo
+			// counts and the connection count were never consumed; the capture
+			// side still keeps them for its own logging.
 			{"counts", {
 				{"markers", snapshot.Markers.size()},
-				{"senders", snapshot.SenderCount},
-				{"receivers", snapshot.ReceiverCount},
-				{"connections", snapshot.Connections.size()},
 				{"teleporters", snapshot.Teleporters.size()},
-				{"players", snapshot.Players.size()}
+				{"players", snapshot.Players.size()},
+				{"pois", snapshot.Pois.size()},
+				{"abandoned_bases", snapshot.AbandonedBaseCount},
+				{"plant_resources", snapshot.PlantResourceCount},
+				{"ignitium", snapshot.IgnitiumCount},
+				{"star_tears", snapshot.StarTearsCount}
 			}},
 			{"map", {
 				{"src_x1", RoundJsonNumber(kMapSrcX1)},
@@ -250,11 +277,21 @@ namespace Detail
 			{"markers", std::move(markers)},
 			{"teleporters", std::move(teleporters)},
 			{"players", std::move(players)},
-			{"connections", std::move(connections)}
+			{"connections", std::move(connections)},
+			{"pois", std::move(pois)}
 		};
 		return payload.dump();
 	}
 
+	// Known limitation, deliberately kept: these durations are calibrated by
+	// observation, not read from the game. They do not derive from the per-wave
+	// settings serialized in the map (PreWave, Moving, Fadeout, Growback, which
+	// also differ between Heat and Cold), and the phase the player sees on
+	// screen can drift from the phase computed here. Replacing them with the raw
+	// map values would swap a calibrated approximation for a wrong one, so they
+	// stay until the exact phase-to-wave-setting mapping is established. The
+	// viewer interpolates locally between polls from `elapsed_seconds` and
+	// `observed_at_unix_ms`, which adds its own drift on top.
 	std::string BuildRuptureCycleJson(const CargoSnapshot& snapshot)
 	{
 		const json payload = {

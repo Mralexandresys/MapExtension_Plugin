@@ -4,7 +4,6 @@
 
 IPluginLogger* GetLogger();
 IPluginConfig* GetConfig();
-IPluginScanner* GetScanner();
 IPluginHooks* GetHooks();
 const IPluginSelf* GetPluginSelf();
 

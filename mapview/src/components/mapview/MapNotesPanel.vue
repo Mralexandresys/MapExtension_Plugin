@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 
 import type { MapNotesPanelModel, UserAnnotationDraft } from "../../lib/types";
 
@@ -12,7 +12,7 @@ const emit = defineEmits<{
     "update:draft": [draft: UserAnnotationDraft];
     "clear-selection": [];
     "delete-selected": [];
-    "center-selected": [];
+    "edit-selected": [];
     "toggle-zone-lock": [];
 }>();
 
@@ -30,9 +30,7 @@ const selectedIdLabel = computed(() =>
     props.panel.selectedAnnotation?.id.slice(0, 8).toUpperCase() ?? "",
 );
 
-const editActionLabel = computed(() =>
-    "Deplacer",
-);
+const editActionLabel = computed(() => props.panel.ui.notes.moveAction);
 
 const editActionActive = computed(() =>
     props.panel.annotationEditMode === "move-marker"
@@ -42,8 +40,35 @@ const editActionActive = computed(() =>
 const isZoneSelected = computed(() => props.panel.selectedAnnotation?.type === "zone");
 
 const zoneLockLabel = computed(() =>
-    props.panel.selectedZoneLocked ? "Deverrouiller" : "Verrouiller",
+    props.panel.selectedZoneLocked
+        ? props.panel.ui.notes.unlockZone
+        : props.panel.ui.notes.lockZone,
 );
+
+// Deleting an annotation destroys hand-authored data with no undo, so the
+// button asks for a second click first. Importing already confirms.
+const deleteArmed = ref(false);
+let disarmTimer: ReturnType<typeof setTimeout> | null = null;
+
+function disarmDelete(): void {
+    if (disarmTimer) {
+        clearTimeout(disarmTimer);
+        disarmTimer = null;
+    }
+    deleteArmed.value = false;
+}
+
+function handleDeleteClick(): void {
+    if (!deleteArmed.value) {
+        deleteArmed.value = true;
+        disarmTimer = setTimeout(disarmDelete, 4000);
+        return;
+    }
+    disarmDelete();
+    emit("delete-selected");
+}
+
+watch(() => props.panel.selectedAnnotation, disarmDelete);
 
 const panelTitle = computed(() => {
     if (props.panel.selectedAnnotation) {
@@ -60,10 +85,10 @@ const panelTitle = computed(() => {
 
 const panelHelp = computed(() => {
     if (props.panel.annotationEditMode === "move-marker") {
-        return "Clique sur la carte pour deplacer le point.";
+        return props.panel.ui.notes.moveMarkerHelp;
     }
     if (props.panel.annotationEditMode === "edit-zone") {
-        return "Glisse sur la zone pour la deplacer.";
+        return props.panel.ui.notes.moveZoneHelp;
     }
     if (props.panel.annotationMode === "marker") {
         return props.panel.ui.notes.markerHelp;
@@ -178,12 +203,13 @@ function handleColorInput(event: Event): void {
                 <div
                     v-if="panel.selectedAnnotation"
                     class="selection-actions compact-actions notes-edit-actions"
+                    :class="{ 'has-lock': isZoneSelected }"
                 >
                     <button
                         class="button subtle small notes-move-btn"
                         :class="{ active: editActionActive }"
                         type="button"
-                        @click="emit('center-selected')"
+                        @click="emit('edit-selected')"
                     >
                         {{ editActionLabel }}
                     </button>
@@ -198,10 +224,16 @@ function handleColorInput(event: Event): void {
                     </button>
                     <button
                         class="button subtle small notes-delete-btn"
+                        :class="{ armed: deleteArmed }"
                         type="button"
-                        @click="emit('delete-selected')"
+                        @click="handleDeleteClick"
+                        @blur="disarmDelete"
                     >
-                        {{ panel.ui.notes.deleteSelection }}
+                        {{
+                            deleteArmed
+                                ? panel.ui.notes.confirmDelete
+                                : panel.ui.notes.deleteSelection
+                        }}
                     </button>
                 </div>
             </div>
@@ -299,6 +331,17 @@ function handleColorInput(event: Event): void {
 
 .notes-delete-btn:hover {
     background: rgba(248, 113, 113, 0.1) !important;
+}
+
+.notes-delete-btn.armed {
+    color: #ffe3e3 !important;
+    background: rgba(248, 113, 113, 0.24) !important;
+    border-color: var(--bad) !important;
+}
+
+/* Three buttons in a two-column grid left the third stranded on its own row. */
+.notes-edit-actions.has-lock {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .notes-error {

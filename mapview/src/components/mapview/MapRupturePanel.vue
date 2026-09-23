@@ -1,75 +1,190 @@
 <script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+
 import droneProhibitedSvg from "../../assets/drone-prohibited-1-svgrepo-com.svg?raw";
-import type { MapRupturePanelModel } from "../../lib/types";
+import { formatClockSeconds } from "../../lib/formatters";
+import type { MapRupturePanelModel, RupturePhaseView } from "../../lib/types";
 
 const incomingDroneIconMarkup = droneProhibitedSvg
     .replace("fill:#000000;", "fill:currentColor;")
     .replace("<svg", '<svg class="rupture-legend-icon-svg"');
 
-defineProps<{
+const props = defineProps<{
     panel: MapRupturePanelModel;
 }>();
 
 const emit = defineEmits<{
-    "toggle-collapse": [];
+    "toggle-details": [];
+    "close-details": [];
 }>();
+
+const rootRef = ref<HTMLElement | null>(null);
+const detailsRef = ref<HTMLElement | null>(null);
+const detailsPosition = ref({ top: "12px", left: "12px" });
+
+function positionDetails(): void {
+    if (!rootRef.value || !detailsRef.value) return;
+    const anchor = rootRef.value.getBoundingClientRect();
+    const details = detailsRef.value.getBoundingClientRect();
+    const margin = 12;
+    detailsPosition.value = {
+        top: `${Math.max(margin, Math.min(anchor.bottom + 8, window.innerHeight - details.height - margin))}px`,
+        left: `${Math.max(margin, Math.min(anchor.right - details.width, window.innerWidth - details.width - margin))}px`,
+    };
+}
+
+const activeToneClass = computed(
+    () => props.panel.phases.find((phase) => phase.active)?.toneClass ?? "",
+);
+
+function phaseRange(phase: RupturePhaseView): string {
+    return `${formatClockSeconds(phase.startSeconds)} - ${formatClockSeconds(phase.endSeconds)}`;
+}
+
+function handleDocumentPointerDown(event: PointerEvent): void {
+    const target = event.target as Node | null;
+    if (target && (rootRef.value?.contains(target) || detailsRef.value?.contains(target))) return;
+    emit("close-details");
+}
+
+function handleDocumentKeydown(event: KeyboardEvent): void {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    closeDetails();
+}
+
+function closeDetails(): void {
+    emit("close-details");
+    rootRef.value?.querySelector("button")?.focus();
+}
+
+watch(
+    () => [props.panel.detailsOpen, props.panel.hasLiveData],
+    async ([open], [wasOpen]) => {
+        if (open) {
+            document.addEventListener("pointerdown", handleDocumentPointerDown);
+            document.addEventListener("keydown", handleDocumentKeydown, true);
+            window.addEventListener("resize", positionDetails);
+            window.addEventListener("scroll", positionDetails, true);
+            await nextTick();
+            positionDetails();
+            if (!wasOpen) detailsRef.value?.querySelector("button")?.focus({ preventScroll: true });
+            return;
+        }
+        document.removeEventListener("pointerdown", handleDocumentPointerDown);
+        document.removeEventListener("keydown", handleDocumentKeydown, true);
+        window.removeEventListener("resize", positionDetails);
+        window.removeEventListener("scroll", positionDetails, true);
+    },
+);
+
+onBeforeUnmount(() => {
+    document.removeEventListener("pointerdown", handleDocumentPointerDown);
+    document.removeEventListener("keydown", handleDocumentKeydown, true);
+    window.removeEventListener("resize", positionDetails);
+    window.removeEventListener("scroll", positionDetails, true);
+});
 </script>
 
 <template>
-    <div class="overlay-layer overlay-top-center timeline-layer">
+    <div ref="rootRef" class="rupture-strip">
         <button
-            v-if="panel.collapsed"
-            class="drawer-handle drawer-handle-top-center"
+            class="rupture-strip-trigger"
             type="button"
-            :aria-expanded="!panel.collapsed"
-            @click="emit('toggle-collapse')"
+            :aria-expanded="panel.detailsOpen"
+            aria-controls="rupture-details"
+            :title="panel.ui.rupture.title"
+            @click="emit('toggle-details')"
         >
-            <span class="timeline-handle-pulse" aria-hidden="true"></span>
-            <span class="timeline-handle-label">
-                {{ panel.ui.handles.timeline }}
-            </span>
-            <span class="collapse-arrow down" aria-hidden="true"></span>
-        </button>
-        <section
-            class="floating-panel timeline-panel"
-            :class="{ collapsed: panel.collapsed }"
-        >
-            <button
-                v-if="!panel.collapsed"
-                class="panel-edge-toggle panel-edge-toggle-bottom-center"
-                type="button"
-                :aria-label="panel.ui.buttons.collapse"
-                :title="panel.ui.buttons.collapse"
-                @click="emit('toggle-collapse')"
-            >
-                <span class="collapse-arrow up" aria-hidden="true"></span>
-            </button>
-            <div class="panel-top-row">
-                <div>
-                    <span class="eyebrow">{{ panel.ui.handles.timeline }}</span>
-                    <h2>{{ panel.ui.rupture.title }}</h2>
-                    <p>{{ panel.ui.rupture.subtitle }}</p>
-                </div>
-            </div>
+            <span class="rupture-strip-kicker">{{ panel.ui.handles.timeline }}</span>
 
-            <div class="drawer-body timeline-body">
-                <section class="rupture-panel">
+            <template v-if="panel.hasLiveData">
+                <span class="rupture-strip-phase" :class="activeToneClass">
+                    {{ panel.currentPhaseLabel }}
+                </span>
+
+                <span class="rupture-track rupture-track-strip" aria-hidden="true">
+                    <span
+                        v-for="phase in panel.phases"
+                        :key="phase.key"
+                        class="rupture-segment"
+                        :class="[phase.toneClass, { active: phase.active }]"
+                        :style="{ width: `${phase.widthPercent}%` }"
+                    ></span>
+                    <span
+                        v-if="panel.markerPercent !== null"
+                        class="rupture-strip-marker"
+                        :style="{ left: `${panel.markerPercent}%` }"
+                    ></span>
+                </span>
+
+                <strong class="rupture-strip-remaining">
+                    {{ panel.currentPhaseRemainingLabel }}
+                </strong>
+            </template>
+
+            <span v-else class="rupture-strip-nodata">
+                {{ panel.ui.rupture.noDataShort }}
+            </span>
+
+            <span
+                class="collapse-arrow rupture-strip-chevron"
+                :class="panel.detailsOpen ? 'up' : 'down'"
+                aria-hidden="true"
+            ></span>
+        </button>
+
+        <Teleport to="body">
+            <div
+                v-if="panel.detailsOpen"
+                id="rupture-details"
+                ref="detailsRef"
+                class="rupture-details"
+                role="region"
+                :aria-label="panel.ui.rupture.title"
+                :style="detailsPosition"
+            >
+                <div class="rupture-details-head">
+                    <div>
+                        <h2>{{ panel.ui.rupture.title }}</h2>
+                        <p>{{ panel.ui.rupture.subtitle }}</p>
+                    </div>
+                    <button
+                        class="button subtle small"
+                        type="button"
+                        @click="closeDetails"
+                    >
+                        {{ panel.ui.buttons.close }}
+                    </button>
+                </div>
+
+                <template v-if="panel.hasLiveData">
                     <div class="rupture-focus-inline">
                         <span class="rupture-focus-pill">
-                            <span class="rupture-focus-label">{{
-                                panel.ui.rupture.currentPhase
-                            }}</span>
-                            <strong class="rupture-focus-value">{{
-                                panel.currentPhaseLabel
-                            }}</strong>
+                            <span class="rupture-focus-label">
+                                {{ panel.ui.rupture.currentPhase }}
+                            </span>
+                            <strong class="rupture-focus-value">
+                                {{ panel.currentPhaseLabel }}
+                            </strong>
                         </span>
                         <span class="rupture-focus-pill">
-                            <span class="rupture-focus-label">{{
-                                panel.ui.rupture.timeRemaining
-                            }}</span>
-                            <strong class="rupture-focus-value">{{
-                                panel.currentPhaseRemainingLabel
-                            }}</strong>
+                            <span class="rupture-focus-label">
+                                {{ panel.ui.rupture.timeRemaining }}
+                            </span>
+                            <strong class="rupture-focus-value">
+                                {{ panel.currentPhaseRemainingLabel }}
+                            </strong>
+                        </span>
+                        <!-- Position in the cycle. Previously a floating bubble above
+                             the track, which overlapped this very row. -->
+                        <span class="rupture-focus-pill">
+                            <span class="rupture-focus-label">
+                                {{ panel.ui.rupture.elapsed }}
+                            </span>
+                            <strong class="rupture-focus-value">
+                                {{ panel.markerLabel }}
+                            </strong>
                         </span>
                     </div>
 
@@ -79,86 +194,185 @@ const emit = defineEmits<{
                                 v-for="phase in panel.phases"
                                 :key="phase.key"
                                 class="rupture-segment"
-                                :class="[
-                                    phase.toneClass,
-                                    { active: phase.active },
-                                ]"
+                                :class="[phase.toneClass, { active: phase.active }]"
                                 :style="{ width: `${phase.widthPercent}%` }"
                             ></div>
                             <div
                                 v-if="panel.markerPercent !== null"
                                 class="rupture-marker"
                                 :style="{ left: `${panel.markerPercent}%` }"
-                            >
-                                <span>{{ panel.markerLabel }}</span>
-                            </div>
-                        </div>
-                        <div class="rupture-track-scale">
-                            <span
-                                v-for="tick in panel.timelineTicks"
-                                :key="tick.key"
-                                class="rupture-track-tick"
-                                :class="[
-                                    tick.align,
-                                    `stack-${tick.stackLevel}`,
-                                ]"
-                                :style="tick.align === 'right'
-                                    ? {}
-                                    : { left: `${tick.leftPercent}%` }"
-                            >
-                                {{ tick.label }}
-                            </span>
+                            ></div>
                         </div>
                     </div>
 
-                    <div class="rupture-legend-row" aria-label="Timeline legend">
-                        <span
+                    <!-- Replaces the absolutely-positioned tick scale: phase
+                         durations are wildly unequal, so the boundary labels piled
+                         up at both ends of the track and left the middle empty.
+                         A row per phase carries the same numbers, legibly, and
+                         doubles as the legend. -->
+                    <ul class="rupture-phase-list" :aria-label="panel.ui.handles.legend">
+                        <li
                             v-for="phase in panel.phases"
                             :key="phase.key"
-                            class="rupture-legend-item"
+                            class="rupture-phase-row"
                             :class="{ active: phase.active }"
                         >
                             <span
                                 class="rupture-track-swatch"
                                 :class="phase.toneClass"
+                                aria-hidden="true"
                             ></span>
-                            <span
-                                v-if="phase.key === 'incoming'"
-                                class="rupture-legend-icon incoming"
-                                :title="panel.ui.rupture.incomingDroneDisabledTooltip"
-                                :aria-label="panel.ui.rupture.incomingDroneDisabledTooltip"
-                                v-html="incomingDroneIconMarkup"
-                            ></span>
-                            <strong>{{ phase.label }}</strong>
-                        </span>
-                    </div>
+                            <span class="rupture-phase-name">
+                                {{ phase.label }}
+                                <span
+                                    v-if="phase.key === 'incoming'"
+                                    class="rupture-legend-icon incoming"
+                                    :title="panel.ui.rupture.incomingDroneDisabledTooltip"
+                                    :aria-label="panel.ui.rupture.incomingDroneDisabledTooltip"
+                                    v-html="incomingDroneIconMarkup"
+                                ></span>
+                            </span>
+                            <span class="rupture-phase-range">{{ phaseRange(phase) }}</span>
+                            <span class="rupture-phase-duration">{{ phase.durationLabel }}</span>
+                            <span class="rupture-phase-status">{{ phase.statusLabel }}</span>
+                        </li>
+                    </ul>
+                </template>
 
-                    <div
-                        v-if="!panel.hasLiveData"
-                        class="empty-state compact-empty rupture-empty-state"
-                    >
-                        {{ panel.ui.rupture.noData }}
-                    </div>
-                </section>
+                <div v-else class="empty-state rupture-empty-state">
+                    {{ panel.ui.rupture.noData }}
+                </div>
             </div>
-        </section>
+        </Teleport>
     </div>
 </template>
 
 <style scoped>
-.timeline-body {
+/* ── header strip ─────────────────────────────────────────────────────────── */
+
+.rupture-strip {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: stretch;
+}
+
+.rupture-strip-trigger {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--border-strong);
+    background: rgba(12, 19, 35, 0.86);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.rupture-strip-trigger:hover {
+    background: rgba(34, 211, 238, 0.1);
+    border-color: var(--border-strong);
+}
+
+.rupture-strip-kicker {
+    color: var(--accent);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+}
+
+.rupture-strip-phase {
+    color: var(--text);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.rupture-strip-phase.burning     { color: #fca5a5; }
+.rupture-strip-phase.cooling     { color: var(--warn); }
+.rupture-strip-phase.stabilizing { color: #e5e7eb; }
+.rupture-strip-phase.stable      { color: var(--good); }
+.rupture-strip-phase.incoming    { color: #c48dff; }
+
+.rupture-track-strip {
+    flex: 1;
+    height: 10px;
+    min-width: 80px;
+    clip-path: none;
+}
+
+.rupture-strip-marker {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
+    transform: translateX(-50%);
+}
+
+.rupture-strip-remaining {
+    color: var(--amber);
+    font-size: 0.8rem;
+    font-weight: 700;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.rupture-strip-nodata {
+    flex: 1;
+    color: var(--dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rupture-strip-chevron {
+    flex: 0 0 auto;
+    color: var(--muted);
+}
+
+/* ── detail dropdown ──────────────────────────────────────────────────────── */
+
+.rupture-details {
+    position: fixed;
+    z-index: 20;
+    width: min(760px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    overflow: auto;
+    overscroll-behavior: contain;
     display: grid;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid var(--border-strong);
+    background: rgba(12, 20, 38, 0.99);
+    box-shadow: 0 22px 46px rgba(0, 0, 0, 0.45);
+}
+
+.rupture-details-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
     gap: 14px;
 }
 
-.rupture-panel {
-    display: grid;
-    gap: 16px;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: 0;
-    background: rgba(12, 20, 38, 0.9);
+.rupture-details-head h2 {
+    font-size: 1.05rem;
 }
+
+.rupture-details-head p {
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+/* ── shared track pieces ──────────────────────────────────────────────────── */
 
 .rupture-focus-inline {
     display: flex;
@@ -173,7 +387,6 @@ const emit = defineEmits<{
     gap: 8px;
     padding: 6px 10px;
     border: 1px solid var(--border);
-    border-radius: 0;
     background: rgba(255, 255, 255, 0.04);
     font-family: var(--font-mono);
 }
@@ -247,8 +460,8 @@ const emit = defineEmits<{
 
 .rupture-marker {
     position: absolute;
-    top: -34px;
-    bottom: -10px;
+    top: -6px;
+    bottom: -6px;
     transform: translateX(-50%);
     display: inline-flex;
     flex-direction: column;
@@ -271,154 +484,116 @@ const emit = defineEmits<{
     border-top: 8px solid var(--amber);
 }
 
-.rupture-marker span {
-    position: absolute;
-    top: 0;
-    left: 4px;
-    transform: translateY(-100%);
-    padding: 3px 8px;
-    border-radius: 0;
-    background: rgba(232, 184, 75, 0.18);
-    color: var(--amber);
-    font-size: 0.78rem;
-    font-weight: 700;
-    font-family: var(--font-mono);
-    border: 1px solid var(--border-amber);
-    white-space: nowrap;
-}
-
 @keyframes marker-pulse {
     0%, 100% { filter: drop-shadow(0 0 8px var(--amber)); }
-    50%       { filter: drop-shadow(0 0 20px var(--amber)); }
+    50%      { filter: drop-shadow(0 0 20px var(--amber)); }
 }
 
-.rupture-track-scale {
-    position: relative;
-    height: 86px;
-    padding-top: 10px;
+.rupture-phase-list {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
-.rupture-track-swatch {
-    width: 12px;
-    height: 12px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-.rupture-track-swatch.burning    { background: rgba(248, 113, 113, 0.88); }
-.rupture-track-swatch.cooling    { background: rgba(245, 158, 11, 0.88); }
-.rupture-track-swatch.stabilizing{ background: rgba(229, 231, 235, 0.72); }
-.rupture-track-swatch.stable     { background: rgba(49, 196, 141, 0.84); }
-.rupture-track-swatch.incoming   { background: rgba(168, 85, 247, 0.88); }
-
-.rupture-legend-icon {
-    display: inline-flex;
+.rupture-phase-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    gap: 10px 14px;
     align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    color: var(--muted);
-}
-
-.rupture-legend-item.active .rupture-legend-icon,
-.rupture-legend-icon.incoming {
-    color: rgba(196, 141, 255, 0.95);
-}
-
-.rupture-legend-icon :deep(.rupture-legend-icon-svg) {
-    display: block;
-    width: 100%;
-    height: 100%;
-}
-
-.rupture-track-tick {
-    position: absolute;
-    top: 10px;
-    font-size: 0.74rem;
-    color: var(--muted);
-    white-space: nowrap;
-    line-height: 1;
-}
-
-.rupture-track-tick.left   { transform: translateX(0); }
-.rupture-track-tick.center { transform: translateX(-50%); }
-.rupture-track-tick.right  { left: auto; right: 0; transform: none; text-align: right; }
-
-.rupture-track-tick.right::before { left: auto; right: 0; transform: none; }
-
-.rupture-track-tick.stack-1 { top: 32px; }
-.rupture-track-tick.stack-2 { top: 54px; }
-
-.rupture-track-tick.right.stack-1,
-.rupture-track-tick.right.stack-2 {
-    left: auto;
-    right: 0;
-    transform: none;
-}
-
-.rupture-track-tick.center.stack-1,
-.rupture-track-tick.center.stack-2 {
-    transform: translateX(-50%);
-}
-
-.rupture-track-tick::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 6px);
-    transform: translateX(-50%);
-    width: 1px;
-    height: 18px;
-    background: rgba(255, 255, 255, 0.24);
-}
-
-.rupture-track-tick.stack-1::before { height: 40px; }
-.rupture-track-tick.stack-2::before { height: 62px; }
-
-@media (max-width: 1100px) {
-    .rupture-track-scale { height: 96px; }
-    .rupture-track-tick  { font-size: 0.72rem; }
-    .rupture-track-tick.stack-1 { top: 36px; }
-    .rupture-track-tick.stack-2 { top: 62px; }
-    .rupture-track-tick.stack-1::before { height: 44px; }
-    .rupture-track-tick.stack-2::before { height: 70px; }
-}
-
-.rupture-legend-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 12px;
-    align-items: center;
-}
-
-.rupture-legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 30px;
-    padding: 5px 10px;
-    border-radius: 0;
-    border: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.04);
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-left: 2px solid transparent;
+    background: rgba(255, 255, 255, 0.03);
     color: var(--muted);
     font-family: var(--font-mono);
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    font-size: 0.76rem;
 }
 
-.rupture-legend-item.active {
+.rupture-phase-row.active {
     color: var(--text);
     border-color: var(--border-strong);
+    border-left-color: var(--amber);
     background: var(--amber-soft);
 }
 
-.rupture-legend-item strong {
-    font-size: 0.8rem;
+.rupture-phase-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rupture-phase-row.active .rupture-phase-name {
+    font-weight: 700;
+}
+
+.rupture-phase-range,
+.rupture-phase-duration,
+.rupture-phase-status {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.rupture-phase-range {
+    color: var(--dim);
+}
+
+.rupture-phase-duration {
+    min-width: 3.5rem;
+    text-align: right;
+    color: var(--muted);
+}
+
+.rupture-phase-status {
+    min-width: 9rem;
+    text-align: right;
+}
+
+.rupture-phase-row.active .rupture-phase-status {
+    color: var(--amber);
+    font-weight: 700;
 }
 
 .rupture-empty-state {
     border-style: dashed;
 }
 
+@media (max-width: 980px) {
+    .rupture-phase-row {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .rupture-phase-status {
+        grid-column: 2 / -1;
+        min-width: 0;
+        text-align: left;
+    }
+
+    .rupture-strip-kicker,
+    .rupture-track-strip {
+        display: none;
+    }
+
+    .rupture-details {
+        width: min(560px, calc(100vw - 24px));
+    }
+}
+
+@media (max-width: 720px) {
+    .rupture-phase-name {
+        grid-column: 2 / -1;
+        white-space: normal;
+    }
+
+    .rupture-phase-range {
+        grid-column: 2;
+    }
+}
 </style>

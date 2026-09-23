@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import type { Messages } from "../../lang";
 import type { UserAnnotationMode } from "../../lib/types";
 
 const props = defineProps<{
     annotationMode: UserAnnotationMode;
+    ui: Messages;
 }>();
 
 const emit = defineEmits<{
@@ -17,8 +19,9 @@ const emit = defineEmits<{
             class="fab-btn"
             :class="{ active: props.annotationMode === 'marker' }"
             type="button"
-            title="Place marker"
-            aria-label="Place personal marker"
+            :title="props.ui.notes.addMarker"
+            :aria-label="props.ui.notes.addMarker"
+            :aria-pressed="props.annotationMode === 'marker'"
             @click="emit('toggle-mode', 'marker')"
         >
             <!-- Pin icon -->
@@ -35,8 +38,9 @@ const emit = defineEmits<{
             class="fab-btn"
             :class="{ active: props.annotationMode === 'zone' }"
             type="button"
-            title="Draw zone"
-            aria-label="Draw personal zone"
+            :title="props.ui.notes.addZone"
+            :aria-label="props.ui.notes.addZone"
+            :aria-pressed="props.annotationMode === 'zone'"
             @click="emit('toggle-mode', 'zone')"
         >
             <!-- Rect icon -->
@@ -52,8 +56,10 @@ const emit = defineEmits<{
     --cut: 8px;
     position: absolute;
     right: 14px;
-    top: 50%;
-    transform: translateY(-50%);
+    /* Sits above the map toolbar rather than mid-height: the right gutter is
+       also where the selection panel opens, and it used to cover the FAB
+       completely whenever an entity was selected. */
+    bottom: 76px;
     z-index: 12;
 
     display: flex;

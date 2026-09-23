@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useTemplateRef } from "vue";
+import { computed, useTemplateRef } from "vue";
 
 import type { Language } from "../../lang";
 import type { MapControlDockModel } from "../../lib/types";
@@ -28,6 +28,23 @@ const ICON_SCALE_MIN = 0.75;
 const ICON_SCALE_MAX = 2;
 const ICON_SCALE_STEP = 0.25;
 const fileInput = useTemplateRef<HTMLInputElement>("fileInput");
+
+// Announced text derived from the connection tone only. The status pill itself
+// cannot host the live region: its label carries an age that ticks every
+// second, which would make a screen reader talk continuously.
+const statusAnnouncement = computed(() => {
+    const messages = props.panel.ui.status;
+    switch (props.panel.statusTone) {
+        case "loading":
+            return messages.sync;
+        case "online":
+            return messages.ok;
+        case "stale":
+            return messages.cache;
+        default:
+            return messages.offline;
+    }
+});
 
 
 function handleEndpointInput(event: Event): void {
@@ -68,7 +85,6 @@ function handleFileChange(event: Event): void {
         <div class="command-header">
             <div class="command-header-main">
                 <div class="command-header-brand">
-                    <span class="panel-kicker">{{ panel.ui.hero.eyebrow }}</span>
                     <div class="command-header-title-row">
                         <h1>{{ panel.ui.hero.title }}</h1>
                         <span class="status-inline status-pill" :class="panel.statusTone">
@@ -78,9 +94,10 @@ function handleFileChange(event: Event): void {
                     </div>
                     <div class="control-dock-meta">
                         <span>{{ panel.currentTimeLabel }}</span>
-                        <span class="status-footer-dot" aria-hidden="true"></span>
-                        <span>{{ panel.liveAgeLabel }}</span>
                     </div>
+                    <p class="sr-only" role="status" aria-live="polite">
+                        {{ statusAnnouncement }}
+                    </p>
                 </div>
 
                 <div class="command-header-actions">
@@ -97,21 +114,7 @@ function handleFileChange(event: Event): void {
                         }}
                     </button>
 
-                    <label class="refresh-interval-inline" :title="panel.ui.hero.refreshIntervalHelp">
-                        <span class="refresh-interval-inline-label">
-                            {{ panel.ui.hero.refreshInterval }}
-                        </span>
-                        <input
-                            class="refresh-interval-inline-input"
-                            :value="panel.refreshIntervalMs / 1000"
-                            type="number"
-                            min="0.5"
-                            max="60"
-                            step="0.5"
-                            @input="handleRefreshIntervalInput"
-                        />
-                        <span class="refresh-interval-inline-unit">s</span>
-                    </label>
+
 
                     <!-- Export annotations -->
                     <button
@@ -174,6 +177,30 @@ function handleFileChange(event: Event): void {
                 </div>
             </div>
 
+            <!-- The recovery path has to stay visible: this message used to live
+                 only inside the settings popover, which is closed by default. -->
+            <div
+                v-if="panel.statusError"
+                class="command-header-alert"
+                role="alert"
+            >
+                <div class="command-header-alert-copy">
+                    <strong>{{ panel.statusText }}</strong>
+                    <span>{{ panel.statusError }}</span>
+                    <span class="command-header-alert-hint">
+                        {{ panel.ui.status.offlineBannerHelp }}
+                    </span>
+                </div>
+                <button
+                    v-if="!panel.settingsOpen"
+                    class="button primary small"
+                    type="button"
+                    @click="emit('toggle-settings')"
+                >
+                    {{ panel.ui.buttons.configure }}
+                </button>
+            </div>
+
             <div v-if="panel.settingsOpen" class="command-settings-popover">
                 <label class="field compact endpoint-field dock-endpoint-field">
                     <span>{{ panel.ui.hero.endpoint }}</span>
@@ -213,15 +240,32 @@ function handleFileChange(event: Event): void {
                 </label>
 
                 <div class="control-dock-utility-row">
+                    <label class="refresh-interval-inline" :title="panel.ui.hero.refreshIntervalHelp">
+                        <span class="refresh-interval-inline-label">
+                            {{ panel.ui.hero.refreshInterval }}
+                        </span>
+                        <input
+                            class="refresh-interval-inline-input"
+                            :value="panel.refreshIntervalMs / 1000"
+                            type="number"
+                            min="0.5"
+                            max="60"
+                            step="0.5"
+                            @input="handleRefreshIntervalInput"
+                        />
+                        <span class="refresh-interval-inline-unit">s</span>
+                    </label>
                     <button
-                        class="button subtle small"
+                        class="button subtle small auto-refresh-toggle"
+                        :class="{ active: panel.autoRefresh }"
                         type="button"
+                        :aria-pressed="panel.autoRefresh"
                         @click="emit('toggle-auto-refresh')"
                     >
                         {{
                             panel.autoRefresh
-                                ? panel.ui.buttons.live
-                                : panel.ui.buttons.pause
+                                ? panel.ui.buttons.pause
+                                : panel.ui.buttons.live
                         }}
                     </button>
 
@@ -261,23 +305,9 @@ function handleFileChange(event: Event): void {
                             {{ panel.ui.hero.iconScaleHelp }}
                         </small>
                     </label>
-
-                    <div
-                        class="inline-note control-dock-note"
-                        :class="{ error: !!props.panel.statusError }"
-                    >
-                        <strong>{{ panel.statusText }}</strong>
-                        <span v-if="panel.statusError">{{ panel.statusError }}</span>
-                        <span v-else-if="panel.endpointHasPendingChanges">
-                            {{ panel.ui.status.endpointPending }}
-                        </span>
-                        <span v-else>
-                            {{ panel.liveAgeLabel }}
-                        </span>
-                    </div>
                 </div>
             </div>
-            <div v-if="panel.commandStats?.length" class="command-stats-row">
+            <div class="command-stats-row">
                 <div
                     v-for="stat in panel.commandStats"
                     :key="stat.key"
@@ -286,6 +316,12 @@ function handleFileChange(event: Event): void {
                 >
                     <span class="command-stat-label">{{ stat.label }}</span>
                     <span class="command-stat-value">{{ stat.value }}</span>
+                </div>
+
+                <!-- Rupture timeline: global status, so it belongs with the other
+                     global status readouts rather than floating over the map. -->
+                <div class="command-stats-timeline">
+                    <slot name="timeline" />
                 </div>
             </div>
         </div>
@@ -308,7 +344,7 @@ function handleFileChange(event: Event): void {
     position: relative;
     display: block;
     width: 100%;
-    padding: 12px 14px 14px;
+    padding: 10px 16px 0;
     border-radius: 0;
     background: rgba(12, 20, 38, 0.99);
     border-bottom: 1px solid var(--border-strong);
@@ -319,14 +355,16 @@ function handleFileChange(event: Event): void {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
-    align-items: start;
-    min-height: 52px;
+    align-items: center;
+    min-height: 38px;
 }
 
 .command-header-brand {
     min-width: 0;
-    display: grid;
-    gap: 6px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 16px;
 }
 
 .command-header-actions {
@@ -335,6 +373,7 @@ function handleFileChange(event: Event): void {
     align-items: center;
     justify-content: flex-end;
     gap: 6px;
+    min-width: 0;
 }
 
 .refresh-interval-inline {
@@ -366,6 +405,39 @@ function handleFileChange(event: Event): void {
     font: inherit;
 }
 
+.command-header-alert {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 14px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(248, 113, 113, 0.45);
+    border-left: 3px solid var(--bad);
+    background: rgba(248, 113, 113, 0.1);
+}
+
+.command-header-alert-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.command-header-alert-copy strong {
+    color: #ffe3e3;
+    font-size: 0.86rem;
+}
+
+.command-header-alert-copy span {
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.command-header-alert-hint {
+    color: var(--dim) !important;
+}
+
 .command-settings-popover {
     position: absolute;
     top: calc(100% + 10px);
@@ -391,12 +463,13 @@ function handleFileChange(event: Event): void {
 
 .command-header h1 {
     margin: 0;
-    font-size: 0.85rem;
+    /* Was 0.85rem, i.e. smaller than every h2 on screen. */
+    font-size: 1rem;
     line-height: 1.1;
     white-space: nowrap;
     font-family: var(--font-display);
     text-transform: uppercase;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.04em;
 }
 
 .control-dock-meta {
@@ -409,7 +482,7 @@ function handleFileChange(event: Event): void {
 
 .command-stat {
     min-width: 94px;
-    padding: 12px 14px;
+    padding: 7px 14px;
     display: grid;
     gap: 4px;
     border-right: 1px solid rgba(255, 255, 255, 0.08);
@@ -429,9 +502,9 @@ function handleFileChange(event: Event): void {
 }
 
 .command-stat span {
-    font-size: 0.62rem;
+    font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     color: var(--muted);
     font-family: var(--font-mono);
 }
@@ -441,21 +514,31 @@ function handleFileChange(event: Event): void {
 .command-stat.warn strong    { color: var(--warn); }
 .command-stat.bad strong     { color: var(--bad); }
 
+.command-stats-timeline {
+    flex: 1;
+    min-width: 260px;
+    display: flex;
+    align-items: stretch;
+    padding: 4px 0 4px 16px;
+}
+
 .command-stats-row {
     display: flex;
-    gap: 16px;
-    align-items: center;
-    padding: 6px 16px;
+    flex-wrap: wrap;
+    gap: 0;
+    align-items: stretch;
+    padding: 0;
+    margin-top: 8px;
     border-top: 1px solid var(--border-strong);
     background: rgba(14, 22, 42, 0.96);
     font-family: var(--font-mono);
-    font-size: 0.62rem;
+    font-size: 0.7rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
 }
 
 .command-stat-label { color: var(--muted); display: block; margin-bottom: 1px; }
-.command-stat-value { color: var(--text); font-weight: 700; display: block; font-size: 0.76rem; }
+.command-stat-value { color: var(--text); font-weight: 700; display: block; font-size: 0.84rem; }
 .command-stat.good .command-stat-value { color: var(--good); }
 .command-stat.warn .command-stat-value { color: var(--warn); }
 .command-stat.bad  .command-stat-value { color: var(--bad); }
@@ -477,9 +560,15 @@ function handleFileChange(event: Event): void {
 
 .control-dock-utility-row {
     display: grid;
-    grid-template-columns: auto minmax(100px, 132px) minmax(180px, 220px) minmax(180px, 220px) minmax(0, 1fr);
-    gap: 10px;
-    align-items: stretch;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-content: start;
+    gap: 10px 18px;
+    align-items: start;
+}
+
+/* Without this the toggle stretches to the height of the icon-scale field. */
+.control-dock-utility-row > .button {
+    align-self: center;
 }
 
 .icon-scale-field {
@@ -497,15 +586,6 @@ function handleFileChange(event: Event): void {
     width: 100%;
 }
 
-.control-dock-note {
-    min-height: 100%;
-    background: rgba(8, 14, 26, 0.82);
-}
-
-.control-dock-note strong {
-    line-height: 1.3;
-}
-
 .settings-trigger {
     display: inline-flex;
     align-items: center;
@@ -520,7 +600,7 @@ function handleFileChange(event: Event): void {
     height: 34px;
     padding: 0;
     border: 1px solid var(--border);
-    border-radius: 0;
+    border-radius: 6px;
     background: rgba(12, 19, 35, 0.86);
     color: var(--muted);
     cursor: pointer;
@@ -534,18 +614,6 @@ function handleFileChange(event: Event): void {
     background: rgba(34, 211, 238, 0.1);
     border-color: var(--border-strong);
     color: var(--text);
-}
-
-.sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
 }
 
 .settings-trigger.active {
@@ -571,6 +639,57 @@ function handleFileChange(event: Event): void {
     opacity: 0.62;
 }
 
+@media (max-width: 720px) {
+    .control-dock-meta { display: none; }
+    .command-header-brand { gap: 0; }
+    .command-header-alert-copy span { overflow-wrap: anywhere; }
+    .command-header-alert { max-height: 112px; overflow-y: auto; gap: 6px; padding: 8px; }
+    .command-header-alert-copy span:not(.command-header-alert-hint) { display: none; }
+    .command-header-title-row { gap: 8px; }
+    .command-header h1 { font-size: 0.9rem; }
+    .command-stat { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+    .command-header {
+        padding: 10px 12px 12px;
+    }
+
+    .command-header-actions {
+        justify-content: flex-start;
+    }
+
+    .refresh-interval-inline {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .refresh-interval-inline-input {
+        width: 100%;
+    }
+
+    /* Keep the cycle visible without horizontally scrolling past the stats. */
+    .command-stats-row {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        padding: 0;
+        scrollbar-width: none;
+    }
+
+    .command-stats-row::-webkit-scrollbar {
+        display: none;
+    }
+
+    .command-stat {
+        min-width: 0;
+        padding: 8px 6px;
+    }
+
+    .command-stats-timeline {
+        order: -1;
+        grid-column: 1 / -1;
+        min-width: 0;
+    }
+}
+
 @media (max-width: 980px) {
     .endpoint-inline-row {
         grid-template-columns: 1fr;
@@ -585,9 +704,10 @@ function handleFileChange(event: Event): void {
     }
 
     .command-settings-popover {
-        position: static;
-        width: 100%;
-        margin-top: 10px;
+        position: absolute;
+        width: calc(100% - 16px);
+        max-height: 60dvh;
+        overflow-y: auto;
     }
 }
 </style>

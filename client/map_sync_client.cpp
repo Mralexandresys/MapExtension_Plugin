@@ -31,6 +31,7 @@
 	PluginNetworkMessageCallback g_teleportersChunkReceiveHandle = nullptr;
 	PluginNetworkMessageCallback g_cargoMarkersChunkReceiveHandle = nullptr;
 	PluginNetworkMessageCallback g_cargoConnectionsChunkReceiveHandle = nullptr;
+	PluginNetworkMessageCallback g_poisChunkReceiveHandle = nullptr;
 	uint64_t g_requestSequence = 0;
 	int64_t g_lastRequestAtUnixMs = 0;
 	bool g_protocolMismatchLogged = false;
@@ -288,6 +289,18 @@ namespace MapExtensionClient
 					RemoteCache::StoreCargoConnectionsChunk(packet);
 				});
 
+			g_poisChunkReceiveHandle = Network::OnReceive<MapSyncProtocol::ServerPoisChunkPacket>(
+				hooks,
+				self,
+				[](const MapSyncProtocol::ServerPoisChunkPacket& packet)
+				{
+					if (!ValidateProtocol(packet))
+					{
+						return;
+					}
+					RemoteCache::StorePoisChunk(packet);
+				});
+
 			return true;
 		}
 
@@ -300,6 +313,7 @@ namespace MapExtensionClient
 			UnregisterHandler(g_teleportersChunkReceiveHandle, typeid(MapSyncProtocol::ServerTeleportersChunkPacket).name());
 			UnregisterHandler(g_cargoMarkersChunkReceiveHandle, typeid(MapSyncProtocol::ServerCargoMarkersChunkPacket).name());
 			UnregisterHandler(g_cargoConnectionsChunkReceiveHandle, typeid(MapSyncProtocol::ServerCargoConnectionsChunkPacket).name());
+			UnregisterHandler(g_poisChunkReceiveHandle, typeid(MapSyncProtocol::ServerPoisChunkPacket).name());
 
 			g_requestSequence = 0;
 			g_lastRequestAtUnixMs = 0;
@@ -335,7 +349,13 @@ namespace MapExtensionClient
 
 			const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
 			const int64_t lastReceivedAtUnixMs = RemoteCache::GetLastReceivedAtUnixMs();
-			if (lastReceivedAtUnixMs > 0 && nowUnixMs - lastReceivedAtUnixMs < kRefreshIntervalMs)
+			// While POI pages are still missing, keep requesting at the minimum
+			// interval instead of waiting for the full refresh window so large
+			// worlds converge to a complete POI set quickly.
+			const bool hasPendingPoiPages = RemoteCache::HasPendingPoiPages();
+			if (!hasPendingPoiPages
+				&& lastReceivedAtUnixMs > 0
+				&& nowUnixMs - lastReceivedAtUnixMs < kRefreshIntervalMs)
 			{
 				return false;
 			}
@@ -347,15 +367,16 @@ namespace MapExtensionClient
 
 			MapSyncProtocol::ClientSnapshotRequestPacket packet{};
 			packet.request_sequence = ++g_requestSequence;
-			packet.request_flags = MapSyncProtocol::kRequestFlagAll;
+			packet.poi_page = RemoteCache::GetNextPoiPageToRequest();
 
 			Network::SendPacketToServer(hooks, self, packet);
 			g_lastRequestAtUnixMs = nowUnixMs;
 
 			LOG_DEBUG(
-				"Requested dedicated snapshot via network (%s, request_sequence=%llu)",
+				"Requested dedicated snapshot via network (%s, request_sequence=%llu, poi_page=%u)",
 				reason ? reason : "unknown",
-				static_cast<unsigned long long>(packet.request_sequence));
+				static_cast<unsigned long long>(packet.request_sequence),
+				packet.poi_page);
 			return true;
 		}
 
