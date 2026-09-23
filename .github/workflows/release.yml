@@ -191,6 +191,8 @@ jobs:
         shell: pwsh
         working-directory: plugin/mapview
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $ErrorActionPreference = 'Stop'
           pnpm install --frozen-lockfile
           pnpm run check
           pnpm run build
