@@ -333,6 +333,10 @@ export function useMapViewDataSource() {
         }
     }
 
+    // Restore preferences before the app's catalog watchers can change live
+    // visibility and persist defaults over the user's saved settings.
+    loadPreferences();
+
     watch(
         () => ({
             endpoint: endpoint.value,
@@ -365,7 +369,6 @@ export function useMapViewDataSource() {
     watch([autoRefresh, refreshIntervalMs], updateAutoRefresh);
 
     onMounted(() => {
-        loadPreferences();
         updateAutoRefresh();
         clockTimer = window.setInterval(() => {
             now.value = Date.now();

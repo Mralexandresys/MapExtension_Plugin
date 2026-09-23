@@ -202,9 +202,8 @@ export function useStaticMapData(projection: Ref<MapProjectionConstants>) {
     /**
      * Folds live plugin observations into the static catalog.
      *
-     * A matched catalog point receives the observed state instead of spawning a
-     * second marker; unmatched observations are returned so the caller can keep
-     * rendering them as runtime-only markers.
+     * A matched catalog point receives the observed state and keeps its own
+     * filters. Only unmatched observations need a separate runtime marker.
      */
     function applyDynamicPois(livePois: readonly Poi[]): Set<string> {
         const matched = new Set<string>();
@@ -249,6 +248,18 @@ export function useStaticMapData(projection: Ref<MapProjectionConstants>) {
 
         stateVersion.value += 1;
         return matched;
+    }
+
+    /** Read the latest observation even when the point was selected before it arrived. */
+    function getSelectionState(selection: StaticSelection): StaticElementState {
+        if (selection.kind !== "resource" || selection.index === undefined) {
+            return selection.state;
+        }
+        // The compact state arrays are not reactive; their revision invalidates
+        // open details when applyDynamicPois updates the observed availability.
+        void stateVersion.value;
+        const entry = series.value.find((candidate) => candidate.key === selection.seriesKey);
+        return STATE_CODES[entry?.state[selection.index] ?? 0] ?? "unknown";
     }
 
     /** Nearest catalog point to a world position, used for hover and selection. */
@@ -351,6 +362,7 @@ export function useStaticMapData(projection: Ref<MapProjectionConstants>) {
         resourceLabelIndex,
         ensureLayers,
         applyDynamicPois,
+        getSelectionState,
         findNearest,
     };
 }

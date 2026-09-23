@@ -67,10 +67,9 @@ const LOGISTICS_KEYS: EntityToggleKey[] = [
     "teleporter",
     "player",
 ];
-// `abandonedBase` is deliberately absent: it is now driven by the
-// `abandoned_base` landmark chip, which holds the canonical count.
+// Bases and plants use the shared landmark/category controls, regardless of
+// whether their positions came from the catalog or a runtime observation.
 const RESOURCE_KEYS: EntityToggleKey[] = [
-    "plantResource",
     "ignitium",
     "starTears",
 ];

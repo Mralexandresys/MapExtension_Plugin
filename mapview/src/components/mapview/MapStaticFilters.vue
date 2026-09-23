@@ -98,7 +98,7 @@ const searchHasNoMatch = computed(
             {{ model.ui.staticFilters.unavailable }}
         </p>
 
-        <template v-if="model.available">
+        <template v-if="model.available || model.resourceCategories.length">
             <p v-if="props.developerMode" class="filter-section-help">{{ model.ui.developerModeWarning }}</p>
             <!-- Search and bulk actions stay in reach while the lists scroll. -->
             <div class="static-toolbar">

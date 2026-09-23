@@ -149,9 +149,16 @@ const {
     openShortcuts,
     closeShortcuts,
     dismissViewerUpdate,
-    // Read lazily: `staticSelection` is declared with the catalog data below,
-    // and this only runs on a user interaction.
-} = useMapViewState(mapCanvasRef, () => staticSelection.value !== null);
+} = useMapViewState(mapCanvasRef, () => {
+    // Catalog data is declared below and read only on user interaction.
+    const selection = staticSelection.value;
+    return selection
+        ? worldToMap(
+              { x: selection.x * 10, y: selection.y * 10 },
+              projection.value,
+          )
+        : null;
+});
 
 // ── Annotations ───────────────────────────────────────────────────────────────
 
@@ -187,12 +194,13 @@ function handleAnnotationSelect(sel: UserAnnotationSelection): void {
     }
     if (sel.type === "marker") selectMarker(sel.id);
     else selectZone(sel.id);
-    // clear entity selection when an annotation is selected
     clearSelection();
+    clearStaticSelection();
 }
 
 function handleEntitySelect(key: string): void {
     clearAnnotationSelection();
+    setAnnotationMode("idle");
     selectEntity(key);
 }
 
@@ -213,6 +221,7 @@ function handleAnnotationModeToggle(mode: "marker" | "zone"): void {
 
 function handleCreateMarker(point: { x: number; y: number }): void {
     clearSelection();
+    clearStaticSelection();
     addMarker(point);
 }
 
@@ -240,6 +249,7 @@ async function handleImport(file: File): Promise<void> {
 
 function handleCreateZone(rect: Rect2D): void {
     clearSelection();
+    clearStaticSelection();
     addZone(rect);
 }
 
@@ -247,7 +257,7 @@ function handleCreateZone(rect: Rect2D): void {
 
 const projection = computed(() => resolveMapProjection(cargo.value?.map));
 const staticData = useStaticMapData(projection);
-const staticFilters = useStaticMapFilters(staticData.manifest);
+const staticFilters = useStaticMapFilters(staticData.manifest, harvestResource);
 const staticSelection = ref<StaticSelection | null>(null);
 const matchedLivePoiKeys = ref<Set<string>>(new Set());
 
@@ -263,9 +273,7 @@ function livePlantTypeId(resource: string): string {
     return resourceTypeIdFromLabel(resource, staticData.resourceLabelIndex.value);
 }
 
-// Observed plants answer to the same per-type switches as the catalog, so the
-// ones the export never contained (Prickler, Prism Herb) get a filter of their
-// own instead of hiding behind the single "plant resources" toggle.
+// One set of resource filters controls both catalog and runtime-only plants.
 plantResourceFilter.value = (resource: string) =>
     staticFilters.isLiveResourceEnabled(livePlantTypeId(resource));
 
@@ -292,8 +300,7 @@ watch(
     { immediate: true, deep: true },
 );
 
-// Live observations are folded into the catalog instead of adding a second
-// marker at the same spot.
+// Update states even when hidden, without bypassing a catalog point's filters.
 watch(
     [() => cargo.value?.pois, staticData.series],
     () => {
@@ -321,13 +328,12 @@ const staticLoadedCount = computed(
         staticData.pois.value.length,
 );
 
-// A preset is only meaningful once the manifest tells us which groups exist.
-// Applied on first run (or after the schema bump); afterwards the user's own
-// refinements are what persist.
+// Apply the preset before loading too, so runtime-only plants follow it if the
+// catalog is missing. Once loaded, initialize its groups on first run only.
 watch(
     staticData.manifest,
-    (value) => {
-        if (!value || staticFilters.hasStoredState) return;
+    () => {
+        if (staticFilters.hasStoredState) return;
         staticFilters.applyPreset(preset.value, harvestResource.value);
     },
     { immediate: true },
@@ -417,7 +423,6 @@ function handlePresetChange(next: MapPreset): void {
 function handleHarvestSelect(typeId: string | null): void {
     harvestResource.value = typeId;
     staticFilters.selectSingleResource(typeId);
-    entityVisibility.plantResource = typeId !== null;
 }
 
 const staticFiltersModel = useStaticFiltersModel({
@@ -506,7 +511,7 @@ function staticDetailRows(selection: StaticSelection): DetailRow[] {
         }
         rows.push({
             label: ui.value.selection.state,
-            value: messages.states[selection.state],
+            value: messages.states[staticData.getSelectionState(selection)],
         });
     } else {
         rows.push({
@@ -596,6 +601,7 @@ function describeStatic(selection: StaticSelection): {
 function handleStaticSelect(selection: StaticSelection | null): void {
     clearSelection();
     clearAnnotationSelection();
+    if (selection) setAnnotationMode("idle");
     staticSelection.value = selection;
 }
 
@@ -623,22 +629,8 @@ function setAllStaticFilters(enabled: boolean): void {
 function setResourceFilters(enabled: boolean): void {
     harvestResource.value = null;
     staticFilters.setResources(enabled);
-    entityVisibility.plantResource = enabled;
 }
 
-
-function centerCurrentSelection(): void {
-    const selection = staticSelection.value;
-    if (selection && !selectedEntity.value) {
-        const point = worldToMap(
-            { x: selection.x * 10, y: selection.y * 10 },
-            projection.value,
-        );
-        mapCanvasRef.value?.focusPoint(point.x, point.y);
-        return;
-    }
-    centerSelection();
-}
 
 // ── Panel models ──────────────────────────────────────────────────────────────
 
@@ -841,7 +833,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 :panel="canvasToolbarPanel"
                 @resize="mapToolbarHeight = $event"
                 @reset="resetMapView"
-                @center="centerCurrentSelection"
+                @center="centerSelection"
                 @center-player="centerOnPlayer"
                 @toggle-focus="toggleFocusMode"
                 @toggle-filters="toggleFiltersPanel"
@@ -869,7 +861,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 v-if="selectionPanel.selectedEntityActive"
                 :panel="selectionPanel"
                 @toggle-details="toggleDetailsPanel"
-                @center="centerCurrentSelection"
+                @center="centerSelection"
                 @toggle-focus="toggleFocusMode"
                 @clear-selection="clearAllSelection"
                 @open-shortcuts="openShortcuts"

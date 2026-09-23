@@ -27,7 +27,7 @@ namespace Detail
 		// mapview/src/lib/viewerContract.ts to the same value in the same change.
 		// The viewer shows an update prompt when this value is greater than its own.
 		// Purely additive payload fields do not need a bump.
-		constexpr int kViewerContractVersion = 2;
+		constexpr int kViewerContractVersion = 3;
 
 		constexpr const char* kProjectReleasesBaseUrl =
 			"https://github.com/Mralexandresys/MapExtension_Plugin/releases";
@@ -151,6 +151,7 @@ namespace Detail
 				{"label", poi.DisplayName},
 				{"resource", poi.ResourceName},
 				{"depleted", poi.Depleted},
+				{"state", MapResources::StateName(poi.Depleted, poi.Harvestability)},
 				{"source", poi.Source},
 				{"unique_key", poi.PublicKey},
 				{"world", ToJson(poi.WorldLocation)},

@@ -17,6 +17,7 @@ import type {
     EntityToggleKey,
     FilterTabKey,
     MapCanvasHandle,
+    Point2D,
     ShortcutItem,
     StatusTone,
 } from "../lib/types";
@@ -38,15 +39,13 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * @param hasCatalogSelection Reads whether a static catalog element is
- * selected. That selection lives in the app shell, next to the catalog data,
- * but its details panel is the same one live entities use: without this the
- * `Details` button and the `E` shortcut stayed dead on a catalog element and
- * its extra rows could not be reached at all.
+ * @param getCatalogSelectionPoint Reads the selected catalog element's map
+ * coordinates. Its data lives in the app shell; selection actions are shared
+ * with live entities so buttons and keyboard shortcuts behave alike.
  */
 export function useMapViewState(
     mapCanvasRef: Ref<MapCanvasHandle | null>,
-    hasCatalogSelection: () => boolean = () => false,
+    getCatalogSelectionPoint: () => Point2D | null = () => null,
 ) {
     const dataSource = useMapViewDataSource();
     const {
@@ -98,7 +97,6 @@ export function useMapViewState(
         { key: "teleporter", label: ui.value.entityLabels.teleporter },
         { key: "player", label: ui.value.entityLabels.player },
         { key: "abandonedBase", label: ui.value.entityLabels.abandonedBase },
-        { key: "plantResource", label: ui.value.entityLabels.plantResource },
         { key: "ignitium", label: ui.value.entityLabels.ignitium },
         { key: "starTears", label: ui.value.entityLabels.starTears },
     ]);
@@ -295,7 +293,8 @@ export function useMapViewState(
     }
 
     function centerSelection(): void {
-        mapCanvasRef.value?.focusSelection();
+        const point = selectedEntity.value?.raw.map ?? getCatalogSelectionPoint();
+        if (point) mapCanvasRef.value?.focusPoint(point.x, point.y);
     }
 
     const canCenterOnPlayer = computed(
@@ -315,7 +314,7 @@ export function useMapViewState(
     }
 
     function openPanel(): void {
-        if (!selectedEntity.value && !hasCatalogSelection()) return;
+        if (!selectedEntity.value && !getCatalogSelectionPoint()) return;
         detailsPanelExpanded.value = true;
     }
 
@@ -336,7 +335,7 @@ export function useMapViewState(
     }
 
     function toggleDetailsPanel(): void {
-        if (!selectedEntity.value && !hasCatalogSelection()) return;
+        if (!selectedEntity.value && !getCatalogSelectionPoint()) return;
         detailsPanelExpanded.value = !detailsPanelExpanded.value;
     }
 

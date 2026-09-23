@@ -95,9 +95,9 @@ restaure les reglages live et statiques du prereglage courant et efface la reche
 |---|---|
 | `Logistique` | Cargo Dispatchers, Cargo Receivers, Teleporteurs, Joueurs |
 | `Reperes` | Grottes, Obelisques, Geoscanneurs, Bases abandonnees, Forgotten Engine, Orbital Lander |
-| `Observations en direct` | Ressources vegetales observees, Ignitium, Star Tears |
+| `Observations en direct` | Ignitium, Star Tears |
 | `Gisements pour extracteurs` | Minerais et puretes |
-| `Recolte a la main` | Plantes, minerais et ressources animales |
+| `Recolte a la main` | Plantes (catalogue et observations), minerais et ressources animales |
 
 `Isoler une ressource` est un raccourci de selection unique. Une modification
 manuelle permet ensuite une selection multiple et efface l'indication du raccourci.
@@ -119,12 +119,12 @@ Les quatre prereglages repondent chacun a une question de joueur et pilotent d'u
 
 | Prereglage | Question | Couches actives |
 |---|---|---|
-| `Reseau` (defaut) | Ou suis-je, comment circulent mes ressources ? | Entites live completes + les 241 POI canoniques |
+| `Reseau` (defaut) | Ou suis-je, comment circulent mes ressources ? | Logistique live, sites de rupture et les 241 POI canoniques ; plantes masquees |
 | `Exploration` | Ou construire, quel objectif vaut le deplacement ? | POI canoniques + minerais, reseau cargo masque |
 | `Recolte` | Ou est la ressource que je collecte maintenant ? | Grottes + choix de ressources dans Filtres |
 | `Technique` | Que contient l'export brut ? | Placements, zones, sockets et proxies (mode developpeur) |
 
-Le defaut est volontairement `POI canoniques + donnees live` : les 54 513 points de plantes du catalogue ne sont plus actives sans demande explicite. Le type `unknown_ore` est exclu du catalogue. L'export dedie attribue les 12 anciens sockets non identifies au tungstene, qui compte ainsi 107 gisements.
+Le defaut garde les plantes masquees, catalogue et observations compris : les 54 513 points de plantes du catalogue ne sont pas actives sans demande explicite. Le type `unknown_ore` est exclu du catalogue. L'export dedie attribue les 12 anciens sockets non identifies au tungstene, qui compte ainsi 107 gisements.
 
 ### Zones et elements de generation
 
@@ -207,18 +207,40 @@ tungstene` pour `wolfram`, `Ophidine` pour `serpent_root`, `Pourprier` pour
 `purplant`. Seuls les noms absents des tables, ou errones ("Polufruit"), sont
 surcharges dans `tools/build_map_data.py`.
 
-Les observations live de plantes recues dans `/cargo` sont appariees au point statique du meme type le plus proche dans un rayon de 150 cm. L'etat live est applique au point catalogue sans creer un doublon ; une observation sans correspondance reste un marqueur runtime distinct.
+Les observations live de plantes recues dans `/cargo` sont appariees au point statique du meme type le plus proche dans un rayon de 150 cm. L'etat observe enrichit ce point, meme lorsqu'il est masque, sans creer de second marqueur. Masquer `Plantes`, un type comme `Hydrobulb` ou la couche `Ressources` masque les positions correspondantes quelle que soit leur source. Une observation sans correspondance ajoute une position sous ces memes filtres. La bascule prend effet sans attendre un nouveau snapshot. Dans `Avance`, un point apparie garde la representation du catalogue ; une position uniquement observee utilise `Acteurs et ancres`. Masquer une representation ne recree pas son point via le live.
 
-Ces observations obeissent aux memes interrupteurs par type que le catalogue :
-`Ressources vegetales` reste l'interrupteur global, mais chaque plante possede sa
-propre case. Les plantes que le plugin publie sans que l'export les contienne
+Le catalogue indique un emplacement, pas une disponibilite confirmee. Sans
+observation, le point reste `Etat inconnu`. Une observation du plugin l'indique
+`Disponible` ou `Epuise` au meme emplacement ; la recolte ne supprime pas sa
+position. La carte, l'infobulle sous une souris immobile et le panneau de details
+deja ouvert suivent les nouvelles observations, y compris une repousse observee.
+Cet etat est le dernier constate par le plugin : une zone dechargee n'est pas
+verifiee en continu. Le payload ne permet pas d'attribuer une recolte a un joueur
+precis.
+
+Les preferences sont restaurees avant la synchronisation des filtres du catalogue,
+pour conserver le prereglage, l'endpoint et le rafraichissement automatique a la
+reouverture, y compris quand la couche des POI est masquee.
+
+La categorie `Plantes` est l'unique commande globale, completee par une case par
+type. L'ancien interrupteur live `Ressources vegetales` est supprime pour eviter
+deux commandes contradictoires. Les plantes que le plugin publie sans que l'export les contienne
 (`Prickler`, `Prism Herb`, le gatherable generique `Plant`) apparaissent dans la
-liste des plantes des qu'elles sont observees.
+liste des plantes des qu'elles sont observees. Si le catalogue manque, ces
+controles restent accessibles pour les types observes, sans ignorer les filtres
+memorises. Isoler une ressource garde les autres types masques, y compris ceux
+observes pour la premiere fois apres ce choix.
 
 Cliquer un POI ecrit son nom sur la carte, sous son icone : les 29 bases
 abandonnees se lisent par leur nom (`FRO "Mantis Head"`, `SMB "Purple Haze"`) et
 non par leur silhouette. La description complete (`Future Health Solutions
 Research Outpost`) reste dans le panneau de selection.
+
+Le bouton `Centrer` et le raccourci `C` centrent la selection courante, qu'elle
+soit une entite live ou un element du catalogue. Selectionner ou creer une
+annotation efface la selection live ou statique precedente pour garder un seul
+panneau de selection. Selectionner une entite live ou un element du catalogue
+quitte le mode de creation d'annotation.
 
 ### Regeneration
 
@@ -252,21 +274,27 @@ d'interet :
   son acteur runtime est effectivement charge pres d'un joueur ;
 - quand la timeline indique Arcadia stable (a partir de 690 secondes dans le cycle,
   avec `PreWave` en secours), le plugin expose un site Ignitium valide et non recolte
-  comme Star Tears. Une observation reelle de Star Tears au meme site est prioritaire ;
+  comme Star Tears. Cette projection est recalculee a chaque capture depuis les
+  observations et n'est pas conservee comme une observation. Une observation reelle
+  de Star Tears au meme site, meme epuisee, remplace la projection ;
   pendant la stabilisation, les deux types peuvent coexister. Le viewer applique aussi
   cette projection depuis sa phase affichee pour neutraliser un payload `/cargo` en retard ;
+- le champ `state` distingue `available`, `unavailable` (non récoltable pour le moment),
+  `unknown` et `depleted`. L'infobulle et les détails sélectionnés suivent les mises à jour,
+  même sans déplacer la souris. Une projection `rupture_phase.*` disponible porte la
+  mention « Disponible (estimation du cycle) » ;
 - une ressource `available` utilise un remplissage plein. Pour rester compatible avec
   les anciens payloads, une ressource recue avec `depleted: true` reste attenuee,
   avec un anneau pointille et un centre presque vide ;
 - le survol ou le focus clavier affiche le type, le nom, la ressource et l'etat. Un POI
   peut etre selectionne a la souris ou avec `Entree`/`Espace`.
 
-Le volet `Filtres` propose des boutons de visibilite separes pour les bases abandonnees,
-les ressources vegetales, Ignitium et Star Tears. Chaque prereglage definit son propre
-jeu de familles visibles : `Reseau` les affiche toutes, `Exploration` masque le reseau
-cargo, `Recolte` se concentre sur les ressources et `Technique` ne garde que le joueur.
+Le volet `Filtres` controle les bases abandonnees par les reperes, les plantes par
+la categorie `Plantes`, et Ignitium et Star Tears par leurs boutons dedies. Chaque
+prereglage definit son propre jeu de familles visibles : `Reseau` garde les plantes
+masquees, `Exploration` masque le reseau cargo, `Recolte` se concentre sur les ressources et `Technique` ne garde que le joueur.
 Les boutons restent utilisables pour s'ecarter du prereglage, et cet ecart est alors
-compte dans l'en-tete du volet. `available` et `depleted` restent des etats visuels,
+compte dans l'en-tete du volet. `available`, `unavailable`, `unknown` et `depleted` restent des etats visuels,
 pas des filtres separes ; les acteurs de ressource epuises peuvent rester publies avec leur derniere
 position connue. Quand Ignitium et Star Tears partagent une position pendant la fenetre de fin de
 cycle, Star Tears est rendue au-dessus sans marquer artificiellement l'une des deux ressources comme
@@ -320,11 +348,11 @@ fichiers de fixtures deposes dans `local-test/data/` : `health.json`, `cargo.jso
 `rupture-cycle.json` (ou `rupture_cycle.json`). Si le fichier existe et n'est pas vide,
 il est renvoye tel quel ; sinon le mock repond avec son payload interne par defaut.
 
-Le payload `/health` par defaut declare `"viewer_contract_version": 2`, soit la meme
+Le payload `/health` par defaut declare `"viewer_contract_version": 3`, soit la meme
 valeur que `VIEWER_CONTRACT_VERSION` : par defaut, la pop-up ne s'affiche donc pas.
 
 Pour la declencher, creer `local-test/data/health.json` avec une valeur strictement
-superieure a `VIEWER_CONTRACT_VERSION` (3 pour le viewer actuel a 2) :
+superieure a `VIEWER_CONTRACT_VERSION` (4 pour le viewer actuel a 3) :
 
 ```json
 {
@@ -336,7 +364,7 @@ superieure a `VIEWER_CONTRACT_VERSION` (3 pour le viewer actuel a 2) :
   "teleporter_count": 0,
   "player_count": 0,
   "plugin_version": "ML-v1.16.0-v0.5",
-  "viewer_contract_version": 3,
+  "viewer_contract_version": 4,
   "viewer_update": {
     "download_url": "https://example.invalid/viewer.zip",
     "release_url": "https://example.invalid/release",

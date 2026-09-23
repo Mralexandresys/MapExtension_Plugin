@@ -37,7 +37,7 @@ ENDPOINT_FILES = {
 # Must match VIEWER_CONTRACT_VERSION in mapview/src/lib/viewerContract.ts so the
 # default mock payload does NOT trigger the viewer update dialog. To test the
 # dialog locally, drop a local-test/data/health.json with a higher value.
-MOCK_VIEWER_CONTRACT_VERSION = 2
+MOCK_VIEWER_CONTRACT_VERSION = 3
 MOCK_PLUGIN_VERSION = "ML-v1.16.0-v0.5"
 MOCK_RELEASE_BASE = (
     "https://github.com/Mralexandresys/MapExtension_Plugin/releases"

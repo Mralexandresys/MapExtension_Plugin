@@ -38,11 +38,15 @@ It consumes both cargo/map data and the rupture cycle endpoint to render the tim
 
 The viewer combines live plugin observations with a pre-generated static world catalog. Major POIs are rendered as selectable pins, while the larger resource, building, and zone layers use a canvas renderer. Searchable filters control layers, resource categories and types, representation sources, buildings, zones, and technical elements; filter choices persist in `localStorage`.
 
+The catalog supplies plant positions; live observations update the same points with their last observed availability. A point without an observation has an unknown state. Observed plants are shown as available or depleted, and their positions remain on the map after harvesting. The map, tooltip and open details panel follow each new observation, including renewed availability. These are last known states, not continuous checks of unloaded areas. The Plants category and per-resource filters apply to both catalogued and observed positions. The Network preset leaves plants hidden until requested.
+
 The frontend curates class-based placements in the `building` layer: only Unreal actor types whose names contain `KeyCard`, `Coralion_Egg`, or `Spawner` (case-insensitive) are rendered. This rule does not change the `zone` or `technical` layers.
 
 Abandoned bases use their own map icon. Plant resources use a stable palette color derived from the resource name, while Ignitium and Star Tears have fixed resource-specific colors. Depleted resources remain visible as faded outlined markers. Separate filters control abandoned bases, plant resources, Ignitium, and Star Tears.
 
-Ignitium and Star Tears filters use positions validated from runtime actors in areas loaded near players. The broad PCG inclusion/exclusion volumes are not displayed as resource locations. While the published timeline is in Arcadia stable (from 690 seconds in the 3240-second cycle, with `PreWave` as a fallback when elapsed time is unavailable), a validated, unharvested Ignitium site is exposed as Star Tears instead of Ignitium; an actual Star Tears actor observation is preferred at the same site. During the stabilizing transition, both resources can be displayed in the late-cycle overlap, with Star Tears drawn above the underlying Ignitium marker.
+Ignitium and Star Tears filters use positions validated from runtime actors in areas loaded near players. The broad PCG inclusion/exclusion volumes are not displayed as resource locations. While the published timeline is in Arcadia stable (from 690 seconds in the 3240-second cycle, with `PreWave` as a fallback when elapsed time is unavailable), a validated, unharvested Ignitium site is exposed as Star Tears instead of Ignitium. This projection is recalculated from observations on every capture; an actual Star Tears observation at the same site replaces it, including when depleted, so an old projection cannot leave an available duplicate. During the stabilizing transition, both resources can be displayed in the late-cycle overlap, with Star Tears drawn above the underlying Ignitium marker.
+
+Ignitium and Star Tears distinguish **available**, **not harvestable at the moment**, **depleted**, and **unknown**. Ignitium uses the game's mining query; observed Star Tears use the loaded interaction rules for their class and cycle phase. Missing rules leave the state unknown. An intact but temporarily non-harvestable Ignitium site can still produce the projected Star Tears marker. That marker is labelled **Available (estimated from cycle)**; an actual Star Tears observation takes priority. Unloading an area is not evidence of harvesting. Replicated depletion positions only update a known resource when the spatial match is unique, so overlapping resources are not both marked depleted. A fresh actor/subsystem observation takes priority over these untyped position records.
 
 The rupture bar shows the phase and remaining time. Click it or press `Enter`/`Space` to open details; `Escape`, Close or an outside click closes them. On mobile, the bar stays visible without horizontal scrolling, details stay within the viewport, and the map controls have reserved space below the filters. The `Player` control or `P` shortcut centers on the `self` player, falling back to the first player when that flag is absent.
 
@@ -52,7 +56,7 @@ The timeline uses a calibrated 3240-second cycle (30/60/600/2550), animated betw
 
 The bundled static world catalog provides the complete pre-generated map data for plants and POIs. It is loaded directly by the viewer, so the plugin no longer drives a full World Partition scan, moves the player, pauses rupture activity, or writes a per-save POI cache.
 
-The live snapshot can still capture supported `ACrGatherableBaseActor` and `ACrOreActor` instances in already loaded areas to reflect the active world. Those observations stay in memory only for the current world; live actor state and the game's replicated depleted-location data retain the last known positions of depleted resources. Ignitium and Star Tears observations are discarded when the replicated global PCG seed changes so points from the previous rupture generation do not leak into the new one.
+The live snapshot can still capture supported `ACrGatherableBaseActor` and `ACrOreActor` instances in already loaded areas to reflect the active world. Those observations stay in memory only for the current world; live actor state and the game's replicated depleted-location data retain the last known positions of depleted resources. Ignitium and Star Tears observations are discarded when the replicated global PCG seed changes. In solo play, where that replica is absent, entering Heat/Moving starts a new local generation. Previously sampled actors still awaiting removal are excluded from the new generation. A forced solo seed change without a phase transition is not detected by this fallback.
 
 Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart. Explicit gatherable actor classes additionally cover Gold Fruit, Thornfruit, Sikkim Rhubarb, Nootka Lupine, and the game's generic `Plant_h` gatherable. Actors whose `InteractionRewardResource` is `I_StarTears_C` publish Star Tears; `ACrOreActor` instances whose `Resource` is `I_FireWaveOre_C` publish Ignitium.
 
@@ -75,6 +79,7 @@ Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpen
       "label": "Hydrobulb",
       "resource": "Hydrobulb",
       "depleted": false,
+      "state": "available",
       "source": "actor_observation.gatherable",
       "unique_key": "example-plant-key",
       "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
@@ -87,12 +92,13 @@ Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpen
 - `kind` is `abandoned_base`, `plant_resource`, `ignitium`, or `star_tears`.
 - `label` is the display label; `resource` is the detected resource name and can be empty for an abandoned base.
 - `depleted` is `true` for depleted resource actors observed during the active world. Their last known positions remain published so the viewer can render them as faded outlined markers.
+- `state` is `available`, `unavailable`, `unknown`, or `depleted`; it distinguishes temporary non-harvestability from depletion. Viewer contract 3 adds these semantics; replace the viewer along with the plugin. Older payloads without `state` fall back to `depleted`.
 - `source` identifies the capture path, `unique_key` identifies the POI to the viewer, `world` contains Unreal `x`/`y`/`z` coordinates, and `map` contains projected `x`/`y` coordinates.
 - `counts.pois` is the total POI count; `counts.abandoned_bases`, `counts.plant_resources`, `counts.ignitium`, and `counts.star_tears` contain the per-kind totals.
 
 ## Dedicated-server sync compatibility
 
-Dedicated-server snapshots use sync protocol v5, which carries POIs in pages of up to 64 entries per request, associates every page with a stable content revision, flags each client's own player marker, and validates snapshot IDs, generations, revisions, item counts, chunk counts, totals, and page layout before publishing a remote snapshot. Pages from different POI revisions are never merged. Protocol versions must match exactly: a v5 client or server ignores packets from a different protocol version rather than attempting a downgrade.
+Dedicated-server snapshots use sync protocol v6, which carries POIs in pages of up to 64 entries per request, associates every page with a stable content revision, flags each client's own player marker, and validates snapshot IDs, generations, revisions, item counts, chunk counts, totals, and page layout before publishing a remote snapshot. Pages from different POI revisions are never merged. Protocol versions must match exactly: a v6 client or server ignores packets from a different protocol version rather than attempting a downgrade.
 
 **Update the client and dedicated-server builds together.** The modloader auto-updater replaces only the client DLL; the dedicated-server DLL must be replaced manually during the same update. Do not leave the two sides on different releases.
 
@@ -113,7 +119,7 @@ Copy the `Plugins/` content into `StarRupture/Binaries/Win64/Plugins/`, then kee
 Two limits are worth knowing:
 
 - The auto-updater replaces the DLL only. `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` are never touched, since they live outside the game folder. The viewer detects incompatible payload contracts: when the plugin reports a contract newer than the one the local viewer was built with, a dialog offers a direct download of the matching `MapExtension_Plugin-<tag>-viewer.zip` asset, along with links to the GitHub release and the mod page. Backward-compatible viewer improvements may not trigger that dialog, so install the matching viewer archive manually to receive new UI features. Replace `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` together, then reload the page.
-- The server build is not covered by the sidecar. Sync protocol v5 requires matching client and server builds, so update both DLLs together and replace the dedicated-server DLL by hand.
+- The server build is not covered by the sidecar. Sync protocol v6 requires matching client and server builds, so update both DLLs together and replace the dedicated-server DLL by hand.
 
 Automatic updates can be disabled modloader-wide with `[AutoUpdate] Enabled=0` in `modloader.ini`.
 
@@ -160,6 +166,7 @@ VerboseLifecycleLogs=0
 LogRuntimePlanOnce=0
 LogCargoSnapshots=0
 LogRuptureCycleEvents=0
+LogResourceObservations=0
 LogActorScanFallback=0
 LogRefreshTimings=0
 
@@ -175,6 +182,7 @@ RefreshIntervalMs=2000
 - `LogRuntimePlanOnce`: logs the runtime strategy once (`1` or `0`)
 - `LogCargoSnapshots`: logs cargo snapshots (`1` or `0`)
 - `LogRuptureCycleEvents`: logs rupture cycle state changes and rupture-related world/server events (`1` or `0`)
+- `LogResourceObservations`: logs observed resource state changes, local generation resets and changes in the number of ambiguous depletion records (`1` or `0`). Enable with `LogRuptureCycleEvents` on the solo/host/server authority to compare a harvest and a full cycle. These are observation times, not exact harvest times or player attribution; a short-lived actor may disappear between captures. Native harvest hooks still require executable-specific validation.
 - `LogActorScanFallback`: logs actor scan fallback (`1` or `0`)
 - `LogRefreshTimings`: logs per-phase refresh timings (`1` or `0`)
 - `Port`: sets the local HTTP port used by the plugin

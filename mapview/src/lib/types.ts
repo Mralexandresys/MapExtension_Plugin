@@ -85,11 +85,13 @@ export interface Player extends NamedMapEntity {
 }
 
 export type PoiKind = "abandoned_base" | "plant_resource" | "ignitium" | "star_tears";
+export type PoiState = "available" | "unavailable" | "unknown" | "depleted";
 
 export interface Poi extends NamedMapEntity {
     kind: PoiKind;
     resource?: string;
     depleted?: boolean;
+    state?: PoiState;
 }
 
 export interface CargoCounts {

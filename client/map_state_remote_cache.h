@@ -26,7 +26,7 @@ namespace MapExtensionClient
 		bool HasCargoSnapshot();
 		int64_t GetLastReceivedAtUnixMs();
 
-		// Protocol v5 POI pagination helpers for the sync client.
+		// Protocol v6 POI pagination helpers for the sync client.
 		uint16_t GetNextPoiPageToRequest();
 		bool HasPendingPoiPages();
 	}

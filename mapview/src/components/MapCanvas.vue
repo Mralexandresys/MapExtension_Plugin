@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
+import { poiState, poiStateLabel as resourceStateLabel } from '../lib/poiState';
 import teleporterSvg from '../assets/teleporter.svg?raw';
 import { getMessages } from '../lang';
 import type { Language } from '../lang';
@@ -209,11 +210,38 @@ const unlockedUserZones = computed(() => (props.userZones ?? []).filter((zone) =
 
 const {
   tooltip,
-  hideTooltip,
-  showTooltip,
-  showTooltipFromElement,
+  hideTooltip: hideMapTooltip,
+  showTooltip: showMapTooltip,
+  showTooltipFromElement: showMapTooltipFromElement,
   moveTooltip,
 } = useMapTooltip(mapShell);
+
+let poiTooltipAnchor:
+  | { key: string; event: MouseEvent }
+  | { key: string; element: Element }
+  | null = null;
+function hideTooltip(): void {
+  poiTooltipAnchor = null;
+  hideMapTooltip();
+}
+function showTooltip(title: string, lines: string[], event: MouseEvent): void {
+  poiTooltipAnchor = null;
+  showMapTooltip(title, lines, event);
+}
+function showTooltipFromElement(title: string, lines: string[], element: Element): void {
+  poiTooltipAnchor = null;
+  showMapTooltipFromElement(title, lines, element);
+}
+watch([() => props.pois, () => props.lang], () => {
+  if (!poiTooltipAnchor) return;
+  const poi = props.pois.find((candidate) => candidate.unique_key === poiTooltipAnchor?.key);
+  if (!poi) { hideTooltip(); return; }
+  if ('event' in poiTooltipAnchor) {
+    showMapTooltip(poiLabel(poi), poiTooltipLines(poi), poiTooltipAnchor.event);
+  } else {
+    showMapTooltipFromElement(poiLabel(poi), poiTooltipLines(poi), poiTooltipAnchor.element);
+  }
+});
 
 const panZoom = useMapPanZoom(mapShell, viewBoxWidth, viewBoxHeight, {
   x: imageX,
@@ -420,9 +448,7 @@ function poiLabel(poi: Poi): string {
 }
 
 function poiStateLabel(poi: Poi): string {
-  return poi.depleted === true
-    ? ui.value.map.depletedLabel
-    : ui.value.map.availableLabel;
+  return resourceStateLabel(poi, ui.value.map);
 }
 
 function poiTooltipLines(poi: Poi): string[] {
@@ -526,6 +552,7 @@ function handlePoiFocus(poi: Poi, event: FocusEvent): void {
 
   emit('hover', poi.unique_key);
   showTooltipFromElement(poiLabel(poi), poiTooltipLines(poi), target);
+  poiTooltipAnchor = { key: poi.unique_key, element: target };
 }
 
 function handleCargoBlur(): void {
@@ -560,6 +587,7 @@ function showPlayerTooltip(player: Player, event: MouseEvent): void {
 function showPoiTooltip(poi: Poi, event: MouseEvent): void {
   emit('hover', poi.unique_key);
   showTooltip(poiLabel(poi), poiTooltipLines(poi), event);
+  poiTooltipAnchor = { key: poi.unique_key, event };
 }
 
 function handlePoiBlur(): void {
@@ -813,6 +841,15 @@ function updateStaticHover(event: MouseEvent): void {
     }
   });
 }
+
+// Availability can change while the pointer stays on the same catalog point.
+watch([() => props.staticStateVersion, () => props.lang], () => {
+  if (!staticHover.value || !staticPickEvent) return;
+  const description = props.staticDescribe?.(staticHover.value);
+  if (description) {
+    showTooltip(description.title, description.lines, staticPickEvent);
+  }
+});
 
 function staticPoiLabel(poi: StaticMapPoiView): string {
   return props.lang === 'fr' ? poi.nameFr || poi.nameEn : poi.nameEn || poi.nameFr;
@@ -1119,8 +1156,7 @@ defineExpose({
               {
                 active: selectedKey === poi.unique_key,
                 dimmed: isDimmed(poi.unique_key),
-                depleted: poi.depleted === true,
-                available: poi.depleted !== true,
+                [poiState(poi)]: true,
               },
             ]"
             :style="poi.kind !== 'abandoned_base' ? poiColorStyle(poi) : undefined"
@@ -1545,6 +1581,23 @@ defineExpose({
     fill: var(--poi-color);
     stroke: #f7fbff;
     stroke-width: 1.2;
+}
+
+:deep(.map-marker.poi:not(.abandoned_base).unavailable .poi-resource-ring) {
+    stroke-dasharray: 5 2;
+    fill-opacity: 0.06;
+}
+
+:deep(.map-marker.poi:not(.abandoned_base).unavailable .poi-resource-core) {
+    fill-opacity: 0.4;
+}
+
+:deep(.map-marker.poi:not(.abandoned_base).unknown .poi-resource-ring) {
+    stroke-dasharray: 1 3;
+}
+
+:deep(.map-marker.poi:not(.abandoned_base).unknown .poi-resource-core) {
+    fill-opacity: 0;
 }
 
 :deep(.map-marker.poi:not(.abandoned_base).depleted .poi-resource-ring) {

@@ -2,6 +2,7 @@
 
 #include "Basic.hpp"
 #include "CoreUObject_structs.hpp"
+#include "shared/resource_observation.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -116,6 +117,7 @@ namespace Detail
 	{
 		PoiKind Kind = PoiKind::AbandonedBase;
 		bool Depleted = false;
+		MapResources::Harvestability Harvestability = MapResources::Harvestability::Available;
 		SDK::FVector WorldLocation{};
 		SDK::FVector2f MapLocation{};
 		std::string DisplayName;

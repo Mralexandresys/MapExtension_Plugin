@@ -73,8 +73,8 @@ function layers(on: readonly StaticLayerKey[]): Record<StaticLayerKey, boolean> 
 }
 
 export const PRESET_DEFINITIONS: Record<MapPreset, PresetDefinition> = {
-    // Default view: every live entity the plugin publishes, plus the 241
-    // canonical POI for orientation. No static resources at all.
+    // Default view: logistics, rupture sites and the canonical POI. Plants stay
+    // hidden until requested, regardless of whether they were observed live.
     network: {
         entities: entities([
             "sender",
@@ -82,7 +82,6 @@ export const PRESET_DEFINITIONS: Record<MapPreset, PresetDefinition> = {
             "teleporter",
             "player",
             "abandonedBase",
-            "plantResource",
             "ignitium",
             "starTears",
         ]),

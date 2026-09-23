@@ -1,5 +1,6 @@
 import { computed, type ComputedRef, type Ref } from "vue";
 
+import { poiState, poiStateLabel } from "../lib/poiState";
 import { formatRelativeAge, formatWorld } from "../lib/formatters";
 import type { Messages } from "../lang";
 import {
@@ -52,9 +53,8 @@ interface UseMapViewEntitiesOptions {
     ruptureCurrentPhaseKey: ComputedRef<RupturePhaseKey>;
     ruptureHasLiveData: ComputedRef<boolean>;
     /**
-     * Per-resource switch for observed plants, wired by the app to the catalog
-     * filters so Prickler and Prism Herb — live-only, absent from the export —
-     * are filtered from the same list as the plants the catalog knows.
+     * Shared resource filters for observed plants, including plants absent from
+     * the catalog. These replace the legacy live-only visibility switch.
      */
     plantResourceFilter: Ref<((resource: string) => boolean) | null>;
 }
@@ -121,7 +121,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         const siteRadiusSquared = 300 * 300;
         return pois.flatMap((poi): Poi[] => {
             if (poi.kind !== "ignitium") return [poi];
-            if (poi.depleted) return [];
+            if (poiState(poi) === "depleted") return [];
 
             const hasObservedStarTears = starTears.some((starTear) => {
                 const deltaX = starTear.world.x - poi.world.x;
@@ -138,6 +138,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
                     label: ui.value.map.starTearsLabel,
                     resource: "Star Tears",
                     source: "rupture_phase.ignitium_to_star_tears",
+                    state: "available",
                 },
             ];
         });
@@ -224,9 +225,10 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             case "abandoned_base":
                 return entityVisibility.abandonedBase;
             case "plant_resource": {
-                if (!entityVisibility.plantResource) return false;
                 const filter = plantResourceFilter.value;
-                return filter ? filter(poi.resource ?? "") : true;
+                return filter
+                    ? filter(poi.resource ?? "")
+                    : entityVisibility.plantResource;
             }
             case "ignitium":
                 return entityVisibility.ignitium;
@@ -397,7 +399,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
     });
 
     function poiRenderPriority(poi: Poi): number {
-        const availability = poi.depleted === true ? 0 : 10;
+        const availability = poiState(poi) === "available" ? 10 : 0;
         switch (poi.kind) {
             case "ignitium":
                 return availability + 1;
@@ -789,9 +791,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
 
             rows.push({
                 label: ui.value.selection.state,
-                value: selectedPoi.value.depleted
-                    ? ui.value.map.depletedLabel
-                    : ui.value.map.availableLabel,
+                value: poiStateLabel(selectedPoi.value, ui.value.map),
             });
 
             return [...rows, ...worldPositionRows(selectedPoi.value)];

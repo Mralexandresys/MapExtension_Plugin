@@ -100,7 +100,10 @@ function mergeRecord(
     }
 }
 
-export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
+export function useStaticMapFilters(
+    manifest: Ref<StaticMapManifest | null>,
+    isolatedResource: Ref<string | null>,
+) {
     const state = reactive<StaticFilterState>(createDefaultState());
     const search = ref("");
     /**
@@ -122,8 +125,8 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         mergeRecord(state.placementGroups, stored.placementGroups);
     }
 
-    // Entries missing from storage default to visible, so a catalog update that
-    // adds a resource type or POI group shows up without resetting preferences.
+    // New types follow the current isolation choice, or default to enabled.
+    // The layer/category switches still decide whether those points are shown.
     watch(
         manifest,
         (value) => {
@@ -131,7 +134,9 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
             for (const [typeId, entry] of Object.entries(value.resource_types)) {
                 if (state.resourceTypes[typeId] === undefined) {
                     state.resourceTypes[typeId] =
-                        !RESOURCE_TYPES_HIDDEN_BY_DEFAULT.includes(typeId);
+                        !RESOURCE_TYPES_HIDDEN_BY_DEFAULT.includes(typeId) &&
+                        (isolatedResource.value === null ||
+                            isolatedResource.value === typeId);
                 }
                 if (state.resourceCategories[entry.category] === undefined) {
                     state.resourceCategories[entry.category] = true;
@@ -176,6 +181,13 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
 
     function isLayerEnabled(layer: StaticLayerKey): boolean {
         return state.layers[layer] === true;
+    }
+
+    function isResourceCategoryEnabled(category: string): boolean {
+        return (
+            isLayerEnabled("resource") &&
+            state.resourceCategories[category] !== false
+        );
     }
 
     function isResourceTypeEnabled(typeId: string, category: string): boolean {
@@ -233,8 +245,8 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
     }
 
     /**
-     * Registers the resource types currently observed live. Unknown ids default
-     * to visible, exactly like a catalog type appearing after an update.
+     * Registers observed types without enabling a newly seen plant when the
+     * user has isolated another resource.
      */
     function syncLiveResourceTypes(entries: Record<string, LiveResourceType>): void {
         for (const key of Object.keys(liveResourceTypes)) {
@@ -243,17 +255,19 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         for (const [key, value] of Object.entries(entries)) {
             liveResourceTypes[key] = value;
             if (state.resourceTypes[key] === undefined) {
-                state.resourceTypes[key] = true;
+                state.resourceTypes[key] =
+                    isolatedResource.value === null || isolatedResource.value === key;
             }
         }
     }
 
-    /**
-     * Live observations are drawn by the entity layer, so they answer to their
-     * resource type alone -- not to the catalog `resource` layer switch.
-     */
+    /** Unmatched live plants share resource filters and use the actor representation. */
     function isLiveResourceEnabled(typeId: string): boolean {
-        return !typeId || state.resourceTypes[typeId] !== false;
+        return (
+            isResourceCategoryEnabled("plant") &&
+            state.resourceTypes[typeId] !== false &&
+            state.resourceKinds.actor !== false
+        );
     }
 
     function resolveGroupSelection(
@@ -293,7 +307,11 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
             ),
         );
 
-        const categories = new Set<string>();
+        // Plants remain controllable even when the catalog cannot be loaded.
+        const categories = new Set<string>([
+            "plant",
+            ...Object.keys(state.resourceCategories),
+        ]);
         for (const entry of Object.values(catalog?.resource_types ?? {})) {
             categories.add(entry.category);
         }
@@ -329,6 +347,9 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
 
         for (const kind of STATIC_RESOURCE_KINDS) {
             state.resourceKinds[kind] = true;
+        }
+        if (definition.singleResource && harvestResource === null) {
+            state.layers.resource = false;
         }
     }
 
@@ -465,6 +486,7 @@ export function useStaticMapFilters(manifest: Ref<StaticMapManifest | null>) {
         enabledKinds,
         activeLayerCount,
         isLayerEnabled,
+        isResourceCategoryEnabled,
         isSeriesVisible,
         isOrePurityVisible,
         resourceExtractor,
@@ -600,7 +622,7 @@ export function useStaticFiltersModel(options: {
                             category as keyof typeof messages.categories
                         ] ?? category,
                     count: types.reduce((total, type) => total + type.count, 0),
-                    enabled: filters.isLayerEnabled("resource") && filters.state.resourceCategories[category] !== false,
+                    enabled: filters.isResourceCategoryEnabled(category),
                     types,
                 };
             })

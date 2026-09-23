@@ -18,11 +18,12 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]Show [b]requested items and amounts[/b] in cargo connections, without measuring actual throughput[/*]
 [*]Show [b]teleporter positions[/b][/*]
 [*]Show [b]player positions[/b][/*]
-[*]Show [b]abandoned bases[/b] and available Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart plants[/*]
+[*]Show [b]abandoned bases[/b] and observed plants, including Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Gold Fruit, Thornfruit, Sikkim Rhubarb, and Nootka Lupine[/*]
 [*]Browse a pre-generated [b]world catalog[/b] of major POIs, plants, minerals, animal resources, buildings, zones, and optional technical elements with searchable persistent filters[/*]
-[*]Show [b]Ignitium and Star Tears[/b] as exact live markers observed near players[/*]
+[*]Distinguish available, temporarily non-harvestable, depleted and unknown resources. Cycle-projected Star Tears are labelled as an estimate; direct observations take priority[/*]
+[*]Show [b]Ignitium and Star Tears[/b] at sites observed near players; during Arcadia stable, an unharvested Ignitium site can be shown as Star Tears based on the cycle timeline[/*]
 [*]Keep live observed plant markers while the current world is active[/*]
-[*]Remove depleted or permanently gathered plants from the map[/*]
+[*]Keep the last known positions of observed depleted plants with a distinct depleted state[/*]
 [*]Show a [b]rupture-cycle timeline[/b] in detailed or compact mode[/*]
 [*]Filter the map to show [b]only your personal markers and zones[/b][/*]
 [*]Center the map on the player with the [b]Player[/b] control or the [b]P[/b] shortcut[/*]
@@ -35,15 +36,17 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [list]
 [*]Added a compact static world catalog with major POIs, resources, buildings, zones, searchable filters, and canvas rendering for large layers[/*]
 [*]Removed the obsolete in-game full-map plant scan and per-save disk cache; packaged map-data now provides the complete catalog[/*]
-[*]Harvested plants are now removed reliably: depleted-location matching tolerates small coordinate differences instead of requiring an exact match[/*]
-[*]Plant POIs are now limited to the eight supported edible plant resources and only available plants are published[/*]
+[*]Depleted-location matching tolerates small coordinate differences so harvested plants keep their last known positions with the depleted state[/*]
+[*]Plant detection combines reward classes and explicit gatherable actor classes, covering twelve named plant resources and the game's generic Plant gatherable[/*]
 [*]Observed plants accumulate across streamed areas instead of disappearing when the player moves outside the current loading radius[/*]
-[*]Gathered plants are removed using live actor state and the game's replicated depleted-location data[/*]
+[*]Live observations update existing catalog plant positions as available or depleted; unobserved positions keep an unknown state. The map, tooltip and open details follow new observations, including availability after regrowth[/*]
+[*]One Plants category and per-resource filters control both catalog and observed positions; live updates enrich their state without bringing hidden points back[/*]
+[*]Cycle-based Star Tears estimates are recalculated from observations, so a confirmed harvested site does not keep an available duplicate[/*]
 [*]Plant-resource colors are assigned consistently from the resource name, so they stay stable between refreshes[/*]
 [*]Added separate abandoned-base and plant-resource filters[/*]
 [*]Compact Rupture bar with phase and time remaining; open details with a click or Enter/Space. Mobile controls and details remain accessible[/*]
 [*]Added a filter that leaves only personal markers and zones, plus player centering from the Player control or the P shortcut[/*]
-[*][b]Dedicated-server sync now uses protocol v5 so pages from different POI revisions cannot be mixed. Update the client and dedicated-server builds together; mixed protocol versions ignore each other's packets.[/b][/*]
+[*][b]Dedicated-server sync now uses protocol v6 to carry resource availability states and keep pages from different POI revisions separate. Update the client and dedicated-server builds together; mixed protocol versions ignore each other's packets.[/b][/*]
 [*]The Mod Loader still updates only the plugin DLL. Replace MapExtensionViewer.html, map-tiles, and map-data manually to receive viewer changes[/*]
 [/list]
 
@@ -101,7 +104,7 @@ This is [b]not[/b] an online service and [b]not[/b] a separate game client. It i
 [*]Which items are travelling through those links[/*]
 [*]Where teleporters are placed[/*]
 [*]Where players are located[/*]
-[*]Where abandoned bases and observed available plants are located[/*]
+[*]Where abandoned bases and observed plants are located, including the last known positions of depleted plants[/*]
 [*]Consistent colors for Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart[/*]
 [*]The current rupture-cycle timeline in detailed or compact mode[/*]
 [/list]
@@ -123,7 +126,7 @@ The plugin works in both solo and multiplayer, but rupture data is not sourced t
 
 The map viewer runs on the client. In dedicated-server play, the client plugin communicates with the server plugin, and the server plugin sends map, POI, and rupture updates back to the client plugin.
 
-[b]Important:[/b] dedicated-server synchronization uses protocol v5 and requires matching protocol versions. Update the client and dedicated-server builds together; a mixed-version pair ignores incompatible packets and cannot synchronize a remote snapshot.
+[b]Important:[/b] dedicated-server synchronization uses protocol v6 and requires matching protocol versions. Update the client and dedicated-server builds together; a mixed-version pair ignores incompatible packets and cannot synchronize a remote snapshot.
 
 [line]
 
@@ -176,7 +179,7 @@ When that happens:
 Always keep [b]map-tiles[/b] and [b]map-data[/b] next to [b]MapExtensionViewer.html[/b], otherwise the map background or world catalog will not load.
 
 [list]
-[*]On a dedicated server, the server build is [b]not[/b] updated automatically: protocol v5 requires you to replace the server [b]MapExtension_Plugin.dll[/b] by hand and update it together with the client build[/*]
+[*]On a dedicated server, the server build is [b]not[/b] updated automatically: protocol v6 requires you to replace the server [b]MapExtension_Plugin.dll[/b] by hand and update it together with the client build[/*]
 [*]Automatic updates can be turned off in the Mod Loader by setting [code]Enabled=0[/code] under the [code][AutoUpdate][/code] section of [b]modloader.ini[/b][/*]
 [/list]
 

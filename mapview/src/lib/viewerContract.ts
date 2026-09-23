@@ -12,4 +12,4 @@
  * Purely additive, backward-compatible fields must NOT bump it, otherwise every
  * user gets an update prompt for nothing.
  */
-export const VIEWER_CONTRACT_VERSION = 2;
+export const VIEWER_CONTRACT_VERSION = 3;

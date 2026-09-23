@@ -44,6 +44,13 @@ namespace MapExtensionPluginConfig
 		},
 		{
 			"Diagnostics",
+			"LogResourceObservations",
+			ConfigValueType::Boolean,
+			"0",
+			"Log resource state changes, generation resets and ambiguous depletion matches for in-game validation"
+		},
+		{
+			"Diagnostics",
 			"LogActorScanFallback",
 			ConfigValueType::Boolean,
 			"0",
@@ -118,6 +125,11 @@ namespace MapExtensionPluginConfig
 		static bool LogActorScanFallback()
 		{
 			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogActorScanFallback", false) : false;
+		}
+
+		static bool LogResourceObservations()
+		{
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogResourceObservations", false) : false;
 		}
 
 		static bool LogRefreshTimings()

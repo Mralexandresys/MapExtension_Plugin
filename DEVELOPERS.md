@@ -165,6 +165,10 @@ The files contain compact JSON wrapped as `SRMAPDATA(<payload>);`. This JSONP wr
 
 The viewer loads parts lazily by enabled layer. `StaticMapCanvas.vue` renders large point and placement layers on canvas; the existing SVG remains responsible for live entities, annotations, and selectable catalog POIs. World coordinates are projected with `mapProjection.ts`, whose defaults must stay synchronized with `map_state_types.h`; a reachable plugin can override those defaults through the `map` object in `/cargo`.
 
+`applyDynamicPois` updates matched catalog plants and returns their live keys. `App.vue` always suppresses those duplicate runtime markers: a hidden catalog point must not reappear through its observation. Unmatched live plants use the same Resources layer, Plants category and per-type filters, plus the actor representation switch. The shared filters replace the old live-only Plants toggle; the legacy `entityVisibility.plantResource` preference no longer overrides them. Controls remain available for observed types if map-data cannot load. New observed types respect an active resource isolation choice.
+
+`getSelectionState` reads the current state array through `stateVersion`, so selecting a point does not freeze its availability. The open details panel and stationary catalog tooltip refresh with each state revision. A catalog position without a matching live observation remains `unknown`; no respawn timer infers availability.
+
 ## Packaging a release
 
 1. Set `MODLOADER_BUILD_TAG` to the version you want to publish and, if needed, `MODLOADER_BUILD_AUTHOR` to the release author (see above), then build both `Client Release|x64` and `Server Release|x64` so that these files are produced:
@@ -211,7 +215,7 @@ The workflow:
 
 The modloader auto-updater replaces `MapExtension_Plugin.dll` only. `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` live outside the game folder and are never updated, so any change to the `/cargo`, `/health`, or `/rupture-cycle` payload shape must stay backward compatible with an older viewer, or bump the viewer contract version described below so the viewer prompts the user to download the viewer zip.
 
-The server build ships no sidecar and is not auto-updated. Sync protocol v5 requires an exact protocol-version match, so releases using it must tell server admins to update the client and dedicated-server DLLs together. A mixed-version pair ignores incompatible packets and cannot publish a remote snapshot.
+The server build ships no sidecar and is not auto-updated. Sync protocol v6 requires an exact protocol-version match, so releases using it must tell server admins to update the client and dedicated-server DLLs together. A mixed-version pair ignores incompatible packets and cannot publish a remote snapshot.
 
 `interface_version_min`/`interface_version_max` in the manifest are read from `PLUGIN_INTERFACE_VERSION_MIN`/`PLUGIN_INTERFACE_VERSION_MAX` in the SDK header, matching the SDK's reference workflow. The loader only checks that this range overlaps its own, so the published range is wider than the single `PLUGIN_INTERFACE_VERSION` the DLL actually declares.
 
@@ -221,25 +225,31 @@ Plant POIs are deliberately limited by the reward class in `ACrGatherableBaseAct
 
 The packaged static world catalog is the complete source for pre-generated plant and POI locations. The dynamic-resource inclusion/exclusion volumes do not contain exact runtime spawn points and must not be connected to the Ignitium or Star Tears visibility filters or turned into resource markers. Do not reintroduce a World Partition full-map scan, player movement, rupture-cycle pausing, or per-save POI cache to populate that data.
 
-`CapturePois` remains a throttled live complement for already loaded actors. It merges observations into an in-memory catalog for the active world only. A cell unloading does not remove its markers during that world, while live `bIsDepleted`/`bIsPermanentlyGathered` state, `ACrOreActor::OreData.bIsDepleted`, and `ACrGatherableSpawnersRepActor` depleted-location arrays mark gathered markers as depleted. The catalog is cleared on world transitions and engine shutdown; Ignitium and Star Tears observations are also cleared when `RepGlobalGatherablePCGSeed` changes. The dynamic-resource inclusion/exclusion volumes are not used as fixed positions; only generated runtime actors validate site coordinates. `ResolveRuptureResourcePhase` deliberately uses the same 30/60/600/2550-second timeline as the viewer before falling back to the raw stage, so the resource kind cannot disagree with the displayed Arcadia phase. In the stable interval, `ApplyRuptureResourcePhase` reclassifies a validated, non-depleted Ignitium site as Star Tears unless a real Star Tears actor has already been observed within the site tolerance. The burning/cooling interval suppresses stale Star Tears, while the stabilizing interval permits both kinds. `useMapViewEntities` repeats this phase projection defensively from the displayed timeline so a stale or older `/cargo` payload cannot render Ignitium while the viewer says Arcadia is stable. Do not infer depletion from a nearby marker of the other rupture-resource kind because the two can coexist late in the cycle; the viewer gives Star Tears the higher SVG paint order at identical coordinates.
+`CapturePois` remains a throttled live complement for already loaded actors. It merges observations into an in-memory catalog for the active world only. A cell unloading does not remove its markers during that world, while live `bIsDepleted` state (`bIsPermanentlyGathered` is a persistence policy, not runtime depletion), `ACrOreActor::OreData.bIsDepleted`, and `ACrGatherableSpawnersRepActor` depleted-location arrays mark gathered markers as depleted. The catalog is cleared on world transitions and engine shutdown; Ignitium and Star Tears observations are also cleared when `RepGlobalGatherablePCGSeed` changes, or on entry into Heat/Moving without a replica (normal solo cycles). Previously sampled actor identities are retired until removed, preventing their immediate reintroduction. BeginPlay queues identities on both builds; runtime properties are read on the next capture after initialization. Loaded remembered actors are refreshed even between the five-second full scans. A forced seed change with no observed phase transition remains outside the solo fallback. The dynamic-resource inclusion/exclusion volumes are not used as fixed positions; only generated runtime actors validate site coordinates. `ResolveRuptureResourcePhase` deliberately uses the same 30/60/600/2550-second timeline as the viewer before falling back to the raw stage, so the resource kind cannot disagree with the displayed Arcadia phase. In the stable interval, `ApplyRuptureResourcePhase` reclassifies a validated, non-depleted Ignitium site as Star Tears unless a real Star Tears actor has already been observed within the site tolerance. The burning/cooling interval suppresses stale Star Tears, while the stabilizing interval permits both kinds. `useMapViewEntities` repeats this phase projection defensively from the displayed timeline so a stale or older `/cargo` payload cannot render Ignitium while the viewer says Arcadia is stable. Do not infer depletion from a nearby marker of the other rupture-resource kind because the two can coexist late in the cycle; the viewer gives Star Tears the higher SVG paint order at identical coordinates.
+
+`CapturePois` excludes `rupture_phase.*` projections when retaining the previous snapshot. It then merges the raw observation catalog even on throttled scans, so `ApplyRuptureResourcePhase` derives the projection anew. A real Star Tears observation, including a depleted one, replaces the estimate without leaving an available duplicate; phase, world, and generation changes cannot retain the old projection as an observation.
 
 The catalog is sorted by public key and assigned a stable 64-bit FNV-1a content revision over the fields sent on the wire. Identical content keeps the same revision across refreshes/processes; any addition, removal, state, coordinate, label, resource, source, or key change invalidates retained dedicated-server pages.
 
-## Dedicated-server sync protocol v5
+`IsMineableChunk()` supplies Ignitium harvestability independently of `OreData.bIsDepleted`. Star Tears are classified by explicit reward before generic plant classes. Their phase availability is read from the already loaded `UGatherableCropSettings::GatherableInteractivityData` class rules (stage, progress interval and allowed Fadeout/Growback substages). Missing asset/class/cycle data means unknown. `BP_IsGatherableDepleted(actor) == true` supplies extra depletion evidence; false alone never establishes availability. No gameplay interaction or mutation method is called.
+
+Replicated depletion records have no resource type. Matching includes every observed plant/Ignitium/Star Tears candidate, including already depleted ones, within 150 cm of the location or bounds origin. Only a single candidate is accepted; overlapping candidates are left unchanged. Fresh actor/subsystem reads in the current capture take priority over untyped spatial history; this recovery path fills gaps for actors no longer loaded. The opaque Mass phase fragment and temporary clearing mask are not interpreted, so these records remain supporting observations, not a complete harvest history. Removed entries do not prove regrowth. `Diagnostics.LogResourceObservations=1` logs observation state changes, generation resets and ambiguity counts; enable `LogRuptureCycleEvents=1` alongside it for phase correlation. Times are observation times; no player attribution is inferred. Native harvest hooks and the exact Ignitium-to-Star Tears Blueprint relation remain pending executable/in-game validation; see [analysis and validation scenarios](IGNITIUM_STAR_TEARS_ANALYSIS.md).
+
+## Dedicated-server sync protocol v6
 
 `shared/map_sync_protocol.h` defines the POD request, begin, chunk, rupture, and end packets shared by client and server builds. The protocol version is intentionally exact-match only; there is no downgrade path.
 
-Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker, and cargo-connection stream; protocol v3 added POI pagination and a per-recipient "self" player flag; protocol v4 added exact POI-catalog revision tracking; protocol v5 extends the POI enum with `ignitium` and `star_tears` and keeps the exact-match requirement:
+Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker, and cargo-connection stream; protocol v3 added POI pagination and a per-recipient "self" player flag; protocol v4 added exact POI-catalog revision tracking; protocol v5 extends the POI enum with `ignitium` and `star_tears` and keeps the exact-match requirement. Protocol v6 adds `kPoiEntryUnavailable` and `kPoiEntryUnknown` to the POI flags without changing packet layout; depletion remains an independent flag:
 
 - `kSnapshotHasPois` identifies POI content in responses. All request flags are reserved; the server intentionally ignores `request_flags` and returns a complete snapshot.
 - POIs are paginated: each `ClientSnapshotRequestPacket` carries a `poi_page`, and the server responds with at most `kPoiPageCapacity` POIs (currently 64, i.e. `kPoiChunksPerPage` = 16 chunks) for that page. `ServerSnapshotBeginPacket` declares the page slice via `pois_count`/`pois_chunk_count` plus `poi_page`, `poi_page_count`, `pois_total_count`, and `poi_revision`; `ServerSnapshotEndPacket` repeats the page counters, total, and revision.
 - The client retains pages only for the exact `(world, poi_revision, poi_page_count, pois_total_count)` tuple. A changed revision clears every retained page before the new page is published, preventing removals or index shifts from leaving stale or duplicate markers. The client rejects duplicate/empty public keys and validates the fully assembled total.
 - `ServerPlayerEntry` carries a `flags` byte; `kPlayerEntrySelf` marks the marker that belongs to the requesting player. The server matches the requesting player controller against the captured player keys, so each connected client sees its own marker flagged.
-- `ServerPoiEntry` carries world coordinates, `kind`, the `kPoiEntryDepleted` flag, label, resource, source, and unique key.
+- `ServerPoiEntry` carries world coordinates, `kind`, the depletion/harvestability flags, label, resource, source, and unique key.
 - `ServerPoisChunkPacket` carries at most `kPoiChunkCapacity` entries (currently four). The packet remains trivially copyable and is statically limited to the recommended 1 KiB payload size.
 - The server rejects collections that cannot be represented by the `uint16_t` wire counters. The client validates the snapshot ID, generation, POI revision, begin/end counts and totals, chunk counts, chunk indexes, per-chunk item counts, page layout, and merged public-key uniqueness before publishing the assembled snapshot.
 
-**Always update the client and dedicated-server builds together when deploying protocol v5.** The client sidecar updates only `MapExtension_Plugin.dll` on player machines; it does not update the dedicated-server DLL. A mismatched pair will ignore each other's packets, so the server DLL must be replaced manually during the same rollout.
+**Always update the client and dedicated-server builds together when deploying protocol v6.** The client sidecar updates only `MapExtension_Plugin.dll` on player machines; it does not update the dedicated-server DLL. A mismatched pair will ignore each other's packets, so the server DLL must be replaced manually during the same rollout.
 
 ## Runtime contract
 
@@ -274,6 +284,7 @@ The payload includes `counts.pois`, `counts.abandoned_bases`, `counts.plant_reso
       "label": "Abandoned Base",
       "resource": "",
       "depleted": false,
+      "state": "available",
       "source": "actor_scan.abandoned_base",
       "unique_key": "example-abandoned-base-key",
       "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
@@ -284,6 +295,7 @@ The payload includes `counts.pois`, `counts.abandoned_bases`, `counts.plant_reso
       "label": "Hydrobulb",
       "resource": "Hydrobulb",
       "depleted": false,
+      "state": "available",
       "source": "actor_scan.gatherable",
       "unique_key": "example-plant-key",
       "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
@@ -298,6 +310,7 @@ The payload includes `counts.pois`, `counts.abandoned_bases`, `counts.plant_reso
 | `kind` | `abandoned_base`, `plant_resource`, `ignitium`, or `star_tears`. |
 | `label` | Canonical display label for tracked plants or rupture resources, or the fixed abandoned-base label. |
 | `resource` | Canonical tracked plant or rupture-resource name; empty when no resource applies, including abandoned bases. |
+| `state` | `available`, `unavailable`, `unknown`, or `depleted`. Depletion takes precedence. Carried in protocol v6 flags and included in the POI revision hash. |
 | `depleted` | Boolean state from the live gatherable/ore actor when available; the last known position remains in the catalog after depletion. Abandoned bases emit `false`. |
 | `source` | Capture-path identifier such as `actor_scan.abandoned_base` or `actor_scan.gatherable`. |
 | `unique_key` | Public identity used by the viewer for selection and rendering. |
@@ -318,6 +331,8 @@ Because the auto-updater replaces `MapExtension_Plugin.dll` only, a recent plugi
 - `viewer_contract_version`: `kViewerContractVersion` in `map_state_json.cpp`
 - `viewer_update`: `mod_page_url`, plus `release_url` and `download_url` on published builds
 
+Contract 3 introduces non-harvestable and unknown live resource states: an older viewer would incorrectly display both as available from `depleted: false`. Update both contract constants together.
+
 The viewer compares `viewer_contract_version` against `VIEWER_CONTRACT_VERSION` in `mapview/src/lib/viewerContract.ts` and shows an update dialog when the plugin reports a higher value.
 
 Rules:
@@ -326,3 +341,7 @@ Rules:
 - Do not bump for purely additive, backward-compatible fields, or every user gets an update prompt for nothing.
 - The plugin builds the download URL, not the viewer. The viewer that shows the prompt is by definition the outdated one, so it must not carry a hardcoded URL pattern. `MapExtension_Plugin-<tag>-viewer.zip` in `.github/workflows/release.yml` and `BuildViewerUpdateJson` in `map_state_json.cpp` must stay in sync.
 - Local builds define `MAPEXTENSION_LOCAL_BUILD` through `PropertySheet.props` and advertise no download URL, since their fallback tag has no published assets.
+
+### Resource observation regression checks
+
+Run `python3 tools/tests/resource_observation_test.py` with Python 3 and a C++20-capable `g++`. It compiles the production phase, retention, depletion-match and wire-state code with minimal engine stand-ins. Scenarios cover normal solo cycles and replicated seeds, available/unavailable/unknown/depleted round trips, missing interaction data and progress/substage boundaries, an intact non-mineable Ignitium site, actual Star Tears replacing an estimate, ambiguous overlapping records, fresh observations overriding untyped records, removed records, and world/generation resets. It does not validate SDK runtime calls or actor lifetimes; complete the in-game scenarios in `IGNITIUM_STAR_TEARS_ANALYSIS.md` before claiming complete harvest coverage.

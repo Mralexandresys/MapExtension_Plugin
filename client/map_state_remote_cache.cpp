@@ -61,7 +61,7 @@ namespace
 	bool g_hasCargoSnapshot = false;
 	CargoSnapshot g_activeCargoSnapshot{};
 
-	// Protocol v5 POI pagination: pages already fetched are retained here and
+	// Protocol v6 POI pagination: pages already fetched are retained here and
 	// merged into every finalized snapshot, keyed by page index. The store is
 	// tied to one exact catalog revision so removed or changed POIs cannot leak
 	// in from pages fetched before the catalog changed.
@@ -189,7 +189,7 @@ namespace
 			return false;
 		}
 
-		// Protocol v5 POI pagination coherence: the advertised page must exist,
+		// Protocol v6 POI pagination coherence: the advertised page must exist,
 		// and the page item count must match the slice of the advertised total.
 		const uint32_t expectedPoiPageCount = packet.pois_total_count == 0
 			? 1u
@@ -568,6 +568,11 @@ namespace MapExtensionClient
 					return;
 				}
 				marker.Depleted = (item.flags & MapSyncProtocol::kPoiEntryDepleted) != 0;
+				marker.Harvestability = (item.flags & MapSyncProtocol::kPoiEntryUnknown)
+					? MapResources::Harvestability::Unknown
+					: (item.flags & MapSyncProtocol::kPoiEntryUnavailable)
+						? MapResources::Harvestability::Unavailable
+						: MapResources::Harvestability::Available;
 				marker.WorldLocation = MakeVector(item.world_x, item.world_y, item.world_z);
 				marker.MapLocation = MapStateRuntime::Detail::WorldToMap(marker.WorldLocation);
 				marker.DisplayName = ReadFixedString(item.label);
