@@ -331,19 +331,15 @@ export interface HarvestOption {
 }
 
 /** The filters sidebar shows exactly one of these at a time. */
-export type FilterTabKey = "map" | "harvest" | "catalog" | "behavior";
+export type FilterTabKey = "map" | "catalog";
 
 export interface MapFiltersPanelModel {
     collapsed: boolean;
     activeTab: FilterTabKey;
     ui: Messages;
-    /** How many filters deviate from the preset; drives the header line only. */
-    activeFilterCount: number;
     preset: MapPreset;
     harvestResource: string | null;
     harvestOptions: HarvestOption[];
-    /** Catalog elements actually drawn, as opposed to merely loaded. */
-    staticVisibleCount: number;
     entityToggleOptions: Array<{
         key: EntityToggleKey;
         label: string;
@@ -353,8 +349,6 @@ export interface MapFiltersPanelModel {
     showAllLinks: boolean;
     highlightOrphans: boolean;
     userAnnotationsOnly: boolean;
-    canEnableFocusMode: boolean;
-    focusMode: boolean;
     /** Absent when the static world catalog is not bundled with the viewer. */
     staticFilters?: MapStaticFiltersModel;
 }

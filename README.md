@@ -1,6 +1,6 @@
 # MapExtension_Plugin
 
-Filters, Display and Advanced are always available, regardless of the preset. Resource bulk actions only affect resources; Advanced contains the global layer controls. Reset restores both live and static filters to the current preset, including purity. Isolating a resource is a shortcut that can then be refined. Collapsed filters leave the keyboard focus order.
+Filters and Advanced are always available, regardless of the preset. Network, Exploration and Harvest sit on one row; the developer-only Technical preset is a switch at the top of Advanced. Cargo link and unlinked-point settings sit under the cargo rows, and "only my markers and zones" heads the Filters tab. The Resources family groups the isolate shortcut, rupture sites, extractor deposits and hand-gathered resources; its All/None only affects resources, and Advanced contains the global layer controls. Reset restores both live and static filters to the current preset, including purity. Isolating a resource is a shortcut that can then be refined. Collapsed filters leave the keyboard focus order.
 
 The viewer uses a compact session bar, a dark blue filter sidebar and cyan selection accents. Refresh timing is available in Settings; the rupture timeline stays visible above the map.
 

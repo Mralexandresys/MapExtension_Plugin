@@ -38,7 +38,6 @@ import {
     type StaticPointSeries,
 } from "./lib/staticMapCatalog";
 import type {
-    ActiveFilterChip,
     DetailRow,
     HarvestOption,
     MapCanvasHandle,
@@ -116,7 +115,6 @@ const {
     selectedDetailRows,
     totalCounts,
     statsOverview,
-    activeFilterChips,
     currentTimeLabel,
     liveAgeLabel,
     ruptureCurrentPhaseKey,
@@ -387,29 +385,6 @@ watch(
     },
     { immediate: true },
 );
-
-/** Whether a preset wants a given landmark group visible. */
-function presetWantsPoiGroup(group: string): boolean {
-    const selection = PRESET_DEFINITIONS[preset.value].poiGroups;
-    if (selection === "all") return true;
-    if (selection === "none") return false;
-    return selection.includes(group);
-}
-
-// Landmark groups are filters like any other: hiding the obelisks has to show
-// up in the active-filter chips, not leave the panel claiming nothing is set.
-const landmarkFilterChips = computed<ActiveFilterChip[]>(() => {
-    const groups = staticFiltersModel.value?.poiGroups ?? [];
-    return groups
-        .filter((group) => group.enabled !== presetWantsPoiGroup(group.key))
-        .map((group) => ({
-            id: `poiGroup:${group.key}`,
-            label: group.enabled
-                ? group.label
-                : ui.value.format.hiddenLabels(group.label),
-            clear: { kind: "poiGroup" as const, key: group.key },
-        }));
-});
 
 function handlePresetChange(next: MapPreset): void {
     harvestResource.value = null;
@@ -706,20 +681,14 @@ const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     collapsed: filtersPanelCollapsed.value,
     activeTab: filterTab.value,
     ui: ui.value,
-    activeFilterCount:
-        activeFilterChips.value.length + landmarkFilterChips.value.length,
     preset: preset.value,
     harvestResource: harvestResource.value,
     harvestOptions: harvestOptions.value,
-    staticVisibleCount: staticVisibleCount.value,
     entityToggleOptions: entityToggleOptions.value,
     entityVisibility: readonly(entityVisibility),
-    developerMode: developerMode.value,
     showAllLinks: showAllLinks.value,
     highlightOrphans: highlightOrphans.value,
     userAnnotationsOnly: userAnnotationsOnly.value,
-    canEnableFocusMode: canEnableFocusMode.value,
-    focusMode: focusMode.value,
     staticFilters: staticFiltersModel.value,
 }));
 
@@ -876,7 +845,6 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @update:show-all-links="showAllLinks = $event"
                 @update:highlight-orphans="highlightOrphans = $event"
                 @update:user-annotations-only="userAnnotationsOnly = $event"
-                @toggle-focus="toggleFocusMode"
                 @update:preset="handlePresetChange"
                 @update:harvest-resource="handleHarvestSelect"
                 @static-toggle="handleStaticFilterToggle"
