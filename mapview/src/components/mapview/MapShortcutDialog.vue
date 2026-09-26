@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { ref, watchPostEffect } from "vue";
 
 import type { Messages } from "../../lang";
 import type { ShortcutItem } from "../../lib/types";
@@ -14,80 +14,27 @@ const emit = defineEmits<{
     "close": [];
 }>();
 
-const dialogRef = ref<HTMLElement | null>(null);
-const closeButtonRef = ref<HTMLButtonElement | null>(null);
-let previousFocusedElement: HTMLElement | null = null;
-
-function getFocusableElements(): HTMLElement[] {
-    if (!dialogRef.value) return [];
-
-    return Array.from(
-        dialogRef.value.querySelectorAll<HTMLElement>(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        ),
-    ).filter((element) => !element.hasAttribute("disabled"));
-}
-
-function handleWindowKeydown(event: KeyboardEvent): void {
-    if (!props.open) return;
-
-    if (event.key === "Escape") {
-        event.preventDefault();
-        emit("close");
-        return;
-    }
-
-    if (event.key !== "Tab") return;
-
-    const focusableElements = getFocusableElements();
-    if (!focusableElements.length) return;
-
-    const first = focusableElements[0];
-    const last = focusableElements[focusableElements.length - 1];
-    const active = document.activeElement as HTMLElement | null;
-
-    if (event.shiftKey && active === first) {
-        event.preventDefault();
-        last.focus();
-    } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-    }
-}
-
-watch(
-    () => props.open,
-    async (open) => {
-        if (open) {
-            previousFocusedElement = document.activeElement as HTMLElement | null;
-            window.addEventListener("keydown", handleWindowKeydown);
-            await nextTick();
-            closeButtonRef.value?.focus();
-            return;
-        }
-
-        window.removeEventListener("keydown", handleWindowKeydown);
-        previousFocusedElement?.focus();
-        previousFocusedElement = null;
-    },
-    { immediate: true },
-);
-
-onBeforeUnmount(() => {
-    window.removeEventListener("keydown", handleWindowKeydown);
+// A modal <dialog> traps focus, closes on Escape, makes the page inert and
+// restores focus on close; the parent's `open` flag stays the source of truth.
+const dialogRef = ref<HTMLDialogElement | null>(null);
+watchPostEffect(() => {
+    const dialog = dialogRef.value;
+    if (!dialog) return;
+    if (props.open && !dialog.open) dialog.showModal();
+    else if (!props.open && dialog.open) dialog.close();
 });
 </script>
 
 <template>
-    <div v-if="open" class="shortcut-backdrop" @click.self="emit('close')">
-        <section
-            ref="dialogRef"
-            class="card shortcut-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="shortcut-dialog-title"
-            aria-describedby="shortcut-dialog-subtitle"
-        >
+    <dialog
+        ref="dialogRef"
+        class="card shortcut-dialog"
+        aria-labelledby="shortcut-dialog-title"
+        aria-describedby="shortcut-dialog-subtitle"
+        @close="open && emit('close')"
+        @click.self="emit('close')"
+    >
+        <div class="shortcut-dialog-body">
             <div class="panel-top-row compact">
                 <div>
                     <span class="panel-kicker">{{ ui.shortcuts.kicker }}</span>
@@ -97,7 +44,7 @@ onBeforeUnmount(() => {
                     </p>
                 </div>
                 <button
-                    ref="closeButtonRef"
+                    autofocus
                     class="button subtle small"
                     type="button"
                     @click="emit('close')"
@@ -117,34 +64,33 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
             </div>
-        </section>
-    </div>
+        </div>
+    </dialog>
 </template>
 
 <style scoped>
-/* Without the scroll, a viewport shorter than the dialog pushed its top edge
-   off-screen with no way to reach it: the page itself is locked to 100vh. */
-.shortcut-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 30;
-    display: grid;
-    place-items: center;
-    padding: 20px;
-    overflow: auto;
+/* The padding lives on the body: a click on the <dialog> element itself is a
+   click on the backdrop. The max-height keeps short viewports scrollable. */
+.shortcut-dialog {
+    width: min(760px, calc(100% - 40px));
+    max-width: none;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 0;
+    color: var(--text);
+    background: var(--panel-strong);
+    --cut: 14px;
+    clip-path: polygon(var(--cut) 0%, 100% 0%, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0% 100%, 0% var(--cut));
+}
+
+.shortcut-dialog::backdrop {
     background: rgba(2, 4, 12, 0.82);
     backdrop-filter: blur(6px);
 }
 
-.shortcut-dialog {
-    width: min(760px, 100%);
-    max-height: calc(100vh - 40px);
-    overflow-y: auto;
-    box-sizing: border-box;
+.shortcut-dialog-body {
     padding: 20px;
-    background: var(--panel-strong);
-    --cut: 14px;
-    clip-path: polygon(var(--cut) 0%, 100% 0%, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0% 100%, 0% var(--cut));
 }
 
 .shortcut-list {
@@ -201,10 +147,8 @@ onBeforeUnmount(() => {
     .shortcut-row {
         grid-template-columns: 1fr;
     }
-}
 
-@media (max-width: 720px) {
-    .shortcut-dialog {
+    .shortcut-dialog-body {
         padding: 14px;
     }
 }

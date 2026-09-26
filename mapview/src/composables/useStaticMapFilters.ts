@@ -1,8 +1,8 @@
 import { computed, reactive, ref, watch, type ComputedRef, type Ref } from "vue";
 
-import type { Language, Messages } from "../lang";
+import { localized, type Language, type Messages } from "../lang";
+import { matchesSearch } from "../lib/formatters";
 import {
-    DEFAULT_ENABLED_KINDS,
     DEFAULT_ENABLED_LAYERS,
     groupColor,
     orePurityColor,
@@ -63,9 +63,7 @@ function createDefaultState(): StaticFilterState {
         layers[layer] = DEFAULT_ENABLED_LAYERS.includes(layer);
     }
     const resourceKinds: Record<string, boolean> = {};
-    for (const kind of STATIC_RESOURCE_KINDS) {
-        resourceKinds[kind] = DEFAULT_ENABLED_KINDS.includes(kind);
-    }
+    for (const kind of STATIC_RESOURCE_KINDS) resourceKinds[kind] = true;
     const orePurities: Record<string, boolean> = {};
     for (const level of STATIC_ORE_PURITY_LEVELS) orePurities[level] = true;
     return {
@@ -173,10 +171,6 @@ export function useStaticMapFilters(
 
     const enabledLayers = computed<StaticLayerKey[]>(() =>
         STATIC_LAYER_KEYS.filter((layer) => state.layers[layer]),
-    );
-
-    const enabledKinds = computed<StaticResourceKind[]>(() =>
-        STATIC_RESOURCE_KINDS.filter((kind) => state.resourceKinds[kind]),
     );
 
     function isLayerEnabled(layer: StaticLayerKey): boolean {
@@ -469,20 +463,6 @@ export function useStaticMapFilters(
         search.value = "";
     }
 
-    /** Number of resource points enabled for a type, restricted to visible kinds. */
-    function resourceTypeCount(typeId: string): number {
-        const entry = manifest.value?.resource_types?.[typeId];
-        if (!entry) return 0;
-        let total = 0;
-        for (const kind of STATIC_RESOURCE_KINDS) {
-            if (state.resourceKinds[kind] === false) continue;
-            total += entry.counts[kind] ?? 0;
-        }
-        return total;
-    }
-
-    const activeLayerCount = computed(() => enabledLayers.value.length);
-
     return {
         state,
         search,
@@ -490,10 +470,7 @@ export function useStaticMapFilters(
         syncLiveResourceTypes,
         isLiveResourceEnabled,
         enabledLayers,
-        enabledKinds,
-        activeLayerCount,
         isLayerEnabled,
-        isResourceCategoryEnabled,
         isSeriesVisible,
         isOrePurityVisible,
         resourceExtractor,
@@ -505,7 +482,6 @@ export function useStaticMapFilters(
         applyPreset,
         selectSingleResource,
         isResourceTypeEnabled,
-        resourceTypeCount,
         toggleLayer,
         toggleResourceType,
         setResourceType,
@@ -528,14 +504,6 @@ const PLACEMENT_SECTION_LAYERS: readonly StaticLayerKey[] = [
     "technical",
 ];
 
-function matchesSearch(label: string, key: string, needle: string): boolean {
-    if (!needle) return true;
-    const lowered = needle.toLowerCase();
-    return (
-        label.toLowerCase().includes(lowered) || key.toLowerCase().includes(lowered)
-    );
-}
-
 export function useStaticFiltersModel(options: {
     manifest: Ref<StaticMapManifest | null>;
     filters: StaticMapFilters;
@@ -552,8 +520,7 @@ export function useStaticFiltersModel(options: {
     return computed<MapStaticFiltersModel>(() => {
         const messages = ui.value.staticFilters;
         const catalog = manifest.value;
-        const needle = filters.search.value.trim();
-        const french = lang.value === "fr";
+        const needle = filters.search.value;
 
         const layerCounts: Record<string, number> = {};
         for (const part of catalog?.parts ?? []) {
@@ -590,12 +557,12 @@ export function useStaticFiltersModel(options: {
             if (handCount <= 0) continue;
             const option: StaticFilterOption = {
                 key: typeId,
-                label: french ? entry.fr : entry.en,
+                label: localized(entry, lang.value),
                 count: handCount,
                 enabled: filters.isLayerEnabled("resource") && filters.isResourceTypeEnabled(typeId, entry.category),
                 color: resourceColor(typeId),
             };
-            if (!matchesSearch(option.label, option.key, needle)) continue;
+            if (!matchesSearch(needle, option.label, option.key)) continue;
             const bucket = byCategory.get(entry.category);
             if (bucket) bucket.push(option);
             else byCategory.set(entry.category, [option]);
@@ -607,12 +574,12 @@ export function useStaticFiltersModel(options: {
             if (catalog?.resource_types?.[typeId]) continue;
             const option: StaticFilterOption = {
                 key: typeId,
-                label: french ? entry.fr : entry.en,
+                label: localized(entry, lang.value),
                 count: entry.count,
                 enabled: filters.isLayerEnabled("resource") && filters.isResourceTypeEnabled(typeId, "plant"),
                 color: resourceColor(typeId),
             };
-            if (!matchesSearch(option.label, option.key, needle)) continue;
+            if (!matchesSearch(needle, option.label, option.key)) continue;
             const bucket = byCategory.get("plant");
             if (bucket) bucket.push(option);
             else byCategory.set("plant", [option]);
@@ -664,7 +631,7 @@ export function useStaticFiltersModel(options: {
             .filter(([, entry]) => (entry.counts.deposit ?? 0) > 0)
             .map(([typeId, entry]) => ({
                 key: typeId,
-                label: french ? entry.fr : entry.en,
+                label: localized(entry, lang.value),
                 count: entry.counts.deposit ?? 0,
                 enabled: filters.isLayerEnabled("resource") && filters.isResourceTypeEnabled(typeId, entry.category),
                 color: resourceColor(typeId),
@@ -674,7 +641,7 @@ export function useStaticFiltersModel(options: {
                     color: orePurityColor(level),
                 })).filter((purity) => purity.count > 0),
             }))
-            .filter((option) => matchesSearch(option.label, option.key, needle))
+            .filter((option) => matchesSearch(needle, option.label, option.key))
             .sort((left, right) => right.count - left.count);
 
         // Counted over the ores actually enabled, so the chips describe what
@@ -725,7 +692,7 @@ export function useStaticFiltersModel(options: {
                             filters.isPlacementGroupEnabled(layer, group),
                         color: groupColor(group),
                     }))
-                    .filter((option) => matchesSearch(option.label, option.key, needle))
+                    .filter((option) => matchesSearch(needle, option.label, option.key))
                     .sort((left, right) => right.count - left.count),
             })).filter((section) => section.options.length > 0);
 
@@ -746,49 +713,47 @@ export function useStaticFiltersModel(options: {
     });
 }
 
-/** Applies a toggle emitted by the filters panel. */
+/**
+ * Applies a toggle emitted by the filters panel. With `enabled` set, the
+ * target state is explicit (group actions) and already-matching filters are
+ * left alone; without it, the filter flips.
+ */
 export function applyStaticFilterToggle(
     filters: StaticMapFilters,
     toggle: StaticFilterToggle,
 ): void {
-    if (toggle.enabled !== undefined) {
-        const state = filters.state;
-        let current: boolean;
-        switch (toggle.scope) {
-            case "layer": current = state.layers[toggle.key] === true; break;
-            case "poiGroup": current = filters.isPoiGroupEnabled(toggle.key); break;
-            case "resourceType":
-                filters.setResourceType(toggle.key, toggle.enabled);
-                return;
-            case "representation": current = state.resourceKinds[toggle.key] !== false; break;
-            case "orePurity": current = state.orePurities[toggle.key] !== false; break;
-            case "placementGroup": current = filters.isPlacementGroupEnabled((toggle.layer ?? "building") as StaticLayerKey, toggle.key); break;
-        }
-        if (current === toggle.enabled) return;
+    const { state } = filters;
+    const key = toggle.key;
+    const layer = (toggle.layer ?? "building") as StaticLayerKey;
+
+    if (toggle.scope === "resourceType") {
+        if (toggle.enabled === undefined) filters.toggleResourceType(key);
+        else filters.setResourceType(key, toggle.enabled);
+        return;
     }
-    switch (toggle.scope) {
-        case "layer":
-            filters.toggleLayer(toggle.key as StaticLayerKey);
-            return;
-        case "poiGroup":
-            filters.togglePoiGroup(toggle.key);
-            return;
-        case "resourceType":
-            filters.toggleResourceType(toggle.key);
-            return;
-        case "representation":
-            filters.toggleResourceKind(toggle.key as StaticResourceKind);
-            return;
-        case "orePurity":
-            filters.toggleOrePurity(toggle.key as StaticOrePurity);
-            return;
-        case "placementGroup":
-            filters.togglePlacementGroup(
-                (toggle.layer ?? "building") as StaticLayerKey,
-                toggle.key,
-            );
-            return;
-        default:
-            return;
-    }
+
+    const [isEnabled, flip] = ({
+        layer: [
+            () => state.layers[key] === true,
+            () => filters.toggleLayer(key as StaticLayerKey),
+        ],
+        poiGroup: [
+            () => filters.isPoiGroupEnabled(key),
+            () => filters.togglePoiGroup(key),
+        ],
+        representation: [
+            () => state.resourceKinds[key] !== false,
+            () => filters.toggleResourceKind(key as StaticResourceKind),
+        ],
+        orePurity: [
+            () => state.orePurities[key] !== false,
+            () => filters.toggleOrePurity(key as StaticOrePurity),
+        ],
+        placementGroup: [
+            () => filters.isPlacementGroupEnabled(layer, key),
+            () => filters.togglePlacementGroup(layer, key),
+        ],
+    } satisfies Record<Exclude<StaticFilterToggle["scope"], "resourceType">, [() => boolean, () => void]>)[toggle.scope];
+
+    if (toggle.enabled === undefined || toggle.enabled !== isEnabled()) flip();
 }

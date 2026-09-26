@@ -15,6 +15,7 @@ import {
     type MapPreset,
 } from "../../lib/mapPresets";
 import { POI_SYMBOL_VIEWBOX, poiSymbol } from "../../lib/mapMarkers";
+import { matchesSearch } from "../../lib/formatters";
 import MapStaticFilters from "./MapStaticFilters.vue";
 
 const teleporterIconMarkup = teleporterSvg.replace(
@@ -89,25 +90,24 @@ const RUPTURE_KEYS: EntityToggleKey[] = [
     "starTears",
 ];
 
-function matchesSearch(label: string): boolean {
-    const normalize = (value: string) => value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLocaleLowerCase();
-    return normalize(label).includes(normalize(props.panel.staticFilters?.search.trim() ?? ""));
+function matchesPanelSearch(label: string): boolean {
+    return matchesSearch(props.panel.staticFilters?.search ?? "", label);
 }
 
 const logisticsOptions = computed(() =>
     props.panel.entityToggleOptions.filter((option) =>
-        LOGISTICS_KEYS.includes(option.key) && matchesSearch(option.label),
+        LOGISTICS_KEYS.includes(option.key) && matchesPanelSearch(option.label),
     ),
 );
 
 const ruptureOptions = computed(() =>
     props.panel.entityToggleOptions.filter((option) =>
-        RUPTURE_KEYS.includes(option.key) && matchesSearch(option.label),
+        RUPTURE_KEYS.includes(option.key) && matchesPanelSearch(option.label),
     ),
 );
 
 /** The 241 canonical POI, promoted from three levels deep in the catalog. */
-const landmarkOptions = computed(() => (props.panel.staticFilters?.poiGroups ?? []).filter(option => matchesSearch(option.label)));
+const landmarkOptions = computed(() => (props.panel.staticFilters?.poiGroups ?? []).filter(option => matchesPanelSearch(option.label)));
 
 /** Rare resources first; the few very common ones would drown them. */
 const harvestGroups = computed(() => [

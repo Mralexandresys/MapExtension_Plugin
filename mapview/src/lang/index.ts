@@ -48,3 +48,8 @@ export function applyLanguage(language: Language): void {
   document.documentElement.lang = language;
   document.title = current.documentTitle;
 }
+
+/** Picks the entry's text in the UI language. */
+export function localized(entry: { en: string; fr: string }, language: Language): string {
+  return language === 'fr' ? entry.fr : entry.en;
+}

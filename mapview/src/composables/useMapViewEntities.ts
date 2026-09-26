@@ -1,6 +1,6 @@
 import { computed, type ComputedRef, type Ref } from "vue";
 
-import { poiState, poiStateLabel } from "../lib/poiState";
+import { poiKindLabel, poiState, poiStateLabel } from "../lib/poiState";
 import { formatRelativeAge, formatWorld } from "../lib/formatters";
 import type { Messages } from "../lang";
 import {
@@ -9,7 +9,6 @@ import {
     type MapPreset,
 } from "../lib/mapPresets";
 import type {
-    ActiveFilterChip,
     CargoConnection,
     CargoMarker,
     CargoResponse,
@@ -162,40 +161,21 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         () => new Set(visibleCargoMarkers.value.map((marker) => marker.unique_key)),
     );
 
-    function isMissingEndpointKindVisible(kind: "sender" | "receiver"): boolean {
-        return kind === "sender"
-            ? entityVisibility.sender
-            : entityVisibility.receiver;
+    /** A visible endpoint, or one the snapshot does not list but whose kind is shown. */
+    function isEndpointAllowed(key: string, kind: "sender" | "receiver"): boolean {
+        return (
+            visibleCargoMarkerKeys.value.has(key) ||
+            (!allCargoMarkerKeys.value.has(key) && entityVisibility[kind])
+        );
     }
 
-    const renderableCargoConnections = computed(() => {
-        return allCargoConnections.value.filter(
-            (connection) => {
-                const senderVisible = visibleCargoMarkerKeys.value.has(
-                    connection.sender_key,
-                );
-                const receiverVisible = visibleCargoMarkerKeys.value.has(
-                    connection.receiver_key,
-                );
-
-                const senderKnown = allCargoMarkerKeys.value.has(
-                    connection.sender_key,
-                );
-                const receiverKnown = allCargoMarkerKeys.value.has(
-                    connection.receiver_key,
-                );
-
-                const senderAllowed = senderVisible
-                    ? true
-                    : !senderKnown && isMissingEndpointKindVisible("sender");
-                const receiverAllowed = receiverVisible
-                    ? true
-                    : !receiverKnown && isMissingEndpointKindVisible("receiver");
-
-                return senderAllowed && receiverAllowed;
-            },
-        );
-    });
+    const renderableCargoConnections = computed(() =>
+        allCargoConnections.value.filter(
+            (connection) =>
+                isEndpointAllowed(connection.sender_key, "sender") &&
+                isEndpointAllowed(connection.receiver_key, "receiver"),
+        ),
+    );
 
     function getRelatedConnections(
         markerOrKey: CargoMarker | string | null,
@@ -213,11 +193,11 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
     }
 
     const visibleTeleporters = computed(() =>
-        allTeleporters.value.filter(() => entityVisibility.teleporter),
+        entityVisibility.teleporter ? allTeleporters.value : [],
     );
 
     const visiblePlayers = computed(() =>
-        allPlayers.value.filter(() => entityVisibility.player),
+        entityVisibility.player ? allPlayers.value : [],
     );
 
     function isPoiKindVisible(poi: Poi): boolean {
@@ -255,20 +235,27 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         return counts;
     });
 
-    const entityFilterCounts = computed<Record<EntityToggleKey, number>>(() => {
-        const poiCount = (kind: PoiKind) =>
-            allPois.value.filter((poi) => poi.kind === kind).length;
-        return {
-            sender: allCargoMarkers.value.filter((m) => m.kind === "sender").length,
-            receiver: allCargoMarkers.value.filter((m) => m.kind === "receiver").length,
-            teleporter: allTeleporters.value.length,
-            player: allPlayers.value.length,
-            abandonedBase: poiCount("abandoned_base"),
-            plantResource: poiCount("plant_resource"),
-            ignitium: poiCount("ignitium"),
-            starTears: poiCount("star_tears"),
+    const poiCountsByKind = computed(() => {
+        const counts: Record<PoiKind, number> = {
+            abandoned_base: 0,
+            plant_resource: 0,
+            ignitium: 0,
+            star_tears: 0,
         };
+        for (const poi of allPois.value) counts[poi.kind] += 1;
+        return counts;
     });
+
+    const entityFilterCounts = computed<Record<EntityToggleKey, number>>(() => ({
+        sender: allCargoMarkers.value.filter((m) => m.kind === "sender").length,
+        receiver: allCargoMarkers.value.filter((m) => m.kind === "receiver").length,
+        teleporter: allTeleporters.value.length,
+        player: allPlayers.value.length,
+        abandonedBase: poiCountsByKind.value.abandoned_base,
+        plantResource: poiCountsByKind.value.plant_resource,
+        ignitium: poiCountsByKind.value.ignitium,
+        starTears: poiCountsByKind.value.star_tears,
+    }));
 
     const selectedEntity = computed<SelectedEntity | null>(() => {
         if (!selectedKey.value || userAnnotationsOnly.value) return null;
@@ -368,35 +355,16 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         return hoveredCargoMarker.value?.unique_key || null;
     });
 
-    const displayedCargoMarkers = computed(() => {
+    /** What is drawn once "annotations only" and focus mode are applied. */
+    function applyFocus<T extends { unique_key: string }>(entries: T[]): T[] {
         if (userAnnotationsOnly.value) return [];
-        if (!focusMode.value || focusKeys.value.size === 0) {
-            return visibleCargoMarkers.value;
-        }
-        return visibleCargoMarkers.value.filter((marker) =>
-            focusKeys.value.has(marker.unique_key),
-        );
-    });
+        if (!focusMode.value || focusKeys.value.size === 0) return entries;
+        return entries.filter((entry) => focusKeys.value.has(entry.unique_key));
+    }
 
-    const displayedTeleporters = computed(() => {
-        if (userAnnotationsOnly.value) return [];
-        if (!focusMode.value || focusKeys.value.size === 0) {
-            return visibleTeleporters.value;
-        }
-        return visibleTeleporters.value.filter((teleporter) =>
-            focusKeys.value.has(teleporter.unique_key),
-        );
-    });
-
-    const displayedPlayers = computed(() => {
-        if (userAnnotationsOnly.value) return [];
-        if (!focusMode.value || focusKeys.value.size === 0) {
-            return visiblePlayers.value;
-        }
-        return visiblePlayers.value.filter((player) =>
-            focusKeys.value.has(player.unique_key),
-        );
-    });
+    const displayedCargoMarkers = computed(() => applyFocus(visibleCargoMarkers.value));
+    const displayedTeleporters = computed(() => applyFocus(visibleTeleporters.value));
+    const displayedPlayers = computed(() => applyFocus(visiblePlayers.value));
 
     function poiRenderPriority(poi: Poi): number {
         const availability = poiState(poi) === "available" ? 10 : 0;
@@ -412,20 +380,13 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         }
     }
 
-    const displayedPois = computed<Poi[]>(() => {
-        if (userAnnotationsOnly.value) return [];
-        const entries =
-            !focusMode.value || focusKeys.value.size === 0
-                ? visiblePois.value
-                : visiblePois.value.filter((poi) =>
-                      focusKeys.value.has(poi.unique_key),
-                  );
+    const displayedPois = computed<Poi[]>(() =>
         // SVG paints later siblings on top. Star Tears therefore stay visible
         // when the underlying Ignitium actor legitimately shares the same site.
-        return [...entries].sort(
+        [...applyFocus(visiblePois.value)].sort(
             (left, right) => poiRenderPriority(left) - poiRenderPriority(right),
-        );
-    });
+        ),
+    );
 
     const visibleEntityKeys = computed(
         () =>
@@ -478,14 +439,10 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             health.value?.player_count ??
             allPlayers.value.length,
         pois: allPois.value.length,
-        abandonedBases:
-            allPois.value.filter((poi) => poi.kind === "abandoned_base").length,
-        plantResources:
-            allPois.value.filter((poi) => poi.kind === "plant_resource").length,
-        ignitium:
-            allPois.value.filter((poi) => poi.kind === "ignitium").length,
-        starTears:
-            allPois.value.filter((poi) => poi.kind === "star_tears").length,
+        abandonedBases: poiCountsByKind.value.abandoned_base,
+        plantResources: poiCountsByKind.value.plant_resource,
+        ignitium: poiCountsByKind.value.ignitium,
+        starTears: poiCountsByKind.value.star_tears,
     }));
 
     const filteredVisibleCount = computed(
@@ -496,68 +453,27 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             displayedPois.value.length,
     );
 
-    // One chip per active filter, each individually removable. Hidden entities
-    // used to be collapsed into a single "Hidden: a, b, c, d…" chip that wrapped
-    // over several lines and could not be undone one at a time.
-    const activeFilterChips = computed<ActiveFilterChip[]>(() => {
-        const chips: ActiveFilterChip[] = [];
-
-        if (preset.value !== DEFAULT_MAP_PRESET) {
-            chips.push({
-                id: "preset",
-                label: ui.value.format.modeChip(ui.value.presets[preset.value].label),
-                clear: { kind: "preset" },
-            });
+    /**
+     * Whether the view deviates from the current preset's own defaults. A
+     * preset hiding the cargo network is its documented behaviour, not a filter
+     * the user set. `abandonedBase` follows the `abandoned_base` landmark.
+     */
+    const hasActiveFilters = computed(() => {
+        if (
+            preset.value !== DEFAULT_MAP_PRESET ||
+            !showAllLinks.value ||
+            highlightOrphans.value ||
+            userAnnotationsOnly.value ||
+            (focusMode.value && canEnableFocusMode.value)
+        ) {
+            return true;
         }
-        if (!showAllLinks.value) {
-            chips.push({
-                id: "showAllLinks",
-                label: ui.value.filters.linksFocus,
-                clear: { kind: "showAllLinks" },
-            });
-        }
-        if (highlightOrphans.value) {
-            chips.push({
-                id: "highlightOrphans",
-                label: ui.value.filters.orphansVisible,
-                clear: { kind: "highlightOrphans" },
-            });
-        }
-        if (userAnnotationsOnly.value) {
-            chips.push({
-                id: "userAnnotationsOnly",
-                label: ui.value.filters.userAnnotationsOnlyChip,
-                clear: { kind: "userAnnotationsOnly" },
-            });
-        }
-        if (focusMode.value && canEnableFocusMode.value) {
-            chips.push({
-                id: "focusMode",
-                label: ui.value.filters.focusOnly,
-                clear: { kind: "focusMode" },
-            });
-        }
-
-        // Only deviations from the preset are listed. A preset hiding the cargo
-        // network is its documented behaviour, not a filter the user set, and
-        // chipping it made "4 active filters" appear on a fresh preset click.
         const presetEntities = PRESET_DEFINITIONS[preset.value].entities;
-        for (const option of entityToggleOptions.value) {
-            // `abandonedBase` is driven by the `abandoned_base` landmark, which
-            // already contributes its own entry; counting both listed
-            // "Abandoned bases" twice as soon as they were hidden.
-            if (option.key === "abandonedBase") continue;
-            if (entityVisibility[option.key] === presetEntities[option.key]) continue;
-            chips.push({
-                id: `entity:${option.key}`,
-                label: entityVisibility[option.key]
-                    ? option.label
-                    : ui.value.format.hiddenLabels(option.label),
-                clear: { kind: "entity", key: option.key },
-            });
-        }
-
-        return chips;
+        return entityToggleOptions.value.some(
+            (option) =>
+                option.key !== "abandonedBase" &&
+                entityVisibility[option.key] !== presetEntities[option.key],
+        );
     });
 
     const currentTimeLabel = computed(() =>
@@ -588,12 +504,6 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             tone: "neutral",
         },
         {
-            key: "filters",
-            label: ui.value.handles.filters,
-            value: String(activeFilterChips.value.length),
-            tone: activeFilterChips.value.length ? "warn" : "neutral",
-        },
-        {
             key: "freshness",
             label: ui.value.selection.lastUpdate,
             value: liveAgeValue.value,
@@ -620,30 +530,21 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             orphanKeySet.value.has(selectedCargo.value.unique_key),
     );
 
-    function formatEntityType(
-        type: "sender" | "receiver" | "teleporter" | "player" | PoiKind,
-    ): string {
-        if (type === "sender") return ui.value.map.senderLabel;
-        if (type === "receiver") return ui.value.map.receiverLabel;
-        if (type === "teleporter") return ui.value.selection.teleporterFallback;
-        if (type === "player") return ui.value.selection.playerFallback;
-        if (type === "abandoned_base") return ui.value.map.abandonedBaseLabel;
-        if (type === "plant_resource") return ui.value.map.plantResourceLabel;
-        if (type === "ignitium") return ui.value.map.ignitiumLabel;
-        return ui.value.map.starTearsLabel;
+    function cargoKindLabel(kind: CargoMarker["kind"]): string {
+        return kind === "sender" ? ui.value.map.senderLabel : ui.value.map.receiverLabel;
     }
 
     const selectedEntitySummary = computed(() => {
         if (selectedCargo.value) {
             return ui.value.format.selectedSummaryCargo(
-                formatEntityType(selectedCargo.value.kind),
+                cargoKindLabel(selectedCargo.value.kind),
                 selectedConnections.value.length,
             );
         }
         if (selectedTeleporter.value)
             return ui.value.selection.teleporterFallback;
         if (selectedPlayer.value) return ui.value.selection.playerFallback;
-        if (selectedPoi.value) return formatEntityType(selectedPoi.value.kind);
+        if (selectedPoi.value) return poiKindLabel(selectedPoi.value.kind, ui.value.map);
         return ui.value.selection.summaryNone;
     });
 
@@ -682,7 +583,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
             return (
                 selectedPoi.value.label ||
                 selectedPoi.value.resource ||
-                formatEntityType(selectedPoi.value.kind)
+                poiKindLabel(selectedPoi.value.kind, ui.value.map)
             );
         }
         return ui.value.selection.summaryNone;
@@ -853,8 +754,7 @@ export function useMapViewEntities(options: UseMapViewEntitiesOptions) {
         selectedDetailRows,
         totalCounts,
         statsOverview,
-        activeFilterChips,
+        hasActiveFilters,
         currentTimeLabel,
-        selectedCargo,
     };
 }

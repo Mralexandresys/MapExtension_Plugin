@@ -196,45 +196,41 @@ export function useMapViewDataSource() {
             filterTab.value = FILTER_TABS.includes(saved.filterTab as FilterTabKey)
                 ? (saved.filterTab as FilterTabKey)
                 : "map";
-            if (saved.lang && LANGUAGE_OPTIONS.includes(saved.lang as Language)) {
-                lang.value = saved.lang as Language;
+            // `lang` is not restored here: `resolveInitialLanguage` already read
+            // it, after the `?lang=` override that must win over it.
+            for (const key of Object.keys(entityVisibility) as Array<keyof EntityVisibility>) {
+                entityVisibility[key] = saved.entityVisibility?.[key] ?? true;
             }
-            entityVisibility.sender = saved.entityVisibility?.sender ?? true;
-            entityVisibility.receiver = saved.entityVisibility?.receiver ?? true;
-            entityVisibility.teleporter = saved.entityVisibility?.teleporter ?? true;
-            entityVisibility.player = saved.entityVisibility?.player ?? true;
-            entityVisibility.abandonedBase =
-                saved.entityVisibility?.abandonedBase ?? true;
-            entityVisibility.plantResource =
-                saved.entityVisibility?.plantResource ?? true;
-            entityVisibility.ignitium =
-                saved.entityVisibility?.ignitium ?? true;
-            entityVisibility.starTears =
-                saved.entityVisibility?.starTears ?? true;
         } catch {
             endpoint.value = DEFAULT_ENDPOINT;
             endpointDraft.value = DEFAULT_ENDPOINT;
         }
     }
 
-    function savePreferences(): void {
-        localStorage.setItem(
-            STORAGE_KEY,
-            JSON.stringify({
-                endpoint: endpoint.value,
-                autoRefresh: autoRefresh.value,
-                refreshIntervalMs: refreshIntervalMs.value,
-                iconScale: iconScale.value,
-                showAllLinks: showAllLinks.value,
-                highlightOrphans: highlightOrphans.value,
-                preset: preset.value,
-                harvestResource: harvestResource.value,
-                lang: lang.value,
-                entityVisibility: { ...entityVisibility },
-                filtersPanelCollapsed: filtersPanelCollapsed.value,
-                filterTab: filterTab.value,
-            }),
-        );
+    /** Single source for both the saved payload and what the watcher tracks. */
+    function currentPreferences(): PersistedPreferences {
+        return {
+            endpoint: endpoint.value,
+            autoRefresh: autoRefresh.value,
+            refreshIntervalMs: refreshIntervalMs.value,
+            iconScale: iconScale.value,
+            showAllLinks: showAllLinks.value,
+            highlightOrphans: highlightOrphans.value,
+            preset: preset.value,
+            harvestResource: harvestResource.value,
+            lang: lang.value,
+            entityVisibility: { ...entityVisibility },
+            filtersPanelCollapsed: filtersPanelCollapsed.value,
+            filterTab: filterTab.value,
+        };
+    }
+
+    function savePreferences(preferences: PersistedPreferences): void {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+        } catch {
+            // Storage can be unavailable (private mode); preferences stay session-only.
+        }
     }
 
     function setStatus(online: boolean, text: string, error = ""): void {
@@ -328,7 +324,8 @@ export function useMapViewDataSource() {
 
         if (autoRefresh.value) {
             liveTimer = window.setInterval(() => {
-                void refreshData();
+                // Nobody is looking at a background tab.
+                if (!document.hidden) void refreshData();
             }, refreshIntervalMs.value);
         }
     }
@@ -337,23 +334,7 @@ export function useMapViewDataSource() {
     // visibility and persist defaults over the user's saved settings.
     loadPreferences();
 
-    watch(
-        () => ({
-            endpoint: endpoint.value,
-            autoRefresh: autoRefresh.value,
-            refreshIntervalMs: refreshIntervalMs.value,
-            showAllLinks: showAllLinks.value,
-            highlightOrphans: highlightOrphans.value,
-            preset: preset.value,
-            harvestResource: harvestResource.value,
-            lang: lang.value,
-            entityVisibility: { ...entityVisibility },
-            filtersPanelCollapsed: filtersPanelCollapsed.value,
-            filterTab: filterTab.value,
-        }),
-        savePreferences,
-        { deep: true },
-    );
+    watch(currentPreferences, savePreferences);
 
     watch(
         lang,

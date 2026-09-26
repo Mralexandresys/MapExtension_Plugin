@@ -22,7 +22,6 @@ export function formatRelativeAge(
   return `${prefix}${formatted}s`;
 }
 
-
 export function formatClockSeconds(totalSeconds: number | null | undefined): string {
   if (totalSeconds == null || !Number.isFinite(totalSeconds)) return '--:--';
   const safe = Math.max(0, Math.round(totalSeconds));
@@ -39,4 +38,14 @@ export function formatClockSeconds(totalSeconds: number | null | undefined): str
   return [minutes, seconds]
     .map((value) => String(value).padStart(2, '0'))
     .join(':');
+}
+
+/** Case- and accent-insensitive, so "equipement" finds "Équipement". */
+function foldForSearch(value: string): string {
+  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLocaleLowerCase();
+}
+
+export function matchesSearch(needle: string, ...haystacks: string[]): boolean {
+  const folded = foldForSearch(needle.trim());
+  return !folded || haystacks.some((value) => foldForSearch(value).includes(folded));
 }

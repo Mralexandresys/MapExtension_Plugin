@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import { poiState, poiStateLabel as resourceStateLabel } from '../lib/poiState';
+import { poiKindLabel as poiKindText, poiState, poiStateLabel as resourceStateLabel } from '../lib/poiState';
 import teleporterSvg from '../assets/teleporter.svg?raw';
 import { getMessages } from '../lang';
 import type { Language } from '../lang';
@@ -28,6 +28,8 @@ import {
 } from '../lib/mapMarkers';
 import {
   groupColor,
+  resourceColor,
+  resourceTypeIdFromLabel,
   type StaticPlacement,
   type StaticPointSeries,
 } from '../lib/staticMapCatalog';
@@ -49,29 +51,29 @@ const props = defineProps<{
   pois: Poi[];
   selectedKey: string | null;
   selectedEntity: SelectedEntity | null;
-  orphanKeys: string[];
-  focusKeys: string[];
+  orphanKeys: ReadonlySet<string>;
+  focusKeys: ReadonlySet<string>;
   focusCargoKey: string | null;
   lang: Language;
   iconScale: number;
-  userMarkers?: UserMarker[];
-  userZones?: UserZone[];
-  annotationMode?: 'idle' | 'marker' | 'zone';
-  annotationEditMode?: UserAnnotationEditMode;
-  selectedAnnotation?: UserAnnotationSelection;
+  userMarkers: UserMarker[];
+  userZones: UserZone[];
+  annotationMode: 'idle' | 'marker' | 'zone';
+  annotationEditMode: UserAnnotationEditMode;
+  selectedAnnotation: UserAnnotationSelection;
 
   // ── Static world catalog (map-data/) ───────────────────────────────────────
-  staticSeries?: StaticPointSeries[];
-  staticPlacements?: StaticPlacement[];
-  staticPois?: StaticMapPoiView[];
-  staticStateVersion?: number;
-  staticSelection?: StaticSelection | null;
-  staticSeriesVisible?: (entry: StaticPointSeries) => boolean;
-  staticPlacementVisible?: (entry: StaticPlacement) => boolean;
-  staticOrePurityVisible?: (code: number) => boolean;
-  staticPoiVisible?: (entry: StaticMapPoiView) => boolean;
-  staticPick?: (x: number, y: number, radius: number) => StaticSelection | null;
-  staticDescribe?: (selection: StaticSelection) => { title: string; lines: string[] };
+  staticSeries: StaticPointSeries[];
+  staticPlacements: StaticPlacement[];
+  staticPois: StaticMapPoiView[];
+  staticStateVersion: number;
+  staticSelection: StaticSelection | null;
+  staticSeriesVisible: (entry: StaticPointSeries) => boolean;
+  staticPlacementVisible: (entry: StaticPlacement) => boolean;
+  staticOrePurityVisible: (code: number) => boolean;
+  staticPoiVisible: (entry: StaticMapPoiView) => boolean;
+  staticPick: (x: number, y: number, radius: number) => StaticSelection | null;
+  staticDescribe: (selection: StaticSelection) => TooltipContent;
 }>();
 
 const emit = defineEmits<{
@@ -84,7 +86,12 @@ const emit = defineEmits<{
   "move-marker": [point: { x: number; y: number }];
   "update-zone": [rect: Rect2D];
   "select-static": [selection: StaticSelection | null];
-}>(); 
+}>();
+
+interface TooltipContent {
+  title: string;
+  lines: string[];
+}
 
 const TELEPORTER_SYMBOL_ID = 'teleporter-marker-icon';
 const TELEPORTER_ICON_SIZE = 28;
@@ -122,8 +129,6 @@ const imageWidth = computed(() => projection.value.image_width);
 const imageHeight = computed(() => projection.value.image_height);
 const imageX = computed(() => -projection.value.dst_x1);
 const imageY = computed(() => -projection.value.dst_y1);
-const orphanKeySet = computed(() => new Set(props.orphanKeys));
-const focusKeySet = computed(() => new Set(props.focusKeys));
 
 const markerScaleTransform = computed(() => `scale(${props.iconScale})`);
 const tileScaleX = computed(() => imageWidth.value / TILE_SOURCE_WIDTH);
@@ -204,8 +209,8 @@ function markerTranslateTransform(x: number, y: number): string {
   return `translate(${x} ${y}) ${markerScaleTransform.value} translate(${-x} ${-y})`;
 }
 
-const lockedUserZones = computed(() => (props.userZones ?? []).filter((zone) => zone.locked));
-const unlockedUserZones = computed(() => (props.userZones ?? []).filter((zone) => !zone.locked));
+const lockedUserZones = computed(() => props.userZones.filter((zone) => zone.locked));
+const unlockedUserZones = computed(() => props.userZones.filter((zone) => !zone.locked));
 
 
 const {
@@ -216,31 +221,55 @@ const {
   moveTooltip,
 } = useMapTooltip(mapShell);
 
-let poiTooltipAnchor:
-  | { key: string; event: MouseEvent }
-  | { key: string; element: Element }
-  | null = null;
+/** Where the tooltip was opened from, so a live POI can refresh it in place. */
+type TooltipAnchor = MouseEvent | Element;
+let poiTooltipAnchor: { key: string; anchor: TooltipAnchor } | null = null;
+
+function showAt(content: TooltipContent, anchor: TooltipAnchor): void {
+  if (anchor instanceof Element) showMapTooltipFromElement(content.title, content.lines, anchor);
+  else showMapTooltip(content.title, content.lines, anchor);
+}
+
 function hideTooltip(): void {
   poiTooltipAnchor = null;
   hideMapTooltip();
 }
-function showTooltip(title: string, lines: string[], event: MouseEvent): void {
+
+/** Hover and keyboard focus show the same tooltip, anchored on the pointer or the element. */
+function showTooltip(content: TooltipContent, event: MouseEvent | FocusEvent): void {
   poiTooltipAnchor = null;
-  showMapTooltip(title, lines, event);
+  if (event instanceof MouseEvent) {
+    showAt(content, event);
+  } else if (event.currentTarget instanceof Element) {
+    showAt(content, event.currentTarget);
+  }
 }
-function showTooltipFromElement(title: string, lines: string[], element: Element): void {
-  poiTooltipAnchor = null;
-  showMapTooltipFromElement(title, lines, element);
+
+/** Live entities also report hover, which drives link highlighting. */
+function showEntityTooltip(content: TooltipContent, event: MouseEvent | FocusEvent, key: string): void {
+  emit('hover', key);
+  showTooltip(content, event);
 }
+
+function hideEntityTooltip(): void {
+  emit('hover', null);
+  hideTooltip();
+}
+
+function showPoiTooltip(poi: Poi, event: MouseEvent | FocusEvent): void {
+  showEntityTooltip(poiTooltip(poi), event, poi.unique_key);
+  const anchor = event instanceof MouseEvent ? event : event.currentTarget;
+  if (anchor instanceof MouseEvent || anchor instanceof Element) {
+    poiTooltipAnchor = { key: poi.unique_key, anchor };
+  }
+}
+
 watch([() => props.pois, () => props.lang], () => {
   if (!poiTooltipAnchor) return;
-  const poi = props.pois.find((candidate) => candidate.unique_key === poiTooltipAnchor?.key);
-  if (!poi) { hideTooltip(); return; }
-  if ('event' in poiTooltipAnchor) {
-    showMapTooltip(poiLabel(poi), poiTooltipLines(poi), poiTooltipAnchor.event);
-  } else {
-    showMapTooltipFromElement(poiLabel(poi), poiTooltipLines(poi), poiTooltipAnchor.element);
-  }
+  const { key, anchor } = poiTooltipAnchor;
+  const poi = props.pois.find((candidate) => candidate.unique_key === key);
+  if (poi) showAt(poiTooltip(poi), anchor);
+  else hideTooltip();
 });
 
 const panZoom = useMapPanZoom(mapShell, viewBoxWidth, viewBoxHeight, {
@@ -367,17 +396,12 @@ function handleWindowMouseUp(event: MouseEvent): void {
   }
 }
 
-function focusSelection(): void {
-  if (!props.selectedEntity) return;
-  centerOnPoint(props.selectedEntity.raw.map.x, props.selectedEntity.raw.map.y);
-}
-
 function focusPoint(mapX: number, mapY: number, desiredScale?: number): void {
   centerOnPoint(mapX, mapY, desiredScale);
 }
 
 function isDimmed(entityKey: string): boolean {
-  return focusKeySet.value.size > 0 && !focusKeySet.value.has(entityKey);
+  return props.focusKeys.size > 0 && !props.focusKeys.has(entityKey);
 }
 
 function isConnectionActive(connection: CargoConnection): boolean {
@@ -393,22 +417,22 @@ function cargoLabel(marker: CargoMarker): string {
   return marker.label || marker.display_name || ui.value.selection.cargoFallback;
 }
 
-function relatedConnectionCount(markerKey: string): number {
-  return props.cargoConnections.filter(
-    (connection) => connection.sender_key === markerKey || connection.receiver_key === markerKey,
-  ).length;
+/** Links per cargo marker, counted once rather than once per marker per render. */
+const connectionCounts = computed(() => {
+  const counts = new Map<string, number>();
+  for (const connection of props.cargoConnections) {
+    counts.set(connection.sender_key, (counts.get(connection.sender_key) ?? 0) + 1);
+    counts.set(connection.receiver_key, (counts.get(connection.receiver_key) ?? 0) + 1);
+  }
+  return counts;
+});
+
+function relatedConnectionsLabel(marker: CargoMarker): string {
+  return ui.value.format.relatedConnections(connectionCounts.value.get(marker.unique_key) ?? 0);
 }
 
 function markerTypeLabel(marker: CargoMarker): string {
   return marker.kind === 'sender' ? ui.value.map.senderLabel : ui.value.map.receiverLabel;
-}
-
-function cargoTooltipLines(marker: CargoMarker): string[] {
-  return [
-    `${markerTypeLabel(marker)} | ${marker.resource || ui.value.map.noResource}`,
-    ui.value.format.relatedConnections(relatedConnectionCount(marker.unique_key)),
-    ui.value.map.clickToSelect,
-  ];
 }
 
 function teleporterLabel(teleporter: Teleporter): string {
@@ -419,28 +443,12 @@ function playerLabel(player: Player): string {
   return player.label || ui.value.selection.playerFallback;
 }
 
-function stableStringHash(value: string): number {
-  let hash = 0x811c9dc5;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-
-  return hash >>> 0;
+function playerRoleLabel(player: Player): string {
+  return player.self ? ui.value.selection.selfPlayer : ui.value.entityLabels.player;
 }
 
 function poiKindLabel(poi: Poi): string {
-  switch (poi.kind) {
-    case 'abandoned_base':
-      return ui.value.map.abandonedBaseLabel;
-    case 'plant_resource':
-      return ui.value.map.plantResourceLabel;
-    case 'ignitium':
-      return ui.value.map.ignitiumLabel;
-    case 'star_tears':
-      return ui.value.map.starTearsLabel;
-  }
+  return poiKindText(poi.kind, ui.value.map);
 }
 
 function poiLabel(poi: Poi): string {
@@ -451,7 +459,34 @@ function poiStateLabel(poi: Poi): string {
   return resourceStateLabel(poi, ui.value.map);
 }
 
-function poiTooltipLines(poi: Poi): string[] {
+function userMarkerLabel(marker: UserMarker): string {
+  return marker.label || ui.value.notes.markerSingular;
+}
+
+function userZoneLabel(zone: UserZone): string {
+  return zone.label || ui.value.notes.zoneSingular;
+}
+
+function cargoTooltip(marker: CargoMarker): TooltipContent {
+  return {
+    title: cargoLabel(marker),
+    lines: [
+      `${markerTypeLabel(marker)} | ${marker.resource || ui.value.map.noResource}`,
+      relatedConnectionsLabel(marker),
+      ui.value.map.clickToSelect,
+    ],
+  };
+}
+
+function teleporterTooltip(teleporter: Teleporter): TooltipContent {
+  return { title: teleporterLabel(teleporter), lines: [ui.value.map.clickToSelect] };
+}
+
+function playerTooltip(player: Player): TooltipContent {
+  return { title: playerLabel(player), lines: [playerRoleLabel(player), ui.value.map.clickToSelect] };
+}
+
+function poiTooltip(poi: Poi): TooltipContent {
   const lines = [
     `${ui.value.selection.type}: ${poiKindLabel(poi)}`,
     `${ui.value.selection.name}: ${poiLabel(poi)}`,
@@ -465,25 +500,45 @@ function poiTooltipLines(poi: Poi): string[] {
     lines.push(ui.value.filters.ruptureSiteHint);
   }
 
-  return [...lines, ui.value.map.clickToSelect];
+  return { title: poiLabel(poi), lines: [...lines, ui.value.map.clickToSelect] };
+}
+
+function userMarkerTooltip(marker: UserMarker): TooltipContent {
+  return { title: userMarkerLabel(marker), lines: [ui.value.map.clickToSelect] };
+}
+
+function userZoneTooltip(zone: UserZone): TooltipContent {
+  const description = zone.description.trim();
+  const title = userZoneLabel(zone);
+  const lines = description && description !== title ? [description] : [];
+  return { title, lines: [...lines, ui.value.map.clickToSelect] };
+}
+
+function connectionTooltip(connection: CargoConnection): TooltipContent {
+  return {
+    title: ui.value.map.cargoConnection,
+    lines: [
+      `${ui.value.map.senderLabel}: ${connection.sender_label || connection.sender_key}`,
+      `${ui.value.map.receiverLabel}: ${connection.receiver_label || connection.receiver_key}`,
+      `${ui.value.map.itemLabel}: ${connection.item || ui.value.map.unknownItem}`,
+      `${ui.value.map.requestedLabel}: ${connection.requested_amount ?? '--'}`,
+    ],
+  };
 }
 
 function poiColorStyle(poi: Poi): Record<string, string> {
   if (poi.kind === 'ignitium') return { '--poi-color': '#f97316' };
   if (poi.kind === 'star_tears') return { '--poi-color': '#38bdf8' };
 
-  const colorKey = (poi.resource || poi.label || poi.unique_key).trim().toLowerCase();
-  const hash = stableStringHash(colorKey);
-  // Derive a stable HSL color from the full hash instead of a small fixed
-  // palette so distinct resources rarely share the same hue.
-  const hue = hash % 360;
-  const saturation = 62 + (Math.floor(hash / 360) % 21); // 62–82%
-  const lightness = 60 + (Math.floor(hash / 7560) % 13); // 60–72%
-  return { '--poi-color': `hsl(${hue}, ${saturation}%, ${lightness}%)` };
+  // Same palette as the catalog, so a plant keeps its colour whether the
+  // export or the plugin reported it; unknown names hash to a stable hue.
+  const label = poi.resource || poi.label || poi.unique_key;
+  return { '--poi-color': resourceColor(resourceTypeIdFromLabel(label, NO_LABEL_INDEX)) };
 }
+const NO_LABEL_INDEX = new Map<string, string>();
 
 function cargoAriaLabel(marker: CargoMarker): string {
-  return `${cargoLabel(marker)}. ${markerTypeLabel(marker)}. ${ui.value.format.relatedConnections(relatedConnectionCount(marker.unique_key))}.`;
+  return `${cargoLabel(marker)}. ${markerTypeLabel(marker)}. ${relatedConnectionsLabel(marker)}.`;
 }
 
 function teleporterAriaLabel(teleporter: Teleporter): string {
@@ -491,19 +546,18 @@ function teleporterAriaLabel(teleporter: Teleporter): string {
 }
 
 function playerAriaLabel(player: Player): string {
-  return `${playerLabel(player)}. ${
-    player.self ? ui.value.selection.selfPlayer : ui.value.entityLabels.player
-  }.`;
+  return `${playerLabel(player)}. ${playerRoleLabel(player)}.`;
 }
 
 function poiAriaLabel(poi: Poi): string {
   return `${poiLabel(poi)}. ${poiKindLabel(poi)}. ${poi.resource || ui.value.map.noResource}. ${poiStateLabel(poi)}.`;
 }
 
-function handleMarkerKeydown(event: KeyboardEvent, key: string): void {
+/** Enter/Space activate a map item like a click; Escape clears the selection. */
+function handleItemKeydown(event: KeyboardEvent, activate: () => void): void {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    emit('select', key);
+    activate();
     return;
   }
 
@@ -513,142 +567,12 @@ function handleMarkerKeydown(event: KeyboardEvent, key: string): void {
   }
 }
 
-function handleCargoFocus(marker: CargoMarker, event: FocusEvent): void {
-  const target = event.target as Element | null;
-  if (!target) return;
-
-  emit('hover', marker.unique_key);
-  showTooltipFromElement(cargoLabel(marker), cargoTooltipLines(marker), target);
-}
-
-function handleTeleporterFocus(teleporter: Teleporter, event: FocusEvent): void {
-  const target = event.target as Element | null;
-  if (!target) return;
-
-  showTooltipFromElement(
-    teleporterLabel(teleporter),
-    [ui.value.map.clickToSelect],
-    target,
-  );
-}
-
-function handlePlayerFocus(player: Player, event: FocusEvent): void {
-  const target = event.target as Element | null;
-  if (!target) return;
-
-  showTooltipFromElement(
-    playerLabel(player),
-    [
-      player.self ? ui.value.selection.selfPlayer : ui.value.entityLabels.player,
-      ui.value.map.clickToSelect,
-    ],
-    target,
-  );
-}
-
-function handlePoiFocus(poi: Poi, event: FocusEvent): void {
-  const target = event.target as Element | null;
-  if (!target) return;
-
-  emit('hover', poi.unique_key);
-  showTooltipFromElement(poiLabel(poi), poiTooltipLines(poi), target);
-  poiTooltipAnchor = { key: poi.unique_key, element: target };
-}
-
-function handleCargoBlur(): void {
-  emit('hover', null);
-  hideTooltip();
-}
-
-function showCargoTooltip(marker: CargoMarker, event: MouseEvent): void {
-  emit('hover', marker.unique_key);
-  showTooltip(cargoLabel(marker), cargoTooltipLines(marker), event);
-}
-
-function showTeleporterTooltip(teleporter: Teleporter, event: MouseEvent): void {
-  showTooltip(
-    teleporterLabel(teleporter),
-    [ui.value.map.clickToSelect],
-    event,
-  );
-}
-
-function showPlayerTooltip(player: Player, event: MouseEvent): void {
-  showTooltip(
-    playerLabel(player),
-    [
-      player.self ? ui.value.selection.selfPlayer : ui.value.entityLabels.player,
-      ui.value.map.clickToSelect,
-    ],
-    event,
-  );
-}
-
-function showPoiTooltip(poi: Poi, event: MouseEvent): void {
-  emit('hover', poi.unique_key);
-  showTooltip(poiLabel(poi), poiTooltipLines(poi), event);
-  poiTooltipAnchor = { key: poi.unique_key, event };
-}
-
-function handlePoiBlur(): void {
-  emit('hover', null);
-  hideTooltip();
-}
-
-function userMarkerLabel(marker: UserMarker): string {
-  return marker.label || ui.value.notes.markerSingular;
-}
-
-function userZoneLabel(zone: UserZone): string {
-  return zone.label || ui.value.notes.zoneSingular;
-}
-
-function showUserMarkerTooltip(marker: UserMarker, event: MouseEvent): void {
-  showTooltip(userMarkerLabel(marker), [ui.value.map.clickToSelect], event);
-}
-
-function userZoneTooltipLines(zone: UserZone): string[] {
-  const description = zone.description.trim();
-  const label = userZoneLabel(zone);
-  const lines = description && description !== label ? [description] : [];
-  return [...lines, ui.value.map.clickToSelect];
-}
-
-function handleUserMarkerFocus(marker: UserMarker, event: FocusEvent): void {
-  const target = event.target as Element | null;
-  if (!target) return;
-  showTooltipFromElement(userMarkerLabel(marker), [ui.value.map.clickToSelect], target);
-}
-
-function showUserZoneTooltip(zone: UserZone, event: MouseEvent): void {
-  showTooltip(userZoneLabel(zone), userZoneTooltipLines(zone), event);
-}
-
-function handleUserZoneFocus(zone: UserZone, event: FocusEvent): void {
-  const target = event.target as Element | null;
-  if (!target) return;
-  showTooltipFromElement(userZoneLabel(zone), userZoneTooltipLines(zone), target);
-}
-
-function showConnectionTooltip(connection: CargoConnection, event: MouseEvent): void {
-  showTooltip(
-    ui.value.map.cargoConnection,
-    [
-      `${ui.value.map.senderLabel}: ${connection.sender_label || connection.sender_key}`,
-      `${ui.value.map.receiverLabel}: ${connection.receiver_label || connection.receiver_key}`,
-      `${ui.value.map.itemLabel}: ${connection.item || ui.value.map.unknownItem}`,
-      `${ui.value.map.requestedLabel}: ${connection.requested_amount ?? '--'}`,
-    ],
-    event,
-  );
-}
-
 function handleMouseDown(event: MouseEvent): void {
   const target = event.target as Element | null;
   if (!target?.closest('.map-svg')) return;
   if (target.closest('.map-marker, .connection-line, .user-marker, .user-zone')) return;
 
-  const mode = props.annotationMode ?? 'idle';
+  const mode = props.annotationMode;
 
   if (mode === 'zone') {
     const pt = screenToMapPoint(event.clientX, event.clientY);
@@ -698,7 +622,7 @@ function handleCanvasClick(event: MouseEvent): void {
   const target = event.target as Element | null;
   if (!target?.closest('.map-svg')) return;
 
-  const mode = props.annotationMode ?? 'idle';
+  const mode = props.annotationMode;
   if (mode === 'idle') {
     if (consumeDragMovement()) return;
     if (target.closest('.map-marker, .connection-line, .user-zone')) return;
@@ -716,7 +640,7 @@ function handleCanvasClick(event: MouseEvent): void {
 
 function handleMouseMove(event: MouseEvent): void {
   const target = event.target as Element | null;
-  const mode = props.annotationMode ?? 'idle';
+  const mode = props.annotationMode;
   if (mode === 'marker' && target?.closest('.map-svg')) {
     const pt = screenToMapPoint(event.clientX, event.clientY);
     ghostPoint.value = pt && isMapPointWithinImage(pt) ? pt : null;
@@ -759,38 +683,19 @@ function zoneGroupClass(zone: UserZone): Record<string, boolean> {
 
 // ── static world catalog ─────────────────────────────────────────────────
 
-const staticSeriesList = computed(() => props.staticSeries ?? []);
-const staticPlacementList = computed(() => props.staticPlacements ?? []);
-const noStaticSeries = () => false;
-const noStaticPlacement = () => false;
-const staticSeriesVisible = computed(() => props.staticSeriesVisible ?? noStaticSeries);
-const staticPlacementVisible = computed(
-  () => props.staticPlacementVisible ?? noStaticPlacement,
-);
-const allOrePurities = () => true;
-const staticOrePurityVisible = computed(
-  () => props.staticOrePurityVisible ?? allOrePurities,
-);
-const visibleStaticPois = computed(() => {
-  const entries = props.staticPois ?? [];
-  const isVisible = props.staticPoiVisible;
-  return isVisible ? entries.filter(isVisible) : entries;
-});
+const visibleStaticPois = computed(() => props.staticPois.filter(props.staticPoiVisible));
 
 const staticHover = ref<StaticSelection | null>(null);
 let staticPickHandle = 0;
 let staticPickEvent: MouseEvent | null = null;
 
 const staticHighlight = computed(() => {
-  const target = staticHover.value ?? props.staticSelection ?? null;
+  const target = staticHover.value ?? props.staticSelection;
   return target ? { x: target.x, y: target.y } : null;
 });
 
 /** Converts a screen position to world decimetres and queries the catalog. */
 function pickStaticAt(clientX: number, clientY: number): StaticSelection | null {
-  const pick = props.staticPick;
-  if (!pick) return null;
-
   const point = screenToMapPoint(clientX, clientY);
   if (!point) return null;
 
@@ -802,7 +707,7 @@ function pickStaticAt(clientX: number, clientY: number): StaticSelection | null 
   const radiusDm =
     Math.abs(9 / Math.max(mapPixelsPerUnit.value, Number.EPSILON) / scaleX) / 10;
 
-  return pick(world.x / 10, world.y / 10, radiusDm);
+  return props.staticPick(world.x / 10, world.y / 10, radiusDm);
 }
 
 function clearStaticHover(): void {
@@ -812,8 +717,6 @@ function clearStaticHover(): void {
 }
 
 function updateStaticHover(event: MouseEvent): void {
-  if (!props.staticPick) return;
-
   staticPickEvent = event;
   if (staticPickHandle) return;
 
@@ -835,20 +738,14 @@ function updateStaticHover(event: MouseEvent): void {
       return;
     }
 
-    const description = props.staticDescribe?.(found);
-    if (description) {
-      showTooltip(description.title, description.lines, pointer);
-    }
+    showTooltip(props.staticDescribe(found), pointer);
   });
 }
 
 // Availability can change while the pointer stays on the same catalog point.
 watch([() => props.staticStateVersion, () => props.lang], () => {
   if (!staticHover.value || !staticPickEvent) return;
-  const description = props.staticDescribe?.(staticHover.value);
-  if (description) {
-    showTooltip(description.title, description.lines, staticPickEvent);
-  }
+  showTooltip(props.staticDescribe(staticHover.value), staticPickEvent);
 });
 
 function staticPoiLabel(poi: StaticMapPoiView): string {
@@ -881,32 +778,6 @@ function staticPoiSelection(poi: StaticMapPoiView): StaticSelection {
   };
 }
 
-function showStaticPoiTooltip(poi: StaticMapPoiView, event: MouseEvent): void {
-  const description = props.staticDescribe?.(staticPoiSelection(poi));
-  if (description) showTooltip(description.title, description.lines, event);
-}
-
-function handleStaticPoiFocus(poi: StaticMapPoiView, event: FocusEvent): void {
-  const target = event.currentTarget as Element | null;
-  const description = props.staticDescribe?.(staticPoiSelection(poi));
-  if (target && description) {
-    showTooltipFromElement(description.title, description.lines, target);
-  }
-}
-
-function handleStaticPoiKeydown(event: KeyboardEvent, poi: StaticMapPoiView): void {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    emit('select-static', staticPoiSelection(poi));
-    return;
-  }
-
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    emit('select-static', null);
-  }
-}
-
 onMounted(() => {
   window.addEventListener('mousemove', handleWindowMouseMove);
   window.addEventListener('mouseup', handleWindowMouseUp);
@@ -919,7 +790,6 @@ onBeforeUnmount(() => {
 });
 
 defineExpose({
-  focusSelection,
   focusPoint,
   resetView,
 });
@@ -931,9 +801,9 @@ defineExpose({
     class="map-canvas"
     :class="{
       dragging: isDragging,
-      'is-placing-marker': (annotationMode ?? 'idle') === 'marker',
-      'is-drawing-zone': (annotationMode ?? 'idle') === 'zone',
-      'is-moving-annotation': (annotationEditMode ?? 'idle') !== 'idle',
+      'is-placing-marker': annotationMode === 'marker',
+      'is-drawing-zone': annotationMode === 'zone',
+      'is-moving-annotation': annotationEditMode !== 'idle',
     }"
     :aria-busy="loading"
     @mousedown="handleMouseDown"
@@ -969,8 +839,8 @@ defineExpose({
     </svg>
 
     <StaticMapCanvas
-      :series="staticSeriesList"
-      :placements="staticPlacementList"
+      :series="staticSeries"
+      :placements="staticPlacements"
       :is-series-visible="staticSeriesVisible"
       :is-placement-visible="staticPlacementVisible"
       :is-ore-purity-visible="staticOrePurityVisible"
@@ -981,7 +851,7 @@ defineExpose({
       :viewport-bounds="viewportBounds"
       :view-box-width="viewBoxWidth"
       :view-box-height="viewBoxHeight"
-      :state-version="staticStateVersion ?? 0"
+      :state-version="staticStateVersion"
       :highlight="staticHighlight"
     />
 
@@ -1018,8 +888,9 @@ defineExpose({
             tabindex="0"
             role="button"
             @click.stop="emit('select-annotation', { type: 'zone', id: zone.id })"
-            @focus.stop="handleUserZoneFocus(zone, $event)"
-            @mouseenter.stop="showUserZoneTooltip(zone, $event)"
+            @keydown="handleItemKeydown($event, () => emit('select-annotation', { type: 'zone', id: zone.id }))"
+            @focus.stop="showTooltip(userZoneTooltip(zone), $event)"
+            @mouseenter.stop="showTooltip(userZoneTooltip(zone), $event)"
             @mousemove.stop="moveTooltip($event)"
             @blur.stop="hideTooltip"
             @mouseleave.stop="hideTooltip"
@@ -1055,10 +926,10 @@ defineExpose({
             :aria-label="staticPoiLabel(poi)"
             :transform="staticPoiTransform(poi)"
             @click.stop="emit('select-static', staticPoiSelection(poi))"
-            @keydown="handleStaticPoiKeydown($event, poi)"
+            @keydown="handleItemKeydown($event, () => emit('select-static', staticPoiSelection(poi)))"
             @dblclick.stop
-            @focus.stop="handleStaticPoiFocus(poi, $event)"
-            @mouseenter.stop="showStaticPoiTooltip(poi, $event)"
+            @focus.stop="showTooltip(staticDescribe(staticPoiSelection(poi)), $event)"
+            @mouseenter.stop="showTooltip(staticDescribe(staticPoiSelection(poi)), $event)"
             @mousemove.stop="moveTooltip($event)"
             @blur.stop="hideTooltip"
             @mouseleave.stop="hideTooltip"
@@ -1107,7 +978,7 @@ defineExpose({
             :y1="connection.sender.map.y"
             :x2="connection.receiver.map.x"
             :y2="connection.receiver.map.y"
-            @mouseenter.stop="showConnectionTooltip(connection, $event)"
+            @mouseenter.stop="showTooltip(connectionTooltip(connection), $event)"
             @mousemove.stop="moveTooltip($event)"
             @mouseleave.stop="hideTooltip"
           />
@@ -1121,7 +992,7 @@ defineExpose({
             :class="[
               marker.kind,
               {
-                orphan: orphanKeySet.has(marker.unique_key),
+                orphan: orphanKeys.has(marker.unique_key),
                 active: selectedKey === marker.unique_key,
                 dimmed: isDimmed(marker.unique_key),
               },
@@ -1133,12 +1004,12 @@ defineExpose({
             :transform="markerTranslateTransform(marker.map.x, marker.map.y)"
             @click.stop="emit('select', marker.unique_key)"
             @dblclick.stop
-            @keydown="handleMarkerKeydown($event, marker.unique_key)"
-            @focus.stop="handleCargoFocus(marker, $event)"
-            @mouseenter.stop="showCargoTooltip(marker, $event)"
+            @keydown="handleItemKeydown($event, () => emit('select', marker.unique_key))"
+            @focus.stop="showEntityTooltip(cargoTooltip(marker), $event, marker.unique_key)"
+            @mouseenter.stop="showEntityTooltip(cargoTooltip(marker), $event, marker.unique_key)"
             @mousemove.stop="moveTooltip($event)"
-            @blur.stop="handleCargoBlur"
-            @mouseleave.stop="handleCargoBlur"
+            @blur.stop="hideEntityTooltip"
+            @mouseleave.stop="hideEntityTooltip"
           >
             <polygon
               v-if="marker.kind === 'sender'"
@@ -1167,12 +1038,12 @@ defineExpose({
             :transform="markerTranslateTransform(poi.map.x, poi.map.y)"
             @click.stop="emit('select', poi.unique_key)"
             @dblclick.stop
-            @keydown="handleMarkerKeydown($event, poi.unique_key)"
-            @focus.stop="handlePoiFocus(poi, $event)"
+            @keydown="handleItemKeydown($event, () => emit('select', poi.unique_key))"
+            @focus.stop="showPoiTooltip(poi, $event)"
             @mouseenter.stop="showPoiTooltip(poi, $event)"
             @mousemove.stop="moveTooltip($event)"
-            @blur.stop="handlePoiBlur"
-            @mouseleave.stop="handlePoiBlur"
+            @blur.stop="hideEntityTooltip"
+            @mouseleave.stop="hideEntityTooltip"
           >
             <rect
               class="poi-hitbox"
@@ -1213,9 +1084,9 @@ defineExpose({
             :transform="markerTranslateTransform(teleporter.map.x, teleporter.map.y)"
             @click.stop="emit('select', teleporter.unique_key)"
             @dblclick.stop
-            @keydown="handleMarkerKeydown($event, teleporter.unique_key)"
-            @focus.stop="handleTeleporterFocus(teleporter, $event)"
-            @mouseenter.stop="showTeleporterTooltip(teleporter, $event)"
+            @keydown="handleItemKeydown($event, () => emit('select', teleporter.unique_key))"
+            @focus.stop="showTooltip(teleporterTooltip(teleporter), $event)"
+            @mouseenter.stop="showTooltip(teleporterTooltip(teleporter), $event)"
             @mousemove.stop="moveTooltip($event)"
             @blur.stop="hideTooltip"
             @mouseleave.stop="hideTooltip"
@@ -1252,9 +1123,9 @@ defineExpose({
             :transform="markerTranslateTransform(player.map.x, player.map.y)"
             @click.stop="emit('select', player.unique_key)"
             @dblclick.stop
-            @keydown="handleMarkerKeydown($event, player.unique_key)"
-            @focus.stop="handlePlayerFocus(player, $event)"
-            @mouseenter.stop="showPlayerTooltip(player, $event)"
+            @keydown="handleItemKeydown($event, () => emit('select', player.unique_key))"
+            @focus.stop="showTooltip(playerTooltip(player), $event)"
+            @mouseenter.stop="showTooltip(playerTooltip(player), $event)"
             @mousemove.stop="moveTooltip($event)"
             @blur.stop="hideTooltip"
             @mouseleave.stop="hideTooltip"
@@ -1276,9 +1147,10 @@ defineExpose({
             tabindex="0"
             role="button"
             @click.stop="emit('select-annotation', { type: 'zone', id: zone.id })"
+            @keydown="handleItemKeydown($event, () => emit('select-annotation', { type: 'zone', id: zone.id }))"
             @mousedown.stop="handleUserZoneMouseDown(zone, $event)"
-            @focus.stop="handleUserZoneFocus(zone, $event)"
-            @mouseenter.stop="showUserZoneTooltip(zone, $event)"
+            @focus.stop="showTooltip(userZoneTooltip(zone), $event)"
+            @mouseenter.stop="showTooltip(userZoneTooltip(zone), $event)"
             @mousemove.stop="moveTooltip($event)"
             @blur.stop="hideTooltip"
             @mouseleave.stop="hideTooltip"
@@ -1311,7 +1183,7 @@ defineExpose({
         />
 
         <!-- User markers -->
-        <g v-if="userMarkers && userMarkers.length">
+        <g v-if="userMarkers.length">
           <g
             v-for="marker in userMarkers"
             :key="marker.id"
@@ -1321,9 +1193,10 @@ defineExpose({
             tabindex="0"
             role="button"
             @click.stop="emit('select-annotation', { type: 'marker', id: marker.id })"
+            @keydown="handleItemKeydown($event, () => emit('select-annotation', { type: 'marker', id: marker.id }))"
             @mousedown.stop="handleUserMarkerMouseDown(marker, $event)"
-            @focus.stop="handleUserMarkerFocus(marker, $event)"
-            @mouseenter.stop="showUserMarkerTooltip(marker, $event)"
+            @focus.stop="showTooltip(userMarkerTooltip(marker), $event)"
+            @mouseenter.stop="showTooltip(userMarkerTooltip(marker), $event)"
             @mousemove.stop="moveTooltip($event)"
             @blur.stop="hideTooltip"
             @mouseleave.stop="hideTooltip"
@@ -1342,7 +1215,7 @@ defineExpose({
       </g>
     </svg>
 
-    <div v-if="!cargo && !loading && !staticPois?.length && !staticSeries?.length && !staticPlacements?.length" class="map-empty-state">
+    <div v-if="!cargo && !loading && !staticPois.length && !staticSeries.length && !staticPlacements.length" class="map-empty-state">
       <strong>{{ ui.map.emptyTitle }}</strong>
       <span>{{ ui.map.emptyBody }}</span>
     </div>
@@ -1363,7 +1236,7 @@ defineExpose({
       }"
     >
       <strong>{{ tooltip.title }}</strong>
-      <span v-for="line in tooltip.lines" :key="line">{{ line }}</span>
+      <span v-for="(line, index) in tooltip.lines" :key="index">{{ line }}</span>
     </div>
   </div>
 </template>

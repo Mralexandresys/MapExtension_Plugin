@@ -176,7 +176,6 @@ export interface EntityVisibility {
 }
 
 export interface MapCanvasHandle {
-    focusSelection: () => void;
     focusPoint: (mapX: number, mapY: number, desiredScale?: number) => void;
     resetView: () => void;
 }
@@ -302,22 +301,6 @@ export interface MapSelectionPanelModel {
     };
     visibleCargoConnectionsCount: number;
     statsOverview: DetailRow[];
-}
-
-/** What clicking an active-filter chip undoes. */
-export type ActiveFilterClear =
-    | { kind: "preset" }
-    | { kind: "showAllLinks" }
-    | { kind: "highlightOrphans" }
-    | { kind: "userAnnotationsOnly" }
-    | { kind: "focusMode" }
-    | { kind: "entity"; key: EntityToggleKey }
-    | { kind: "poiGroup"; key: string };
-
-export interface ActiveFilterChip {
-    id: string;
-    label: string;
-    clear: ActiveFilterClear;
 }
 
 export interface HarvestOption {
@@ -480,15 +463,6 @@ export interface UserAnnotationDraft {
     label: string;
     description: string;
     color: string;
-}
-
-export interface UserAnnotationSummary {
-    id: string;
-    type: "marker" | "zone";
-    label: string;
-    description: string;
-    meta: string;
-    createdAt: string;
 }
 
 export interface MapNotesPanelModel {
