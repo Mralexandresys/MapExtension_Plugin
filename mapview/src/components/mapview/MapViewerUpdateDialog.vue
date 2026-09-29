@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { ref, watchPostEffect } from "vue";
 
 import type { MapViewerUpdateDialogModel } from "../../lib/types";
 
@@ -11,90 +11,27 @@ const emit = defineEmits<{
     "close": [];
 }>();
 
-const dialogRef = ref<HTMLElement | null>(null);
-const closeButtonRef = ref<HTMLButtonElement | null>(null);
-let previousFocusedElement: HTMLElement | null = null;
-
-function getFocusableElements(): HTMLElement[] {
-    if (!dialogRef.value) return [];
-
-    return Array.from(
-        dialogRef.value.querySelectorAll<HTMLElement>(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        ),
-    ).filter((element) => !element.hasAttribute("disabled"));
-}
-
-// Registered in the capture phase so this dialog, which sits above every other
-// overlay, deterministically consumes Escape/Tab before the shortcut dialog and
-// the global shortcut handler can react to them.
-function handleWindowKeydown(event: KeyboardEvent): void {
-    if (!props.panel.open) return;
-
-    if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        emit("close");
-        return;
-    }
-
-    if (event.key !== "Tab") return;
-
-    event.stopImmediatePropagation();
-
-    const focusableElements = getFocusableElements();
-    if (!focusableElements.length) return;
-
-    const first = focusableElements[0];
-    const last = focusableElements[focusableElements.length - 1];
-    const active = document.activeElement as HTMLElement | null;
-
-    if (event.shiftKey && active === first) {
-        event.preventDefault();
-        last.focus();
-    } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-    }
-}
-
-watch(
-    () => props.panel.open,
-    async (open) => {
-        if (open) {
-            previousFocusedElement = document.activeElement as HTMLElement | null;
-            window.addEventListener("keydown", handleWindowKeydown, true);
-            await nextTick();
-            closeButtonRef.value?.focus();
-            return;
-        }
-
-        window.removeEventListener("keydown", handleWindowKeydown, true);
-        previousFocusedElement?.focus();
-        previousFocusedElement = null;
-    },
-    { immediate: true },
-);
-
-onBeforeUnmount(() => {
-    window.removeEventListener("keydown", handleWindowKeydown, true);
+// A modal <dialog> traps focus, closes on Escape, makes the page inert and
+// restores focus on close. Opened last, it sits above the shortcut dialog.
+const dialogRef = ref<HTMLDialogElement | null>(null);
+watchPostEffect(() => {
+    const dialog = dialogRef.value;
+    if (!dialog) return;
+    if (props.panel.open && !dialog.open) dialog.showModal();
+    else if (!props.panel.open && dialog.open) dialog.close();
 });
 </script>
 
 <template>
-    <div
-        v-if="panel.open"
-        class="viewer-update-backdrop"
+    <dialog
+        ref="dialogRef"
+        class="card viewer-update-dialog"
+        aria-labelledby="viewer-update-dialog-title"
+        aria-describedby="viewer-update-dialog-subtitle"
+        @close="panel.open && emit('close')"
         @click.self="emit('close')"
     >
-        <section
-            ref="dialogRef"
-            class="card viewer-update-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="viewer-update-dialog-title"
-            aria-describedby="viewer-update-dialog-subtitle"
-        >
+        <div class="viewer-update-dialog-body">
             <div class="panel-top-row compact">
                 <div>
                     <span class="panel-kicker">{{ panel.ui.viewerUpdate.kicker }}</span>
@@ -104,7 +41,7 @@ onBeforeUnmount(() => {
                     </p>
                 </div>
                 <button
-                    ref="closeButtonRef"
+                    autofocus
                     class="button subtle small"
                     type="button"
                     @click="emit('close')"
@@ -170,32 +107,33 @@ onBeforeUnmount(() => {
                     {{ panel.ui.viewerUpdate.laterAction }}
                 </button>
             </div>
-        </section>
-    </div>
+        </div>
+    </dialog>
 </template>
 
 <style scoped>
-.viewer-update-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    display: grid;
-    place-items: center;
-    padding: 20px;
-    overflow: auto;
+/* The padding lives on the body: a click on the <dialog> element itself is a
+   click on the backdrop. */
+.viewer-update-dialog {
+    width: min(640px, calc(100% - 40px));
+    max-width: none;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 0;
+    color: var(--text);
+    background: var(--panel-strong);
+    --cut: 14px;
+    clip-path: polygon(var(--cut) 0%, 100% 0%, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0% 100%, 0% var(--cut));
+}
+
+.viewer-update-dialog::backdrop {
     background: rgba(2, 4, 12, 0.82);
     backdrop-filter: blur(6px);
 }
 
-.viewer-update-dialog {
-    width: min(640px, 100%);
-    max-height: calc(100vh - 40px);
-    overflow-y: auto;
-    box-sizing: border-box;
+.viewer-update-dialog-body {
     padding: 20px;
-    background: var(--panel-strong);
-    --cut: 14px;
-    clip-path: polygon(var(--cut) 0%, 100% 0%, 100% calc(100% - var(--cut)), calc(100% - var(--cut)) 100%, 0% 100%, 0% var(--cut));
 }
 
 .viewer-update-body {
@@ -261,7 +199,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 720px) {
-    .viewer-update-dialog {
+    .viewer-update-dialog-body {
         padding: 14px;
     }
 

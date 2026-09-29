@@ -1,5 +1,5 @@
 import type { Messages } from "../lang";
-import type { Poi, PoiState } from "./types";
+import type { Poi, PoiKind, PoiState } from "./types";
 
 export function poiState(poi: Poi): PoiState {
     if (poi.depleted || poi.state === "depleted") return "depleted";
@@ -14,5 +14,14 @@ export function poiStateLabel(poi: Poi, labels: Messages["map"]): string {
         case "unavailable": return labels.unavailableLabel;
         case "depleted": return labels.depletedLabel;
         default: return labels.unknownStateLabel;
+    }
+}
+
+export function poiKindLabel(kind: PoiKind, labels: Messages["map"]): string {
+    switch (kind) {
+        case "abandoned_base": return labels.abandonedBaseLabel;
+        case "plant_resource": return labels.plantResourceLabel;
+        case "ignitium": return labels.ignitiumLabel;
+        case "star_tears": return labels.starTearsLabel;
     }
 }

@@ -1,4 +1,4 @@
-import { computed, ref, type ComputedRef } from "vue";
+import { computed, ref, watch, type ComputedRef } from "vue";
 
 import type { Messages } from "../lang";
 import type {
@@ -9,7 +9,6 @@ import type {
     UserAnnotationExport,
     UserAnnotationMode,
     UserAnnotationSelection,
-    UserAnnotationSummary,
     UserMarker,
     UserZone,
 } from "../lib/types";
@@ -42,34 +41,41 @@ function persist(markers: UserMarker[], zones: UserZone[]): void {
     }
 }
 
+/**
+ * Stored and imported annotations go through the same defaults, so a file
+ * written by an older build, or edited by hand, cannot break rendering.
+ */
+function normalizeAnnotations(parsed: unknown): { markers: UserMarker[]; zones: UserZone[] } {
+    const source = (parsed ?? {}) as { markers?: unknown; zones?: unknown };
+    return {
+        markers: Array.isArray(source.markers)
+            ? source.markers.map((marker: Partial<UserMarker>) => ({
+                id: marker.id ?? genId(),
+                label: marker.label ?? "",
+                description: marker.description ?? "",
+                color: normalizeColor(marker.color, DEFAULT_MARKER_COLOR),
+                map: marker.map ?? { x: 0, y: 0 },
+                createdAt: marker.createdAt ?? new Date().toISOString(),
+            }))
+            : [],
+        zones: Array.isArray(source.zones)
+            ? source.zones.map((zone: Partial<UserZone>) => ({
+                id: zone.id ?? genId(),
+                label: zone.label ?? "",
+                description: zone.description ?? "",
+                color: normalizeColor(zone.color, DEFAULT_ZONE_COLOR),
+                locked: Boolean(zone.locked),
+                rect: zone.rect ?? { x: 0, y: 0, width: 0, height: 0 },
+                createdAt: zone.createdAt ?? new Date().toISOString(),
+            }))
+            : [],
+    };
+}
+
 function load(): { markers: UserMarker[]; zones: UserZone[] } {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return { markers: [], zones: [] };
-        const parsed = JSON.parse(raw);
-        return {
-            markers: Array.isArray(parsed.markers)
-                ? parsed.markers.map((marker: Partial<UserMarker>) => ({
-                    id: marker.id ?? genId(),
-                    label: marker.label ?? "",
-                    description: marker.description ?? "",
-                    color: normalizeColor(marker.color, DEFAULT_MARKER_COLOR),
-                    map: marker.map ?? { x: 0, y: 0 },
-                    createdAt: marker.createdAt ?? new Date().toISOString(),
-                }))
-                : [],
-            zones: Array.isArray(parsed.zones)
-                ? parsed.zones.map((zone: Partial<UserZone>) => ({
-                    id: zone.id ?? genId(),
-                    label: zone.label ?? "",
-                    description: zone.description ?? "",
-                    color: normalizeColor(zone.color, DEFAULT_ZONE_COLOR),
-                    locked: Boolean(zone.locked),
-                    rect: zone.rect ?? { x: 0, y: 0, width: 0, height: 0 },
-                    createdAt: zone.createdAt ?? new Date().toISOString(),
-                }))
-                : [],
-        };
+        return normalizeAnnotations(raw ? JSON.parse(raw) : null);
     } catch {
         return { markers: [], zones: [] };
     }
@@ -79,6 +85,8 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
     const stored = load();
     const markers = ref<UserMarker[]>(stored.markers);
     const zones = ref<UserZone[]>(stored.zones);
+    // Every mutation replaces the arrays, so a shallow watch sees them all.
+    watch([markers, zones], ([nextMarkers, nextZones]) => persist(nextMarkers, nextZones));
 
     const annotationMode = ref<UserAnnotationMode>("idle");
     const annotationEditMode = ref<UserAnnotationEditMode>("idle");
@@ -110,32 +118,6 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
         const sel = selectedAnnotation.value;
         if (!sel || sel.type !== "zone") return false;
         return zones.value.find((zone) => zone.id === sel.id)?.locked ?? false;
-    });
-
-    const hasAnnotations = computed(
-        () => markers.value.length > 0 || zones.value.length > 0,
-    );
-    const markersCount = computed(() => markers.value.length);
-    const zonesCount = computed(() => zones.value.length);
-
-    const annotations = computed<UserAnnotationSummary[]>(() => {
-        const ms: UserAnnotationSummary[] = markers.value.map((m) => ({
-            id: m.id,
-            type: "marker" as const,
-            label: m.label,
-            description: m.description,
-            meta: `${Math.round(m.map.x)}, ${Math.round(m.map.y)}`,
-            createdAt: m.createdAt,
-        }));
-        const zs: UserAnnotationSummary[] = zones.value.map((z) => ({
-            id: z.id,
-            type: "zone" as const,
-            label: z.label,
-            description: z.description,
-            meta: `${Math.round(z.rect.width)} × ${Math.round(z.rect.height)}`,
-            createdAt: z.createdAt,
-        }));
-        return [...ms, ...zs].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     });
 
     // ── mode ─────────────────────────────────────────────────────────────────
@@ -184,7 +166,6 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
         selectedAnnotation.value = { type: "marker", id };
         annotationMode.value = "idle";
         annotationEditMode.value = "idle";
-        persist(markers.value, zones.value);
     }
 
     function addZone(rect: Rect2D): void {
@@ -203,7 +184,6 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
         selectedAnnotation.value = { type: "zone", id };
         annotationMode.value = "idle";
         annotationEditMode.value = "idle";
-        persist(markers.value, zones.value);
     }
 
     function moveSelectedMarker(point: Point2D): void {
@@ -213,7 +193,6 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
             marker.id === sel.id ? { ...marker, map: { ...point } } : marker,
         );
         annotationEditMode.value = "idle";
-        persist(markers.value, zones.value);
     }
 
     function updateSelectedZoneRect(rect: Rect2D): void {
@@ -223,7 +202,6 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
             zone.id === sel.id ? { ...zone, rect: { ...rect } } : zone,
         );
         annotationEditMode.value = "idle";
-        persist(markers.value, zones.value);
     }
 
     function toggleSelectedZoneLock(): void {
@@ -233,7 +211,6 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
             zone.id === sel.id ? { ...zone, locked: !zone.locked } : zone,
         );
         annotationEditMode.value = "idle";
-        persist(markers.value, zones.value);
     }
 
     function updateSelectedDraft(d: UserAnnotationDraft): void {
@@ -262,7 +239,6 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
                     : z,
             );
         }
-        persist(markers.value, zones.value);
     }
 
     function deleteSelectedAnnotation(): void {
@@ -275,7 +251,6 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
         }
         annotationEditMode.value = "idle";
         selectedAnnotation.value = null;
-        persist(markers.value, zones.value);
     }
 
     // ── import / export ───────────────────────────────────────────────────────
@@ -318,8 +293,8 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
                 importError.value = "invalid";
                 return;
             }
-            const incoming = parsed as UserAnnotationExport;
-            if (hasAnnotations.value) {
+            const incoming = normalizeAnnotations(parsed);
+            if (markers.value.length > 0 || zones.value.length > 0) {
                 const ok = window.confirm(ui.value.notes.importReplaceConfirm);
                 if (!ok) return;
             }
@@ -327,8 +302,7 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
             zones.value = incoming.zones;
             annotationEditMode.value = "idle";
             selectedAnnotation.value = null;
-            persist(markers.value, zones.value);
-        } catch {
+            } catch {
             importError.value = "invalid";
         }
     }
@@ -342,10 +316,6 @@ export function useUserAnnotations(ui: ComputedRef<Messages>) {
         selectedZoneLocked,
         importError,
         draft,
-        hasAnnotations,
-        markersCount,
-        zonesCount,
-        annotations,
         setAnnotationMode,
         setAnnotationEditMode,
         selectMarker,

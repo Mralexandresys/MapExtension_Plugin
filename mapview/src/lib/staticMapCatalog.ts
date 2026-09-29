@@ -45,13 +45,6 @@ export const STATIC_ORE_PURITY_LEVELS: readonly StaticOrePurity[] = [
     "pure",
 ];
 
-/** Resource representations shown by default. */
-export const DEFAULT_ENABLED_KINDS: readonly StaticResourceKind[] = [
-    "pcg",
-    "actor",
-    "deposit",
-];
-
 /**
  * How the purity of an extractor deposit was established. `exact` is read from
  * the only physical material the resource has; the others come from joining the
@@ -120,7 +113,6 @@ export interface StaticMapManifest {
     poi_groups: Record<string, number>;
     placement_groups: Record<string, Record<string, number>>;
     parts: StaticManifestPart[];
-    rupture?: Record<string, unknown>;
 }
 
 interface RawResourceGroup {

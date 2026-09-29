@@ -1,6 +1,6 @@
 # mapview
 
-Les trois onglets permanents sont Filtres (logistique, reperes, observations live et ressources), Affichage (liens, orphelins, annotations et focus) et Avance (couches et representations). Les prereglages ne masquent plus les onglets. Les actions sur toutes les ressources ne touchent ni aux reperes ni aux couches techniques ; les actions sur toutes les couches sont dans Avance. Reinitialiser restaure aussi les filtres statiques et les puretes. Isoler une ressource est un raccourci : un ajustement manuel efface cette selection indicative. Le compteur global indique les points du monde plutot qu’un nombre incomplet de filtres. Le panneau replie est inerte au clavier et le focus revient sur sa poignee.
+Les deux onglets permanents sont Filtres (mode annotations, logistique et options cargo, reperes, famille Ressources) et Avance (prereglage Technique, couches et representations). Les prereglages ne masquent plus les onglets. Le `Tout` / `Aucun` de la famille Ressources ne touche ni aux reperes ni aux couches techniques ; les actions sur toutes les couches sont dans Avance. Reinitialiser restaure aussi les filtres statiques et les puretes. Isoler une ressource est un raccourci : un ajustement manuel efface cette selection indicative. Le compteur global indique les points du monde plutot qu’un nombre incomplet de filtres. Le panneau replie est inerte au clavier et le focus revient sur sa poignee.
 
 La presentation privilegie la carte : barre de session compacte, panneau de filtres bleu nuit et accents cyan. La frequence de rafraichissement se regle dans les parametres. La timeline de rupture reste visible dans la barre superieure.
 
@@ -67,7 +67,7 @@ Pour utiliser ou distribuer l'interface, garder `map-tiles/` et `map-data/` a co
 - L'interface embarque `VIEWER_CONTRACT_VERSION` dans `src/lib/viewerContract.ts`. Si `viewer_contract_version` renvoye par le plugin est strictement superieur a cette constante, une pop-up modale explique qu'il faut remplacer `MapExtensionViewer.html`, `map-tiles/` et `map-data/` a la main. Aucune comparaison de numeros de version n'est faite.
 - Regle de bump : incrementer `VIEWER_CONTRACT_VERSION` et `kViewerContractVersion` (`map_state_json.cpp`) dans le meme changement, uniquement quand une evolution de payload casse les interfaces plus anciennes. Un ajout de champ retro-compatible ne doit pas etre bumpe.
 - Le rejet de la pop-up est memorise dans `localStorage` sous la cle dediee `starrupture-mapview:viewer-update-dismissed:v1`, par `plugin_version` : fermer la pop-up la masque pour cette version du plugin, et elle revient des que le plugin passe a une version plus recente. Les cles existantes (preferences, annotations) ne sont pas touchees.
-- L'interface inclut quatre prereglages de carte (Reseau, Exploration, Recolte, Technique), des filtres, l'echelle d'icones et des annotations personnelles exportables/importables en JSON.
+- L'interface inclut quatre prereglages de carte (Reseau, Exploration et Recolte en tete du volet, Technique dans `Avance`), des filtres, l'echelle d'icones et des annotations personnelles exportables/importables en JSON.
 - Raccourcis utiles : `?`, `/`, `R`, `L`, `G`, `E`, `F`, `C`, `P`, `0`, `Esc`.
 
 ## Catalogue statique du monde
@@ -76,15 +76,26 @@ Le viewer charge un catalogue compact pre-genere depuis `public/map-data/`. Il c
 
 Dans la couche `building`, le frontend rend uniquement les placements dont l'`actorType` contient `KeyCard`, `Coralion_Egg` ou `Spawner`, sans distinction de casse. Les couches `zone` et `technical` conservent tous leurs placements.
 
-Le volet propose trois onglets permanents : `Filtres`, `Affichage` et `Avance`.
-Le prereglage modifie la selection, jamais les onglets disponibles. L'ancien onglet
-`Recolte` restaure est affiche dans `Filtres`. Les cles de preferences et de filtres
-(`filterTab`, `mapview.static-filters.v2`) sont conservees.
+Le volet propose deux onglets permanents : `Filtres` et `Avance`.
+Le prereglage modifie la selection, jamais les onglets disponibles. Les trois
+prereglages joueur (`Reseau`, `Exploration`, `Recolte`) tiennent sur une ligne ;
+`Technique`, vue developpeur, est un interrupteur en tete de `Avance`. Les anciens
+onglets `Recolte` et `Affichage` enregistres rouvrent `Filtres`. Les cles de
+preferences et de filtres (`filterTab`, `mapview.static-filters.v2`) sont conservees.
+
+L'ancien onglet `Affichage` est reparti la ou ses reglages agissent :
+`Liens cargo toujours visibles` et `Signaler les points cargo sans liaison` sont
+des sous-options des lignes Cargo Dispatchers / Receivers, desactivees quand ces
+deux lignes sont masquees ; `Uniquement mes marqueurs et zones` est un mode en tete
+de `Filtres`, qui grise les listes tant qu'il est actif. Le focus reste dans le
+panneau de selection et la barre d'outils de la carte.
 
 La recherche epinglee de `Filtres` parcourt les types live, reperes et ressources.
+C'est la seule barre collante de l'onglet.
 Chaque entree conserve sa case d'etat, son icone et son compteur. Les actions
 `Tout` / `Aucun` d'un groupe ciblent les entrees listees, meme apres une recherche.
-Les actions globales sur les ressources ne modifient pas les autres couches.
+Le `Tout` / `Aucun` de la famille Ressources agit sur les sites de rupture et toutes
+les ressources du catalogue, sans modifier les autres couches.
 Activer un type reactive sa couche et sa categorie si necessaire, sans reafficher
 les autres types que cette couche ou categorie masquait : cocher `Sulphur Ore`
 n'affiche plus le quartz. Les lignes de ressources recoltees a la main agissent sur
@@ -98,12 +109,15 @@ restaure les reglages live et statiques du prereglage courant et efface la reche
 |---|---|
 | `Logistique` | Cargo Dispatchers, Cargo Receivers, Teleporteurs, Joueurs |
 | `Reperes` | Grottes, Obelisques, Geoscanneurs, Bases abandonnees, Forgotten Engine, Orbital Lander |
-| `Observations en direct` | Ignitium, Star Tears |
+| `Ressources` (famille) | `Isoler une ressource`, puis les trois groupes ci-dessous |
+| `Sites de rupture` | Ignitium, Star Tears |
 | `Gisements pour extracteurs` | Minerais et puretes |
 | `Recolte a la main` | Plantes (catalogue et observations), minerais et ressources animales |
 
-`Isoler une ressource` est un raccourci de selection unique. Une modification
-manuelle permet ensuite une selection multiple et efface l'indication du raccourci.
+`Isoler une ressource` est un raccourci de selection unique, en tete de la famille
+Ressources. Sa liste separe les ressources rares des communes (5 000 points ou plus).
+Une modification manuelle permet ensuite une selection multiple et efface
+l'indication du raccourci.
 
 Les six familles de reperes sont les POI canoniques : elles sont accessibles en un clic au premier
 niveau, et non plus a trois niveaux de profondeur dans le catalogue. `Bases abandonnees` est un seul
@@ -125,7 +139,7 @@ Les quatre prereglages repondent chacun a une question de joueur et pilotent d'u
 | `Reseau` (defaut) | Ou suis-je, comment circulent mes ressources ? | Logistique live, sites de rupture et les 241 POI canoniques ; plantes masquees |
 | `Exploration` | Ou construire, quel objectif vaut le deplacement ? | POI canoniques + minerais, reseau cargo masque |
 | `Recolte` | Ou est la ressource que je collecte maintenant ? | Grottes + choix de ressources dans Filtres |
-| `Technique` | Que contient l'export brut ? | Placements, zones, sockets et proxies (mode developpeur) |
+| `Technique` (dans `Avance`) | Que contient l'export brut ? | Placements, zones, sockets et proxies (mode developpeur) |
 
 Le defaut garde les plantes masquees, catalogue et observations compris : les 54 513 points de plantes du catalogue ne sont pas actives sans demande explicite. Le type `unknown_ore` est exclu du catalogue. L'export dedie attribue les 12 anciens sockets non identifies au tungstene, qui compte ainsi 107 gisements.
 

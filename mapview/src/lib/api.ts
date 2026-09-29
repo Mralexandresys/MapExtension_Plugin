@@ -1,4 +1,6 @@
 const PROTOCOL_RE = /^[a-z]+:\/\//i;
+/** A plugin that accepts the connection but never answers must not stall polling. */
+const REQUEST_TIMEOUT_MS = 5000;
 
 export function normalizeEndpoint(value: string): string {
   const trimmed = value.trim();
@@ -17,6 +19,7 @@ export async function fetchJson<T>(endpoint: string, path: string): Promise<T> {
 
   const response = await fetch(`${base}${path}`, {
     cache: 'no-store',
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {

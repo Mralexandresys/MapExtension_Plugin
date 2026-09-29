@@ -8,11 +8,7 @@ import {
 } from "vue";
 
 import { formatRelativeAge } from "../lib/formatters";
-import {
-    DEFAULT_MAP_PRESET,
-    PRESET_DEFINITIONS,
-    type MapPreset,
-} from "../lib/mapPresets";
+import { PRESET_DEFINITIONS, type MapPreset } from "../lib/mapPresets";
 import type {
     EntityToggleKey,
     FilterTabKey,
@@ -52,16 +48,12 @@ export function useMapViewState(
         cargo,
         health,
         ruptureCycle,
-        lang,
         showAllLinks,
         highlightOrphans,
         autoRefresh,
-        refreshIntervalMs,
-        iconScale,
         lastUpdatedAt,
         now,
         preset,
-        harvestResource,
         entityVisibility,
         filtersPanelCollapsed,
         filterTab,
@@ -242,7 +234,7 @@ export function useMapViewState(
         selectedDetailRows,
         totalCounts,
         statsOverview,
-        activeFilterChips,
+        hasActiveFilters,
         currentTimeLabel,
     } = entityState;
 
@@ -346,6 +338,8 @@ export function useMapViewState(
     function handleKeydown(event: KeyboardEvent): void {
         if (event.metaKey || event.ctrlKey || event.altKey) return;
         if (isTypingTarget(event.target)) return;
+        // The update dialog sits above everything and closes itself on Escape.
+        if (viewerUpdateOpen.value) return;
 
         if (event.key === "Escape") {
             if (shortcutsOpen.value) {
@@ -372,9 +366,8 @@ export function useMapViewState(
             return;
         }
 
-        // Letter shortcuts used to keep firing behind an open modal, refreshing
-        // or opening panels the user could not see.
-        if (shortcutsOpen.value || viewerUpdateOpen.value) return;
+        // Letter shortcuts must not act behind the shortcut dialog.
+        if (shortcutsOpen.value) return;
 
         switch (event.key) {
             case "0":
@@ -496,7 +489,7 @@ export function useMapViewState(
         selectedDetailRows,
         totalCounts,
         statsOverview,
-        activeFilterChips,
+        hasActiveFilters,
         currentTimeLabel,
         liveAgeLabel,
         ruptureCurrentPhaseKey,
@@ -518,7 +511,6 @@ export function useMapViewState(
         centerOnPlayer,
         toggleFocusMode,
         setPreset,
-        applyPresetEntities,
         clearFilters,
         toggleFiltersPanel,
         toggleEntity,

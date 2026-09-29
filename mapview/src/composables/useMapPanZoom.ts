@@ -283,18 +283,16 @@ export function useMapPanZoom(
 
     onMounted(() => {
         measureViewport();
-        if (typeof ResizeObserver !== "undefined" && mapShell.value) {
+        if (mapShell.value) {
             resizeObserver = new ResizeObserver(measureViewport);
             resizeObserver.observe(mapShell.value);
         }
-        window.addEventListener("resize", measureViewport);
         window.addEventListener("mousemove", handleWindowMove);
         window.addEventListener("mouseup", handleWindowUp);
     });
 
     onBeforeUnmount(() => {
         resizeObserver?.disconnect();
-        window.removeEventListener("resize", measureViewport);
         window.removeEventListener("mousemove", handleWindowMove);
         window.removeEventListener("mouseup", handleWindowUp);
     });

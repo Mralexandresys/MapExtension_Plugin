@@ -8,8 +8,14 @@ import type {
     MapFiltersPanelModel,
     StaticFilterToggle,
 } from "../../lib/types";
-import { MAP_PRESETS, PRESET_DEFINITIONS, type MapPreset } from "../../lib/mapPresets";
+import {
+    DEFAULT_MAP_PRESET,
+    MAP_PRESETS,
+    PRESET_DEFINITIONS,
+    type MapPreset,
+} from "../../lib/mapPresets";
 import { POI_SYMBOL_VIEWBOX, poiSymbol } from "../../lib/mapMarkers";
+import { matchesSearch } from "../../lib/formatters";
 import MapStaticFilters from "./MapStaticFilters.vue";
 
 const teleporterIconMarkup = teleporterSvg.replace(
@@ -31,7 +37,6 @@ const emit = defineEmits<{
     "update:show-all-links": [value: boolean];
     "update:highlight-orphans": [value: boolean];
     "update:user-annotations-only": [value: boolean];
-    "toggle-focus": [];
     "static-toggle": [value: StaticFilterToggle];
     "update:static-search": [value: string];
     "static-show-all": [];
@@ -40,26 +45,37 @@ const emit = defineEmits<{
     "advanced-hide-all": [];
 }>();
 
-const behaviorOptions = computed(() => [
+// Technical is the developer view over raw export layers: it sits with those
+// layers in Advanced, and the three player presets fit on a single row.
+const PLAYER_PRESETS = MAP_PRESETS.filter((preset) => !PRESET_DEFINITIONS[preset].developerMode);
+const TECHNICAL_PRESET: MapPreset = "technical";
+const technicalActive = computed(() => props.panel.preset === TECHNICAL_PRESET);
+
+function toggleTechnicalPreset(): void {
+    emit("update:preset", technicalActive.value ? DEFAULT_MAP_PRESET : TECHNICAL_PRESET);
+}
+
+// Both settings only act on dispatcher/receiver links, so they sit under
+// those rows instead of in a separate display tab.
+const cargoOptions = computed(() => [
     {
         key: "showAllLinks",
         label: props.panel.ui.filters.showAllLinks,
+        hint: props.panel.ui.filters.showAllLinksHint,
         enabled: props.panel.showAllLinks,
         set: (value: boolean) => emit("update:show-all-links", value),
     },
     {
         key: "highlightOrphans",
         label: props.panel.ui.filters.highlightOrphans,
+        hint: "",
         enabled: props.panel.highlightOrphans,
         set: (value: boolean) => emit("update:highlight-orphans", value),
     },
-    {
-        key: "userAnnotationsOnly",
-        label: props.panel.ui.filters.userAnnotationsOnly,
-        enabled: props.panel.userAnnotationsOnly,
-        set: (value: boolean) => emit("update:user-annotations-only", value),
-    },
 ]);
+const cargoHidden = computed(
+    () => !props.panel.entityVisibility.sender && !props.panel.entityVisibility.receiver,
+);
 
 const LOGISTICS_KEYS: EntityToggleKey[] = [
     "sender",
@@ -69,32 +85,35 @@ const LOGISTICS_KEYS: EntityToggleKey[] = [
 ];
 // Bases and plants use the shared landmark/category controls, regardless of
 // whether their positions came from the catalog or a runtime observation.
-const RESOURCE_KEYS: EntityToggleKey[] = [
+const RUPTURE_KEYS: EntityToggleKey[] = [
     "ignitium",
     "starTears",
 ];
 
-function matchesSearch(label: string): boolean {
-    const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
-    return normalize(label).includes(normalize(props.panel.staticFilters?.search.trim() ?? ""));
+function matchesPanelSearch(label: string): boolean {
+    return matchesSearch(props.panel.staticFilters?.search ?? "", label);
 }
 
 const logisticsOptions = computed(() =>
     props.panel.entityToggleOptions.filter((option) =>
-        LOGISTICS_KEYS.includes(option.key) && matchesSearch(option.label),
+        LOGISTICS_KEYS.includes(option.key) && matchesPanelSearch(option.label),
     ),
 );
 
-const resourceOptions = computed(() =>
+const ruptureOptions = computed(() =>
     props.panel.entityToggleOptions.filter((option) =>
-        RESOURCE_KEYS.includes(option.key) && matchesSearch(option.label),
+        RUPTURE_KEYS.includes(option.key) && matchesPanelSearch(option.label),
     ),
 );
 
 /** The 241 canonical POI, promoted from three levels deep in the catalog. */
-const landmarkOptions = computed(() => (props.panel.staticFilters?.poiGroups ?? []).filter(option => matchesSearch(option.label)));
+const landmarkOptions = computed(() => (props.panel.staticFilters?.poiGroups ?? []).filter(option => matchesPanelSearch(option.label)));
 
-const presetDefinition = computed(() => PRESET_DEFINITIONS[props.panel.preset]);
+/** Rare resources first; the few very common ones would drown them. */
+const harvestGroups = computed(() => [
+    { label: props.panel.ui.harvestRare, options: props.panel.harvestOptions.filter((option) => !option.common) },
+    { label: props.panel.ui.harvestCommon, options: props.panel.harvestOptions.filter((option) => option.common) },
+].filter((group) => group.options.length > 0));
 
 // Two rows for one thing: a site shows as Ignitium during the wave and as Star
 // Tears once the map stabilizes, so an empty row is the cycle, not a bug.
@@ -107,10 +126,9 @@ function entityRowTitle(key: EntityToggleKey, label: string): string {
 // Stable tabs: presets change visibility, never access to controls.
 const tabs = computed(() => [
     { key: "map" as const, label: props.panel.ui.filters.tabs.map },
-    { key: "behavior" as const, label: props.panel.ui.filters.tabs.behavior },
     { key: "catalog" as const, label: props.panel.ui.filters.tabs.catalog },
 ]);
-const activeTab = computed(() => props.panel.activeTab === "harvest" ? "map" : props.panel.activeTab);
+const activeTab = computed(() => props.panel.activeTab);
 
 // A tablist is expected to move with the arrow keys, Home and End; without it
 // only the selected tab is reachable and the others cannot be read at all.
@@ -163,6 +181,13 @@ function setLandmarkGroup(enabled: boolean): void {
             emit("static-toggle", { scope: "poiGroup", key: option.key, enabled });
         }
     }
+}
+
+/** The Resources family: rupture sites plus every catalog resource. */
+function setAllResources(enabled: boolean): void {
+    if (enabled) emit("static-show-all");
+    else emit("static-hide-all");
+    setEntityGroup(ruptureOptions.value, enabled);
 }
 
 function entityGroupCount(options: Array<{ key: EntityToggleKey }>): string {
@@ -229,7 +254,7 @@ async function toggleDrawer(): Promise<void> {
                 <div class="preset-block">
                     <div class="preset-grid" role="group" :aria-label="panel.ui.presetsTitle">
                         <button
-                            v-for="option in MAP_PRESETS"
+                            v-for="option in PLAYER_PRESETS"
                             :key="option"
                             class="preset-button"
                             :class="{ active: panel.preset === option }"
@@ -242,9 +267,6 @@ async function toggleDrawer(): Promise<void> {
                         </button>
                     </div>
                     <p class="preset-help">{{ panel.ui.presets[panel.preset].help }}</p>
-                    <p v-if="presetDefinition.developerMode" class="preset-warning">
-                        {{ panel.ui.developerModeWarning }}
-                    </p>
                 </div>
 
                 <div
@@ -284,264 +306,328 @@ async function toggleDrawer(): Promise<void> {
                             @input="emit('update:static-search', ($event.target as HTMLInputElement).value)" />
                     </label>
 
-                    <section v-if="logisticsOptions.length" class="filter-group">
-                        <header class="filter-group-head">
-                            <h4>{{ panel.ui.filters.familyLogistics }}</h4>
-                            <span class="filter-group-count">
-                                {{ entityGroupCount(logisticsOptions) }}
-                            </span>
-                            <span class="filter-group-actions">
-                                <button
-                                    class="group-action"
-                                    type="button"
-                                    :aria-label="panel.ui.filters.selectAllIn(panel.ui.filters.familyLogistics)"
-                                    @click="setEntityGroup(logisticsOptions, true)"
-                                >
-                                    {{ panel.ui.filters.selectAll }}
-                                </button>
-                                <button
-                                    class="group-action"
-                                    type="button"
-                                    :aria-label="panel.ui.filters.selectNoneIn(panel.ui.filters.familyLogistics)"
-                                    @click="setEntityGroup(logisticsOptions, false)"
-                                >
-                                    {{ panel.ui.filters.selectNone }}
-                                </button>
-                            </span>
-                        </header>
+                    <!-- Overrides every list below, so it heads them rather than
+                         hiding in a tab of its own. -->
+                    <button
+                        class="filter-row no-icon wrap mode-row"
+                        :class="{ active: panel.userAnnotationsOnly }"
+                        type="button"
+                        role="switch"
+                        :aria-checked="panel.userAnnotationsOnly"
+                        @click="emit('update:user-annotations-only', !panel.userAnnotationsOnly)"
+                    >
+                        <span class="filter-row-check" aria-hidden="true"></span>
+                        <span class="filter-row-label">
+                            {{ panel.ui.filters.userAnnotationsOnly }}
+                            <small v-if="panel.userAnnotationsOnly" class="filter-row-hint">
+                                {{ panel.ui.filters.userAnnotationsOnlyHint }}
+                            </small>
+                        </span>
+                    </button>
 
-                        <div class="filter-rows">
-                            <button
-                                v-for="option in logisticsOptions"
-                                :key="option.key"
-                                class="filter-row"
-                                :class="{
-                                    active: panel.entityVisibility[option.key],
-                                    empty: option.count === 0,
-                                }"
-                                type="button"
-                                :aria-pressed="panel.entityVisibility[option.key]"
-                                @click="emit('toggle-entity', option.key)"
-                            >
-                                <span class="filter-row-check" aria-hidden="true"></span>
-                                <span
-                                    class="filter-option-icon"
-                                    :class="option.key"
-                                    aria-hidden="true"
-                                    v-html="
-                                        option.key === 'teleporter'
-                                            ? teleporterIconMarkup
-                                            : ''
-                                    "
-                                ></span>
-                                <span class="filter-row-label" :title="option.label">
-                                    {{ option.label }}
-                                    <!-- Legend only: the local player is drawn in its own colour. -->
-                                    <span v-if="option.key === 'player'" class="self-legend">
-                                        <span class="filter-option-icon player self" aria-hidden="true"></span>
-                                        {{ panel.ui.selection.selfPlayer }}
+                    <div class="filter-families" :class="{ overridden: panel.userAnnotationsOnly }">
+                        <section v-if="logisticsOptions.length" class="filter-group">
+                            <header class="filter-group-head">
+                                <h4>{{ panel.ui.filters.familyLogistics }}</h4>
+                                <span class="filter-group-count">
+                                    {{ entityGroupCount(logisticsOptions) }}
+                                </span>
+                                <span class="filter-group-actions">
+                                    <button
+                                        class="group-action"
+                                        type="button"
+                                        :aria-label="panel.ui.filters.selectAllIn(panel.ui.filters.familyLogistics)"
+                                        @click="setEntityGroup(logisticsOptions, true)"
+                                    >
+                                        {{ panel.ui.filters.selectAll }}
+                                    </button>
+                                    <button
+                                        class="group-action"
+                                        type="button"
+                                        :aria-label="panel.ui.filters.selectNoneIn(panel.ui.filters.familyLogistics)"
+                                        @click="setEntityGroup(logisticsOptions, false)"
+                                    >
+                                        {{ panel.ui.filters.selectNone }}
+                                    </button>
+                                </span>
+                            </header>
+
+                            <div class="filter-rows">
+                                <template v-for="option in logisticsOptions" :key="option.key">
+                                    <button
+                                        class="filter-row"
+                                        :class="{
+                                            active: panel.entityVisibility[option.key],
+                                            empty: option.count === 0,
+                                        }"
+                                        type="button"
+                                        :aria-pressed="panel.entityVisibility[option.key]"
+                                        @click="emit('toggle-entity', option.key)"
+                                    >
+                                        <span class="filter-row-check" aria-hidden="true"></span>
+                                        <span
+                                            class="filter-option-icon"
+                                            :class="option.key"
+                                            aria-hidden="true"
+                                            v-html="
+                                                option.key === 'teleporter'
+                                                    ? teleporterIconMarkup
+                                                    : ''
+                                            "
+                                        ></span>
+                                        <span class="filter-row-label" :title="option.label">
+                                            {{ option.label }}
+                                            <!-- Legend only: the local player is drawn in its own colour. -->
+                                            <span v-if="option.key === 'player'" class="self-legend">
+                                                <span class="filter-option-icon player self" aria-hidden="true"></span>
+                                                {{ panel.ui.selection.selfPlayer }}
+                                            </span>
+                                        </span>
+                                        <span class="filter-row-count">
+                                            {{ formatCount(option.count) }}
+                                        </span>
+                                    </button>
+
+                                    <div
+                                        v-if="option.key === 'receiver'"
+                                        class="cargo-options"
+                                        :class="{ off: cargoHidden }"
+                                        role="group"
+                                        :aria-label="panel.ui.filters.cargoOptionsLabel"
+                                    >
+                                        <button
+                                            v-for="cargoOption in cargoOptions"
+                                            :key="cargoOption.key"
+                                            class="filter-row no-icon wrap"
+                                            :class="{ active: cargoOption.enabled }"
+                                            type="button"
+                                            role="switch"
+                                            :aria-checked="cargoOption.enabled"
+                                            :disabled="cargoHidden"
+                                            @click="cargoOption.set(!cargoOption.enabled)"
+                                        >
+                                            <span class="filter-row-check" aria-hidden="true"></span>
+                                            <span class="filter-row-label">
+                                                {{ cargoOption.label }}
+                                                <small v-if="cargoOption.hint" class="filter-row-hint">
+                                                    {{ cargoOption.hint }}
+                                                </small>
+                                            </span>
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+                        </section>
+
+                        <!-- The 241 canonical POI. Each row carries the exact
+                             silhouette used on the map, so this list is also the
+                             legend. -->
+                        <section v-if="landmarkOptions.length" class="filter-group">
+                            <header class="filter-group-head">
+                                <h4>{{ panel.ui.filters.familyLandmarks }}</h4>
+                                <span class="filter-group-count">
+                                    {{
+                                        panel.ui.filters.groupCount(
+                                            landmarkOptions.filter((option) => option.enabled).length,
+                                            landmarkOptions.length,
+                                        )
+                                    }}
+                                </span>
+                                <span class="filter-group-actions">
+                                    <button
+                                        class="group-action"
+                                        type="button"
+                                        :aria-label="panel.ui.filters.selectAllIn(panel.ui.filters.familyLandmarks)"
+                                        @click="setLandmarkGroup(true)"
+                                    >
+                                        {{ panel.ui.filters.selectAll }}
+                                    </button>
+                                    <button
+                                        class="group-action"
+                                        type="button"
+                                        :aria-label="panel.ui.filters.selectNoneIn(panel.ui.filters.familyLandmarks)"
+                                        @click="setLandmarkGroup(false)"
+                                    >
+                                        {{ panel.ui.filters.selectNone }}
+                                    </button>
+                                </span>
+                            </header>
+
+                            <div class="filter-rows">
+                                <button
+                                    v-for="option in landmarkOptions"
+                                    :key="option.key"
+                                    class="filter-row"
+                                    :class="{ active: option.enabled, empty: option.count === 0 }"
+                                    type="button"
+                                    :aria-pressed="option.enabled"
+                                    @click="emit('static-toggle', { scope: 'poiGroup', key: option.key })"
+                                >
+                                    <span class="filter-row-check" aria-hidden="true"></span>
+                                    <svg
+                                        class="landmark-icon"
+                                        :viewBox="POI_SYMBOL_VIEWBOX"
+                                        width="18"
+                                        height="18"
+                                        aria-hidden="true"
+                                        :style="{ color: option.color ?? '#94a3b8' }"
+                                    >
+                                        <path class="landmark-body" :d="poiSymbol(option.key).body" />
+                                        <path
+                                            v-if="poiSymbol(option.key).detail"
+                                            class="landmark-detail"
+                                            :class="poiSymbol(option.key).detailMode"
+                                            :d="poiSymbol(option.key).detail"
+                                        />
+                                    </svg>
+                                    <span class="filter-row-label" :title="option.label">
+                                        {{ option.label }}
                                     </span>
-                                </span>
-                                <span class="filter-row-count">
-                                    {{ formatCount(option.count) }}
-                                </span>
-                            </button>
-                        </div>
-                    </section>
+                                    <span class="filter-row-count">
+                                        {{ formatCount(option.count) }}
+                                    </span>
+                                </button>
+                            </div>
+                        </section>
 
-                    <!-- The 241 canonical POI. Each row carries the exact
-                         silhouette used on the map, so this list is also the
-                         legend. -->
-                    <section v-if="landmarkOptions.length" class="filter-group">
+                        <!-- Everything that is gathered, in one place: the
+                             isolate shortcut, rupture sites, extractor deposits
+                             and hand-gathered resources used to be four blocks
+                             scattered down the tab. -->
+                        <section class="filter-family">
+                            <header class="filter-family-head">
+                                <h3>{{ panel.ui.filters.familyAllResources }}</h3>
+                                <span class="filter-group-actions">
+                                    <button
+                                        class="group-action"
+                                        type="button"
+                                        :aria-label="panel.ui.filters.selectAllIn(panel.ui.filters.familyAllResources)"
+                                        @click="setAllResources(true)"
+                                    >
+                                        {{ panel.ui.filters.selectAll }}
+                                    </button>
+                                    <button
+                                        class="group-action"
+                                        type="button"
+                                        :aria-label="panel.ui.filters.selectNoneIn(panel.ui.filters.familyAllResources)"
+                                        @click="setAllResources(false)"
+                                    >
+                                        {{ panel.ui.filters.selectNone }}
+                                    </button>
+                                </span>
+                            </header>
+
+                            <div class="filter-family-body">
+                                <label class="field compact">
+                                    <span>{{ panel.ui.filters.isolateResource }}</span>
+                                    <select :value="panel.harvestResource ?? ''" @change="emit('update:harvest-resource', ($event.target as HTMLSelectElement).value || null)">
+                                        <option value="" disabled>{{ panel.ui.harvestPick }}</option>
+                                        <optgroup v-for="group in harvestGroups" :key="group.label" :label="group.label">
+                                            <option v-for="option in group.options" :key="option.id" :value="option.id">{{ option.label }}</option>
+                                        </optgroup>
+                                    </select>
+                                </label>
+
+                                <section v-if="ruptureOptions.length" class="filter-group">
+                                    <header class="filter-group-head">
+                                        <h4>{{ panel.ui.filters.familyResources }}</h4>
+                                        <span class="filter-group-count">
+                                            {{ entityGroupCount(ruptureOptions) }}
+                                        </span>
+                                        <span class="filter-group-actions">
+                                            <button
+                                                class="group-action"
+                                                type="button"
+                                                :aria-label="panel.ui.filters.selectAllIn(panel.ui.filters.familyResources)"
+                                                @click="setEntityGroup(ruptureOptions, true)"
+                                            >
+                                                {{ panel.ui.filters.selectAll }}
+                                            </button>
+                                            <button
+                                                class="group-action"
+                                                type="button"
+                                                :aria-label="panel.ui.filters.selectNoneIn(panel.ui.filters.familyResources)"
+                                                @click="setEntityGroup(ruptureOptions, false)"
+                                            >
+                                                {{ panel.ui.filters.selectNone }}
+                                            </button>
+                                        </span>
+                                    </header>
+
+                                    <div class="filter-rows">
+                                        <button
+                                            v-for="option in ruptureOptions"
+                                            :key="option.key"
+                                            class="filter-row"
+                                            :class="{
+                                                active: panel.entityVisibility[option.key],
+                                                empty: option.count === 0,
+                                            }"
+                                            type="button"
+                                            :aria-pressed="panel.entityVisibility[option.key]"
+                                            @click="emit('toggle-entity', option.key)"
+                                        >
+                                            <span class="filter-row-check" aria-hidden="true"></span>
+                                            <span
+                                                class="filter-option-icon"
+                                                :class="option.key"
+                                                aria-hidden="true"
+                                            ></span>
+                                            <span
+                                                class="filter-row-label"
+                                                :title="entityRowTitle(option.key, option.label)"
+                                            >
+                                                {{ option.label }}
+                                            </span>
+                                            <span class="filter-row-count">
+                                                {{ formatCount(option.count) }}
+                                            </span>
+                                        </button>
+                                    </div>
+                                </section>
+
+                                <MapStaticFilters
+                                    v-if="panel.staticFilters"
+                                    :model="panel.staticFilters"
+                                    :developer-mode="false"
+                                    @toggle="emit('static-toggle', $event)"
+                                    @update:search="emit('update:static-search', $event)"
+                                />
+                            </div>
+                        </section>
+                    </div>
+                </div>
+
+                <div v-else-if="activeTab === 'catalog'" class="filter-tab-body">
+                    <section class="filter-group">
                         <header class="filter-group-head">
-                            <h4>{{ panel.ui.filters.familyLandmarks }}</h4>
-                            <span class="filter-group-count">
-                                {{
-                                    panel.ui.filters.groupCount(
-                                        landmarkOptions.filter((option) => option.enabled).length,
-                                        landmarkOptions.length,
-                                    )
-                                }}
-                            </span>
-                            <span class="filter-group-actions">
-                                <button
-                                    class="group-action"
-                                    type="button"
-                                    :aria-label="panel.ui.filters.selectAllIn(panel.ui.filters.familyLandmarks)"
-                                    @click="setLandmarkGroup(true)"
-                                >
-                                    {{ panel.ui.filters.selectAll }}
-                                </button>
-                                <button
-                                    class="group-action"
-                                    type="button"
-                                    :aria-label="panel.ui.filters.selectNoneIn(panel.ui.filters.familyLandmarks)"
-                                    @click="setLandmarkGroup(false)"
-                                >
-                                    {{ panel.ui.filters.selectNone }}
-                                </button>
-                            </span>
+                            <h4>{{ panel.ui.presetsTitle }}</h4>
                         </header>
-
-                        <div class="filter-rows">
-                            <button
-                                v-for="option in landmarkOptions"
-                                :key="option.key"
-                                class="filter-row"
-                                :class="{ active: option.enabled, empty: option.count === 0 }"
-                                type="button"
-                                :aria-pressed="option.enabled"
-                                @click="emit('static-toggle', { scope: 'poiGroup', key: option.key })"
-                            >
-                                <span class="filter-row-check" aria-hidden="true"></span>
-                                <svg
-                                    class="landmark-icon"
-                                    :viewBox="POI_SYMBOL_VIEWBOX"
-                                    width="18"
-                                    height="18"
-                                    aria-hidden="true"
-                                    :style="{ color: option.color ?? '#94a3b8' }"
-                                >
-                                    <path class="landmark-body" :d="poiSymbol(option.key).body" />
-                                    <path
-                                        v-if="poiSymbol(option.key).detail"
-                                        class="landmark-detail"
-                                        :class="poiSymbol(option.key).detailMode"
-                                        :d="poiSymbol(option.key).detail"
-                                    />
-                                </svg>
-                                <span class="filter-row-label" :title="option.label">
-                                    {{ option.label }}
-                                </span>
-                                <span class="filter-row-count">
-                                    {{ formatCount(option.count) }}
-                                </span>
-                            </button>
-                        </div>
+                        <button
+                            class="filter-row no-icon wrap"
+                            :class="{ active: technicalActive }"
+                            type="button"
+                            role="switch"
+                            :aria-checked="technicalActive"
+                            @click="toggleTechnicalPreset"
+                        >
+                            <span class="filter-row-check" aria-hidden="true"></span>
+                            <span class="filter-row-label">
+                                {{ panel.ui.presets[TECHNICAL_PRESET].label }}
+                                <small class="filter-row-hint">{{ panel.ui.presets[TECHNICAL_PRESET].help }}</small>
+                            </span>
+                        </button>
                     </section>
 
-                    <section v-if="resourceOptions.length" class="filter-group">
-                        <header class="filter-group-head">
-                            <h4>{{ panel.ui.filters.familyResources }}</h4>
-                            <span class="filter-group-count">
-                                {{ entityGroupCount(resourceOptions) }}
-                            </span>
-                            <span class="filter-group-actions">
-                                <button
-                                    class="group-action"
-                                    type="button"
-                                    :aria-label="panel.ui.filters.selectAllIn(panel.ui.filters.familyResources)"
-                                    @click="setEntityGroup(resourceOptions, true)"
-                                >
-                                    {{ panel.ui.filters.selectAll }}
-                                </button>
-                                <button
-                                    class="group-action"
-                                    type="button"
-                                    :aria-label="panel.ui.filters.selectNoneIn(panel.ui.filters.familyResources)"
-                                    @click="setEntityGroup(resourceOptions, false)"
-                                >
-                                    {{ panel.ui.filters.selectNone }}
-                                </button>
-                            </span>
-                        </header>
-
-                        <div class="filter-rows">
-                            <button
-                                v-for="option in resourceOptions"
-                                :key="option.key"
-                                class="filter-row"
-                                :class="{
-                                    active: panel.entityVisibility[option.key],
-                                    empty: option.count === 0,
-                                }"
-                                type="button"
-                                :aria-pressed="panel.entityVisibility[option.key]"
-                                @click="emit('toggle-entity', option.key)"
-                            >
-                                <span class="filter-row-check" aria-hidden="true"></span>
-                                <span
-                                    class="filter-option-icon"
-                                    :class="option.key"
-                                    aria-hidden="true"
-                                ></span>
-                                <span
-                                    class="filter-row-label"
-                                    :title="entityRowTitle(option.key, option.label)"
-                                >
-                                    {{ option.label }}
-                                </span>
-                                <span class="filter-row-count">
-                                    {{ formatCount(option.count) }}
-                                </span>
-                            </button>
-                        </div>
-                    </section>
-                    <label class="field compact">
-                        <span>{{ panel.ui.filters.isolateResource }}</span>
-                        <select :value="panel.harvestResource ?? ''" @change="emit('update:harvest-resource', ($event.target as HTMLSelectElement).value || null)">
-                            <option value="" disabled>{{ panel.ui.harvestPick }}</option>
-                            <option v-for="option in panel.harvestOptions" :key="option.id" :value="option.id">{{ option.label }}</option>
-                        </select>
-                    </label>
                     <MapStaticFilters
                         v-if="panel.staticFilters"
                         :model="panel.staticFilters"
-                        :developer-mode="false"
+                        :developer-mode="true"
                         @toggle="emit('static-toggle', $event)"
                         @update:search="emit('update:static-search', $event)"
-                        @show-all="emit('static-show-all')"
-                        @hide-all="emit('static-hide-all')"
+                        @show-all="emit('advanced-show-all')"
+                        @hide-all="emit('advanced-hide-all')"
                     />
-                </div>
-
-                <MapStaticFilters
-                    v-else-if="activeTab === 'catalog' && panel.staticFilters"
-                    :model="panel.staticFilters"
-                    :developer-mode="true"
-                    @toggle="emit('static-toggle', $event)"
-                    @update:search="emit('update:static-search', $event)"
-                    @show-all="emit('advanced-show-all')"
-                    @hide-all="emit('advanced-hide-all')"
-                />
-
-                <div v-else-if="activeTab === 'behavior'" class="filter-tab-body">
-                    <p class="filter-section-help">{{ panel.ui.filters.behaviorHelp }}</p>
-
-                    <!-- Same rows as every other list: these used to be native
-                         checkboxes and read as a different kind of control. -->
-                    <div class="filter-rows">
-                        <button
-                            v-for="option in behaviorOptions"
-                            :key="option.key"
-                            class="filter-row no-icon wrap"
-                            :class="{ active: option.enabled }"
-                            type="button"
-                            role="switch"
-                            :aria-checked="option.enabled"
-                            @click="option.set(!option.enabled)"
-                        >
-                            <span class="filter-row-check" aria-hidden="true"></span>
-                            <span class="filter-row-label">{{ option.label }}</span>
-                        </button>
-                    </div>
-
-                    <div class="filters-sidebar-toggles">
-                        <button
-                            v-if="panel.canEnableFocusMode"
-                            class="chip-button filters-focus-button"
-                            :class="{ active: panel.focusMode }"
-                            type="button"
-                            :aria-pressed="panel.focusMode"
-                            @click="emit('toggle-focus')"
-                        >
-                            {{
-                                panel.focusMode
-                                    ? panel.ui.buttons.showAll
-                                    : panel.ui.buttons.focusSelection
-                            }}
-                        </button>
-                    </div>
                 </div>
             </div>
         </section>
@@ -613,14 +699,14 @@ async function toggleDrawer(): Promise<void> {
 
 .preset-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 5px;
 }
 
 .preset-button {
     min-height: 36px;
     border-radius: 6px;
-    padding: 5px 10px;
+    padding: 5px 6px;
     border: 1px solid var(--border);
     border-left: 1px solid var(--border);
     background: rgba(12, 19, 35, 0.86);
@@ -650,14 +736,6 @@ async function toggleDrawer(): Promise<void> {
     color: var(--muted);
     font-size: 0.74rem;
     line-height: 1.35;
-}
-
-.preset-warning {
-    padding: 5px 10px;
-    border-left: 2px solid var(--amber);
-    background: var(--amber-soft);
-    color: var(--text);
-    font-size: 0.76rem;
 }
 
 /* ── Tabs ─────────────────────────────────────────────────────────────── */
@@ -709,26 +787,88 @@ async function toggleDrawer(): Promise<void> {
     white-space: nowrap;
 }
 
-/* Each tab keeps advertising its state, so switching tabs never hides the
-   fact that filters are active in the ones that are not on screen. */
-.filter-tab-summary {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.66rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: none;
+/* ── Families ─────────────────────────────────────────────────────────── */
+
+.filter-families {
+    display: grid;
+    gap: 14px;
+    transition: opacity 0.15s;
+}
+
+/* "Only my markers and zones" wins over every list below: they stay usable,
+   but no longer read as what the map is showing. */
+.filter-families.overridden {
+    opacity: 0.45;
+}
+
+.mode-row.active {
+    background: var(--amber-soft);
+    border-color: rgba(232, 184, 75, 0.35);
+    border-left-color: var(--amber);
+}
+
+.mode-row.active .filter-row-check {
+    background: var(--amber);
+    border-color: var(--amber);
+}
+
+.filter-row-hint {
+    display: block;
     color: var(--dim);
+    font-size: 0.72rem;
 }
 
-.filter-tab.active .filter-tab-summary {
-    color: #a9e7f5;
+/* Settings of the cargo network, nested under the rows they act on. */
+.cargo-options {
+    display: grid;
+    gap: 3px;
+    margin: 0 0 3px 18px;
+    padding-left: 10px;
+    border-left: 1px solid rgba(34, 211, 238, 0.24);
 }
 
-.filter-tab.dirty .filter-tab-summary {
-    color: var(--amber);
+.cargo-options .filter-row {
+    min-height: 32px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    font-size: 0.8rem;
+}
+
+.cargo-options.off {
+    opacity: 0.45;
+}
+
+.cargo-options .filter-row:disabled {
+    cursor: not-allowed;
+}
+
+/* One level above the group headers: carries the family-wide actions. */
+.filter-family {
+    display: grid;
+    gap: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(34, 211, 238, 0.3);
+}
+
+.filter-family-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.filter-family-head h3 {
+    flex: 1 1 auto;
+    margin: 0;
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.filter-family-body {
+    display: grid;
+    gap: 14px;
+    padding-left: 8px;
+    border-left: 1px solid rgba(34, 211, 238, 0.14);
 }
 
 /* ── Body ─────────────────────────────────────────────────────────────── */
@@ -759,10 +899,6 @@ async function toggleDrawer(): Promise<void> {
 .filter-row.empty .filter-option-icon,
 .filter-row.empty .landmark-icon {
     opacity: 0.45;
-}
-
-.harvest-empty {
-    color: var(--amber) !important;
 }
 
 .filters-panel .panel-top-row {
@@ -869,27 +1005,6 @@ async function toggleDrawer(): Promise<void> {
     font-size: 0.78rem;
 }
 
-.filter-option-icon.abandonedBase::before {
-    content: "";
-    width: 12px;
-    height: 10px;
-    border: 2px solid #cbd5e1;
-    border-top-width: 4px;
-    border-radius: 2px;
-    transform: rotate(-8deg);
-    opacity: 0.9;
-}
-
-.filter-option-icon.plantResource::before {
-    content: "";
-    width: 12px;
-    height: 12px;
-    border-radius: 10px 2px 10px 2px;
-    background: #4ade80;
-    box-shadow: 0 0 0 1px #dcfce7;
-    transform: rotate(-35deg);
-}
-
 .filter-option-icon.ignitium::before {
     content: "";
     width: 12px;
@@ -907,15 +1022,6 @@ async function toggleDrawer(): Promise<void> {
     border-radius: 50%;
     background: #38bdf8;
     box-shadow: 0 0 0 1px #e0f2fe, 0 0 7px rgba(56, 189, 248, 0.62);
-}
-
-.filters-sidebar-toggles {
-    display: grid;
-    grid-template-columns: 1fr;
-}
-
-.filters-focus-button {
-    justify-content: center;
 }
 
 @media (max-width: 720px) {

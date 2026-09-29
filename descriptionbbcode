@@ -20,7 +20,8 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]Show [b]player positions[/b], with your own player highlighted[/*]
 [*]Browse a built-in [b]world catalog[/b]: points of interest, plants, minerals, animal resources, buildings and zones[/*]
 [*]Find [b]extractor deposits[/b] and filter them by purity (Impure, Normal, Pure)[/*]
-[*]Switch between map presets: [b]Network[/b], [b]Exploration[/b], [b]Harvest[/b] and [b]Technical[/b][/*]
+[*]Switch between map presets: [b]Network[/b], [b]Exploration[/b] and [b]Harvest[/b], plus a [b]Technical[/b] view of the raw data in the Advanced tab[/*]
+[*]Filter everything you gather from one [b]Resources[/b] section: rupture sites, extractor deposits and hand-gathered resources[/*]
 [*]See [b]abandoned bases[/b], plants, [b]Ignitium[/b] and [b]Star Tears[/b] observed near players, with their state: available, not harvestable at the moment, depleted or unknown[/*]
 [*]Supported plants: Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Grubbler and Glowcap[/*]
 [*]Show a [b]rupture-cycle timeline[/b] in detailed or compact mode[/*]
@@ -30,6 +31,28 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [/list]
 
 [line]
+
+[size=4][b]Change Log v0.7[/b][/size]
+
+[b]Reorganized filter panel[/b]
+[list]
+[*]Two tabs instead of three: [b]Filters[/b] and [b]Advanced[/b]. The Display tab is gone; each of its settings now sits next to what it affects[/*]
+[*]Presets [b]Network[/b], [b]Exploration[/b] and [b]Harvest[/b] fit on one row. [b]Technical[/b] (raw data) moved to the top of the Advanced tab as a switch[/*]
+[*]New [b]Resources[/b] section grouping everything you gather: the "Isolate one resource" shortcut, rupture sites, extractor deposits and hand-gathered resources, with a single All / None for the whole section[/*]
+[*]"Isolate one resource" now lists rare resources apart from the very common ones[/*]
+[*]"Live observations" is renamed [b]Rupture sites[/b] (Ignitium and Star Tears)[/*]
+[*]Cargo link settings ("Cargo links always visible", "Flag unlinked cargo points") now sit right under Cargo Dispatchers and Cargo Receivers, and are greyed out when both are hidden[/*]
+[*]"Only my markers and zones" now heads the Filters tab and greys out the lists while it is on[/*]
+[*]Fixed: the "All resources / Hide resources" buttons slid under the search bar when scrolling. The search bar is now the only one that stays pinned[/*]
+[*]The Focus button stays available in the selection panel and the map toolbar[/*]
+[/list]
+
+[b]Update[/b]
+[list]
+[*]This release only changes the map viewer: replace [b]MapExtensionViewer.html[/b] with the one from the viewer archive, and keep [b]map-tiles[/b] and [b]map-data[/b] next to it. The data format is unchanged, so the viewer update window will not open on its own[/*]
+[*]Dedicated server: nothing to do, the sync protocol is unchanged (v6)[/*]
+[*]Your saved filters are kept. If the Display tab was open, the panel reopens on Filters[/*]
+[/list]
 
 [size=4][b]Change Log v0.6[/b][/size]
 

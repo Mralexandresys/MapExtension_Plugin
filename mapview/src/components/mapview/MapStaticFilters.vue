@@ -100,9 +100,12 @@ const searchHasNoMatch = computed(
 
         <template v-if="model.available || model.resourceCategories.length">
             <p v-if="props.developerMode" class="filter-section-help">{{ model.ui.developerModeWarning }}</p>
-            <!-- Search and bulk actions stay in reach while the lists scroll. -->
-            <div class="static-toolbar">
-                <label v-if="props.developerMode" class="static-search-field">
+            <!-- Search and bulk actions stay in reach while the lists scroll.
+                 Advanced only: the Filters tab pins its own search, and a second
+                 sticky bar at the same offset used to slide under it. Its
+                 resource bulk actions live on the Resources family header. -->
+            <div v-if="props.developerMode" class="static-toolbar">
+                <label class="static-search-field">
                     <span class="sr-only">
                         {{ model.ui.staticFilters.searchLabel }}
                     </span>
@@ -116,10 +119,10 @@ const searchHasNoMatch = computed(
                 </label>
                 <div class="static-bulk-actions">
                     <button class="button subtle small" type="button" @click="emit('show-all')">
-                        {{ props.developerMode ? model.ui.staticFilters.showAllLayers : model.ui.staticFilters.showAll }}
+                        {{ model.ui.staticFilters.showAllLayers }}
                     </button>
                     <button class="button subtle small" type="button" @click="emit('hide-all')">
-                        {{ props.developerMode ? model.ui.staticFilters.hideAllLayers : model.ui.staticFilters.hideAll }}
+                        {{ model.ui.staticFilters.hideAllLayers }}
                     </button>
                 </div>
             </div>

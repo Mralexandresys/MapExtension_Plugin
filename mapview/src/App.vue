@@ -23,6 +23,7 @@ import {
     useStaticMapFilters,
 } from "./composables/useStaticMapFilters";
 import { useUserAnnotations } from "./composables/useUserAnnotations";
+import { localized } from "./lang";
 import {
     COMMON_RESOURCE_POINT_THRESHOLD,
     PRESET_DEFINITIONS,
@@ -38,7 +39,6 @@ import {
     type StaticPointSeries,
 } from "./lib/staticMapCatalog";
 import type {
-    ActiveFilterChip,
     DetailRow,
     HarvestOption,
     MapCanvasHandle,
@@ -51,7 +51,6 @@ import type {
     MapViewerUpdateDialogModel,
     Rect2D,
     StaticFilterToggle,
-    UserAnnotationDraft,
     UserAnnotationSelection,
 } from "./lib/types";
 
@@ -116,7 +115,7 @@ const {
     selectedDetailRows,
     totalCounts,
     statsOverview,
-    activeFilterChips,
+    hasActiveFilters,
     currentTimeLabel,
     liveAgeLabel,
     ruptureCurrentPhaseKey,
@@ -225,26 +224,10 @@ function handleCreateMarker(point: { x: number; y: number }): void {
     addMarker(point);
 }
 
-function handleDraftUpdate(d: UserAnnotationDraft): void {
-    updateSelectedDraft(d);
-}
-
 function startSelectedAnnotationEdit(): void {
     const sel = selectedAnnotation.value;
     if (!sel) return;
     setAnnotationEditMode(sel.type === "marker" ? "move-marker" : "edit-zone");
-}
-
-function handleMoveMarker(point: { x: number; y: number }): void {
-    moveSelectedMarker(point);
-}
-
-function handleUpdateZone(rect: Rect2D): void {
-    updateSelectedZoneRect(rect);
-}
-
-async function handleImport(file: File): Promise<void> {
-    await importAnnotations(file);
 }
 
 function handleCreateZone(rect: Rect2D): void {
@@ -347,7 +330,7 @@ const harvestOptions = computed<HarvestOption[]>(() => {
         .filter(([typeId]) => !RESOURCE_TYPES_HIDDEN_BY_DEFAULT.includes(typeId))
         .map(([typeId, entry]) => ({
             id: typeId,
-            label: lang.value === "fr" ? entry.fr : entry.en,
+            label: localized(entry, lang.value),
             category: entry.category,
             count: entry.total,
             common: entry.total >= COMMON_RESOURCE_POINT_THRESHOLD,
@@ -387,29 +370,6 @@ watch(
     },
     { immediate: true },
 );
-
-/** Whether a preset wants a given landmark group visible. */
-function presetWantsPoiGroup(group: string): boolean {
-    const selection = PRESET_DEFINITIONS[preset.value].poiGroups;
-    if (selection === "all") return true;
-    if (selection === "none") return false;
-    return selection.includes(group);
-}
-
-// Landmark groups are filters like any other: hiding the obelisks has to show
-// up in the active-filter chips, not leave the panel claiming nothing is set.
-const landmarkFilterChips = computed<ActiveFilterChip[]>(() => {
-    const groups = staticFiltersModel.value?.poiGroups ?? [];
-    return groups
-        .filter((group) => group.enabled !== presetWantsPoiGroup(group.key))
-        .map((group) => ({
-            id: `poiGroup:${group.key}`,
-            label: group.enabled
-                ? group.label
-                : ui.value.format.hiddenLabels(group.label),
-            clear: { kind: "poiGroup" as const, key: group.key },
-        }));
-});
 
 function handlePresetChange(next: MapPreset): void {
     harvestResource.value = null;
@@ -473,8 +433,7 @@ function staticGroupLabel(key: string): string {
 
 function staticResourceLabel(typeId: string): string {
     const entry = staticData.manifest.value?.resource_types?.[typeId];
-    if (!entry) return typeId;
-    return lang.value === "fr" ? entry.fr : entry.en;
+    return entry ? localized(entry, lang.value) : typeId;
 }
 
 function staticTitle(selection: StaticSelection): string {
@@ -506,7 +465,7 @@ function staticDetailRows(selection: StaticSelection): DetailRow[] {
         if (extractor) {
             rows.push({
                 label: messages.extractorTitle,
-                value: lang.value === "fr" ? extractor.fr : extractor.en,
+                value: localized(extractor, lang.value),
             });
         }
         rows.push({
@@ -640,9 +599,18 @@ const controlDockPanel = computed<MapControlDockModel>(() => ({
     mapMetaLabel: mapMetaLabel.value,
     statusTone: statusTone.value,
     statusBadgeLabel: statusBadgeLabel.value,
-    commandStats: commandStats.value.map((stat) => stat.key === "filters"
-        ? { ...stat, label: ui.value.filters.visibleCatalog, value: staticVisibleCount.value.toLocaleString(ui.value.locale) }
-        : stat),
+    // Order: entities, links, filters, freshness. The filters card counts
+    // catalog elements, which only exist at this level.
+    commandStats: [
+        ...commandStats.value.slice(0, 2),
+        {
+            key: "filters",
+            label: ui.value.filters.visibleCatalog,
+            value: staticVisibleCount.value.toLocaleString(ui.value.locale),
+            tone: hasActiveFilters.value ? "warn" : "neutral",
+        },
+        ...commandStats.value.slice(2),
+    ],
     endpointDraft: endpointDraft.value,
     defaultEndpoint: DEFAULT_ENDPOINT,
     endpointHasPendingChanges: endpointHasPendingChanges.value,
@@ -706,20 +674,14 @@ const filtersPanel = computed<MapFiltersPanelModel>(() => ({
     collapsed: filtersPanelCollapsed.value,
     activeTab: filterTab.value,
     ui: ui.value,
-    activeFilterCount:
-        activeFilterChips.value.length + landmarkFilterChips.value.length,
     preset: preset.value,
     harvestResource: harvestResource.value,
     harvestOptions: harvestOptions.value,
-    staticVisibleCount: staticVisibleCount.value,
     entityToggleOptions: entityToggleOptions.value,
     entityVisibility: readonly(entityVisibility),
-    developerMode: developerMode.value,
     showAllLinks: showAllLinks.value,
     highlightOrphans: highlightOrphans.value,
     userAnnotationsOnly: userAnnotationsOnly.value,
-    canEnableFocusMode: canEnableFocusMode.value,
-    focusMode: focusMode.value,
     staticFilters: staticFiltersModel.value,
 }));
 
@@ -769,7 +731,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @open-shortcuts="openShortcuts"
                 @update:lang="lang = $event"
                 @export-json="exportAnnotations"
-                @import-json="handleImport"
+                @import-json="importAnnotations"
             >
                 <template #timeline>
                     <MapRupturePanel
@@ -797,8 +759,8 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 :pois="visiblePois"
                 :selected-key="selectedKey"
                 :selected-entity="selectedEntity"
-                :orphan-keys="Array.from(orphanKeySet)"
-                :focus-keys="Array.from(focusKeys)"
+                :orphan-keys="orphanKeySet"
+                :focus-keys="focusKeys"
                 :focus-cargo-key="focusCargoKey"
                 :lang="lang"
                 :icon-scale="iconScale"
@@ -825,8 +787,8 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @select-static="handleStaticSelect"
                 @create-marker="handleCreateMarker"
                 @create-zone="handleCreateZone"
-                @move-marker="handleMoveMarker"
-                @update-zone="handleUpdateZone"
+                @move-marker="moveSelectedMarker"
+                @update-zone="updateSelectedZoneRect"
             />
 
             <MapCanvasToolbar
@@ -844,7 +806,7 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 :panel="notesPanel"
                 @toggle-mode="handleAnnotationModeToggle"
                 @select-annotation="handleAnnotationSelect"
-                @update:draft="handleDraftUpdate"
+                @update:draft="updateSelectedDraft"
                 @clear-selection="clearAnnotationSelection"
                 @delete-selected="deleteSelectedAnnotation"
                 @edit-selected="startSelectedAnnotationEdit"
@@ -876,7 +838,6 @@ const viewerUpdatePanel = computed<MapViewerUpdateDialogModel>(() => ({
                 @update:show-all-links="showAllLinks = $event"
                 @update:highlight-orphans="highlightOrphans = $event"
                 @update:user-annotations-only="userAnnotationsOnly = $event"
-                @toggle-focus="toggleFocusMode"
                 @update:preset="handlePresetChange"
                 @update:harvest-resource="handleHarvestSelect"
                 @static-toggle="handleStaticFilterToggle"

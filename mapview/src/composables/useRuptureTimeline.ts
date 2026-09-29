@@ -11,9 +11,20 @@ import type {
 const RUPTURE_INCOMING_MIN_WIDTH_PERCENT = 2;
 const RUPTURE_INCOMING_SECONDS = 120;
 
+/** Fallback phase durations, used when the plugin does not send its own. */
+const DEFAULT_PHASE_SECONDS = {
+    burning: 30,
+    cooling: 60,
+    stabilizing: 600,
+    stable: 2550,
+};
+const DEFAULT_CYCLE_TOTAL_SECONDS = Object.values(DEFAULT_PHASE_SECONDS).reduce(
+    (total, seconds) => total + seconds,
+    0,
+);
+
 interface RuptureVisualPhase {
     key: RupturePhaseKey;
-    toneClass: string;
     startSeconds: number;
     endSeconds: number;
     visualStartPercent: number;
@@ -41,11 +52,11 @@ function mapRuptureStageToPhaseKey(
  * purpose -- see the note above `BuildRuptureCycleJson` in `map_state_json.cpp`.
  */
 function getRuptureDurations(response: RuptureCycleResponse | null) {
-    const timeline = response?.timeline;
-    const burning = timeline?.phase_seconds?.burning ?? 30;
-    const cooling = timeline?.phase_seconds?.cooling ?? 60;
-    const stabilizing = timeline?.phase_seconds?.stabilizing ?? 600;
-    const rawStable = timeline?.phase_seconds?.stable ?? 2550;
+    const phaseSeconds = response?.timeline?.phase_seconds;
+    const burning = phaseSeconds?.burning ?? DEFAULT_PHASE_SECONDS.burning;
+    const cooling = phaseSeconds?.cooling ?? DEFAULT_PHASE_SECONDS.cooling;
+    const stabilizing = phaseSeconds?.stabilizing ?? DEFAULT_PHASE_SECONDS.stabilizing;
+    const rawStable = phaseSeconds?.stable ?? DEFAULT_PHASE_SECONDS.stable;
     const incoming = Math.min(RUPTURE_INCOMING_SECONDS, Math.max(0, rawStable));
     const stable = Math.max(0, rawStable - incoming);
 
@@ -78,24 +89,12 @@ function buildRuptureVisualPhases(
     durations: ReturnType<typeof getRuptureDurations>,
     total: number,
 ): RuptureVisualPhase[] {
-    const defs: Array<{
-        key: RupturePhaseKey;
-        toneClass: string;
-        durationSeconds: number;
-    }> = [
-        { key: "burning", toneClass: "burning", durationSeconds: durations.burning },
-        { key: "cooling", toneClass: "cooling", durationSeconds: durations.cooling },
-        {
-            key: "stabilizing",
-            toneClass: "stabilizing",
-            durationSeconds: durations.stabilizing,
-        },
-        { key: "stable", toneClass: "stable", durationSeconds: durations.stable },
-        {
-            key: "incoming",
-            toneClass: "incoming",
-            durationSeconds: durations.incoming,
-        },
+    const defs: Array<{ key: RupturePhaseKey; durationSeconds: number }> = [
+        { key: "burning", durationSeconds: durations.burning },
+        { key: "cooling", durationSeconds: durations.cooling },
+        { key: "stabilizing", durationSeconds: durations.stabilizing },
+        { key: "stable", durationSeconds: durations.stable },
+        { key: "incoming", durationSeconds: durations.incoming },
     ];
 
     const actualWidths = defs.map((phase) => (phase.durationSeconds / total) * 100);
@@ -128,7 +127,6 @@ function buildRuptureVisualPhases(
 
         return {
             key: phase.key,
-            toneClass: phase.toneClass,
             startSeconds,
             endSeconds,
             visualStartPercent,
@@ -176,7 +174,7 @@ export function useRuptureTimeline(
     const ruptureState = computed(() => ruptureCycle.value?.rupture_cycle ?? null);
     const ruptureTimeline = computed(() => ruptureCycle.value?.timeline ?? null);
     const ruptureCycleTotalSeconds = computed(
-        () => ruptureTimeline.value?.cycle_total_seconds ?? 3240,
+        () => ruptureTimeline.value?.cycle_total_seconds ?? DEFAULT_CYCLE_TOTAL_SECONDS,
     );
     const rupturePhaseDurations = computed(() =>
         getRuptureDurations(ruptureCycle.value),
@@ -286,7 +284,7 @@ export function useRuptureTimeline(
                 active: ruptureCurrentPhaseKey.value === phase.key,
                 statusLabel,
                 shortStatusLabel,
-                toneClass: phase.toneClass,
+                toneClass: phase.key,
             };
         });
     });

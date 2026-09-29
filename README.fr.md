@@ -1,6 +1,6 @@
 # MapExtension_Plugin
 
-Les onglets Filtres, Affichage et Avance restent accessibles quel que soit le prereglage. Les actions groupees sur les ressources ne changent que les ressources ; Avance contient les controles globaux des couches. Reinitialiser restaure les filtres live et statiques du prereglage courant, purete comprise. Isoler une ressource est un raccourci ensuite ajustable. Les filtres replies sortent du parcours clavier.
+Les onglets Filtres et Avance restent accessibles quel que soit le prereglage. Reseau, Exploration et Recolte tiennent sur une ligne ; le prereglage Technique, reserve aux developpeurs, est un interrupteur en tete de Avance. Les reglages des liens cargo et des points sans liaison sont sous les lignes cargo, et "uniquement mes marqueurs et zones" ouvre l'onglet Filtres. La famille Ressources regroupe le raccourci Isoler, les sites de rupture, les gisements pour extracteurs et la recolte a la main ; son Tout / Aucun ne change que les ressources, et Avance contient les controles globaux des couches. Reinitialiser restaure les filtres live et statiques du prereglage courant, purete comprise. Isoler une ressource est un raccourci ensuite ajustable. Les filtres replies sortent du parcours clavier.
 
 Le viewer utilise une barre de session compacte, un panneau de filtres bleu nuit et des accents cyan pour les selections. La frequence de rafraichissement se regle dans les parametres ; la timeline de rupture reste visible au-dessus de la carte.
 
