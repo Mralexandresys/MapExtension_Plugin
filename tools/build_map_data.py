@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert the raw StarRupture map exports into the compact viewer catalog.
+"""Convert the raw StarRupture map exports into the compact static catalog.
 
 Inputs (see analyse_map/readme.md):
 
@@ -7,17 +7,15 @@ Inputs (see analyse_map/readme.md):
     analyse_map/map_v2_placements.jsonl   22k buildings, volumes and technical actors
     analyse_map/map_v2_pois.geojson       241 canonical points of interest
 
-Output: mapview/public/map-data/*.js
+Output: map-data/*.js, read by the in-game map from the folder next to the
+client DLL (`Plugins/MapExtension/map-data`).
 
-The viewer is opened directly from the file system, where `fetch()` on a
-`file://` URL is blocked by browsers. Classic `<script>` tags are not, so every
-part is written as a tiny JSONP wrapper (`SRMAPDATA(<json>)`) around otherwise
-plain compact JSON. The files stay next to `MapExtensionViewer.html` exactly
-like `map-tiles/`, and are never inlined into the HTML.
+Every part is a tiny JSONP wrapper (`SRMAPDATA(<json>)`) around otherwise plain
+compact JSON. The wrapper dates from the removed web viewer, which loaded the
+parts with `<script>` tags; the in-game map strips it.
 
-Coordinates are stored in decimetres (world centimetres / 10) because the map
-image resolution is roughly 48 cm per pixel; the viewer converts them to map
-space with the same projection constants as `map_state_types.h`.
+Coordinates are stored in decimetres (world centimetres / 10); the in-game map
+scales them back to world centimetres.
 """
 
 from __future__ import annotations
@@ -769,7 +767,7 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(__file__).resolve().parent.parent / "mapview" / "public" / "map-data",
+        default=Path(__file__).resolve().parent.parent / "map-data",
         help="directory receiving the generated catalog",
     )
     arguments = parser.parse_args()

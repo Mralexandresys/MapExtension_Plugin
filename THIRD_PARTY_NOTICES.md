@@ -18,9 +18,10 @@ Verification date: 2026-03-08
   `https://raw.githubusercontent.com/bithoarder/StarRuptureMap/main/LICENSE`
 - Important upstream note: the asset `base_map.webp` is explicitly stated as copyright
   `Creepy Jar S.A.` and is not covered by the MIT license.
-- Usage in this project: map asset/reference for `mapview`
-
-If you redistribute `base_map.webp` or derived assets, review those rights separately.
+- Usage in this project: reference for the static map image projection kept in
+  `map_state_types.h` (HTTP `map` coordinates). The map tiles derived from
+  `base_map.webp` shipped with the web viewer until 0.7; since 0.8 the viewer is
+  removed and no such asset is distributed.
 
 ## StarRuptureSaveMap
 

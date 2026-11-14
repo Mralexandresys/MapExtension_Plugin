@@ -20,13 +20,9 @@ namespace Detail
 
 		// Compatibility version of the HTTP payloads consumed by the viewer.
 		//
-		// The modloader auto-updater replaces MapExtension_Plugin.dll only, never
-		// MapExtensionViewer.html / map-tiles/, so a recent plugin can end up talking
-		// to an older viewer. Bump this ONLY when a payload change makes older
-		// viewers incorrect, and bump VIEWER_CONTRACT_VERSION in
-		// mapview/src/lib/viewerContract.ts to the same value in the same change.
-		// The viewer shows an update prompt when this value is greater than its own.
-		// Purely additive payload fields do not need a bump.
+		// Legacy: read by copies of the pre-0.8 browser viewer still in use. The
+		// viewer and its release archive are no longer built, so do NOT bump this:
+		// an old viewer would then offer a download that no longer exists.
 		constexpr int kViewerContractVersion = 3;
 
 		constexpr const char* kProjectReleasesBaseUrl =

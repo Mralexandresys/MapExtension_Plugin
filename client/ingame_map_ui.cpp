@@ -1978,7 +1978,7 @@ namespace
 		{
 			hooks->Input->RegisterKeybindByName(g_toggleKey.c_str(), EModKeyEvent::Pressed, OnToggleKey);
 		}
-		LOG_INFO("[InGameMap] experimental in-game map enabled (toggle key: %s, hi-res budget: %d MiB = %d tiles)",
+		LOG_INFO("[InGameMap] in-game map enabled (toggle key: %s, hi-res budget: %d MiB = %d tiles)",
 			g_toggleKey.c_str(), budgetMiB, g_hiResBudget.load());
 	}
 

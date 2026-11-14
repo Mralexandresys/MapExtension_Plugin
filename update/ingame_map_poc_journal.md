@@ -619,3 +619,18 @@ exécuté seulement carte ouverte). Aucun code du plugin modifié sur le chemin 
 
 Non établi : si le plantage vient du plugin. Test discriminant demandé à l'utilisateur : relancer, puis lancer sans
 la DLL.
+
+## 2026-11-14 — Version 0.8 : suppression du viewer web
+
+- Utilisateur : le build de 21:11 fonctionne (« ça fonctionne parfait »). Le plantage au démarrage de 21:12/21:13 ne
+  s'est pas reproduit ; **cause jamais identifiée**, rien n'a été modifié pour le corriger.
+- Décision utilisateur : `mapview/` supprimé (viewer, tuiles, tests locaux, `.nvmrc`). Le catalogue passe de
+  `mapview/public/map-data/` à `map-data/` (racine) ; `build.sh`, `tools/build_map_data.py` et le workflow de release
+  suivent. Le workflow ne construit plus le viewer et ne publie plus l'archive `-viewer.zip`.
+- Choix faits sans demande explicite : `[InGameMap] Enabled` passe à `1` par défaut (seule interface restante) ;
+  l'API HTTP et le contrat `viewer_contract_version` restent tels quels pour les anciens viewers, avec consigne de ne
+  plus incrémenter le contrat.
+- Docs mises à jour : `README.md`, `README.fr.md`, `DEVELOPERS.md`, `AGENTS.md`, `descriptionbbcode` (changelog v0.8),
+  `THIRD_PARTY_NOTICES.md`, `game-context.md`, `changelog.fr.local` (local, non versionné).
+
+Builds : client debug, client release et serveur release verts. Le build client release n'a pas été testé en jeu.

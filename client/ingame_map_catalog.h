@@ -5,9 +5,8 @@
 #include <string>
 #include <vector>
 
-// Catalogue statique du monde (ressources et points d'interet), lu depuis les
-// memes fichiers que le viewer web : `map-data/manifest.js`, `resources-*.js`
-// et `pois.js`, generes par tools/build_map_data.py. Aucun UObject, aucun acces
+// Catalogue statique du monde (ressources et points d'interet), lu depuis
+// `map-data/manifest.js`, `resources-*.js` et `pois.js`, generes par tools/build_map_data.py. Aucun UObject, aucun acces
 // au jeu : chargeable depuis n'importe quel thread.
 
 namespace MapExtensionClient::InGameMap

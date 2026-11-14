@@ -81,15 +81,15 @@ namespace MapExtensionPluginConfig
 			"InGameMap",
 			"Enabled",
 			ConfigValueType::Boolean,
-			"0",
-			"Experimental: in-game logistics map panel (ImGui)"
+			"1",
+			"In-game logistics map panel (ImGui)"
 		},
 		{
 			"InGameMap",
 			"ToggleKey",
 			ConfigValueType::Keybind,
 			"F8",
-			"Key that opens/closes the experimental in-game logistics map"
+			"Key that opens/closes the in-game logistics map"
 		},
 		{
 			"InGameMap",
@@ -170,7 +170,7 @@ namespace MapExtensionPluginConfig
 
 		static bool InGameMapEnabled()
 		{
-			return (s_config && s_self) ? s_config->ReadBool(s_self, "InGameMap", "Enabled", false) : false;
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "InGameMap", "Enabled", true) : true;
 		}
 
 		static int InGameMapTileBudgetMiB()

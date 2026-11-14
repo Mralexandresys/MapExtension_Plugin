@@ -3,9 +3,10 @@
 ## Repository layout
 
 - plugin source: `MapExtension_Plugin/`
-- frontend source: `MapExtension_Plugin/mapview/`
-- frontend build output: `MapExtension_Plugin/mapview/dist/MapExtensionViewer.html`, `map-tiles/`, and `map-data/`
+- static world catalog (committed build input): `MapExtension_Plugin/map-data/`
 - static world-catalog generator: `MapExtension_Plugin/tools/build_map_data.py`
+
+The browser viewer (`mapview/`, `MapExtensionViewer.html`, `map-tiles/`) was removed in 0.8. The in-game map is the only UI; the local HTTP API stays for external tools.
 
 ## Runtime module layout
 
@@ -22,21 +23,58 @@
 
 Keep the runtime split along these boundaries. Do not move HTTP or JSON formatting back into `map_state_runtime.cpp` unless the split is being intentionally reverted.
 
-## Experimental in-game map (POC)
+## In-game map
 
-Client-only, off unless `InGameMap.Enabled=1` (applied live through `RegisterOnConfigChanged`). Plan: `INGAME_MAP_POC_PLAN.md`; runtime measurements and decisions: `update/ingame_map_poc_journal.md`.
+Client-only, on unless `InGameMap.Enabled=0` (applied live through `RegisterOnConfigChanged`). Original plan: `INGAME_MAP_POC_PLAN.md`; runtime measurements and decisions: `update/ingame_map_poc_journal.md`.
 
-- `client/ingame_map_terrain_source.*` (game thread): resolves `UCrMapMenuDevSettings` CDO -> `TerrainData` soft reference -> `UCrMapMenuTerrainData` on every call and returns a POD `TerrainDescriptor` (pivot, segment size, grid indices, R1/R2 resource names, radiation level). No UObject pointer is kept. Also copies a segment texture (`LoadFromUTexture2D`) and requests its mips (`SetForceMipLevelsToBeResident`).
+- `client/ingame_map_terrain_source.*` (game thread): everything that touches the game. Resolves `UCrMapMenuDevSettings` CDO -> `TerrainData` soft reference -> `UCrMapMenuTerrainData` on every call and returns a POD `TerrainDescriptor`. Copies segment textures, item icons and marker textures (`LoadFromUTexture2D`). Captures POI states, antennas, base cores and monoliths. No UObject pointer is kept across calls, except the two native `UScriptStruct` used by the monolith read (rooted, never collected).
 - `client/ingame_map_projection.h`: pure native-grid <-> world transform, with a compile-time round-trip check.
-- `client/ingame_map_ui.*`: ModLoader panel. A tick service publishes an immutable `{TerrainDescriptor, tile handles, CargoSnapshot}` every 500 ms while the panel is open; the render callback only reads that published state. The snapshot comes from `CopySnapshot()`, so solo and dedicated sessions use the existing data path.
+- `client/ingame_map_catalog.*`: static catalog loader (see below).
+- `client/ingame_map_ui.*`: ModLoader panel. A tick service publishes an immutable snapshot (`Published`: terrain, tile handles, `CargoSnapshot`, catalog, icons, POI states, live structures) every 500 ms while the panel is open; the render callback only reads that published state. Filter and selection state lives on the render thread only. The cargo snapshot comes from `CopySnapshot()`, so solo and dedicated sessions use the existing data path.
 
 Facts measured in game (CL-127004): `MapTerrainSegmentSize` is in metres while the pivot is in centimetres (hence `kSegmentSizeToWorldUnits`); grid index X follows world Y and index Y follows world X; the native map shows the `Radiation2` brushes at radiation level 1, so only that variant is loaded.
 
-Static catalog: `client/ingame_map_catalog.*` reads the viewer's own catalog parts (`manifest.js`, `resources-*.js`, `pois.js`, the `SRMAPDATA(...)` JSONP files produced by `tools/build_map_data.py`) from `Plugins/MapExtension/map-data/` next to the client DLL, on a background task at activation. Placements are not read. There is a single catalog format: regenerate it with the tool and both the viewer and the plugin follow. Drawing is capped at 12,000 points per frame by regular subsampling. Each resource type carries an optional `item` field in `manifest.js` (the game item class path taken from the raw export); the plugin loads that class through the reflected `LoadClassAsset_Blocking`, reads its `ItemIcon` brush and draws the icon instead of a dot, three types per service pass. Types without an `item` keep a coloured dot. The viewer ignores the field.
+### Live game state
 
-Rupture box: same model as `useRuptureTimeline.ts` (phase derived from the elapsed time in the 3240 s cycle), because `wave`/`stage`/`step` read `None` outside a wave.
+| Data | Source | Notes |
+| --- | --- | --- |
+| POI discovery state | `ACrMapMenuDataReplicationHelper::PointOfInterestReplicationData` | joined to the catalog by marker GUID (`%08X-%08X-%08X-%08X`, A-B-C-D) |
+| Abandoned base progress | `ACrAbandonBaseInfoReplicator::AbandonBaseDataContainer` | four collected-status arrays per base |
+| Antennas | `ACrAntennasOwner::AntennaContainer` | replaces the catalog "Antenna" group when present |
+| Base cores | `ACrMapMenuDataReplicationHelper::BuildingsMarkerDataContainer`, unique name containing `core` | level, cooling and infection from `ACrBaseCoreReplicationHelper::BaseCoreDataContainer`, joined on `BaseCore.Entity.CachedHandle == BuildingHandle`; displayed level is `UpgradeLevel + 1` |
+| Monoliths | native read of `FCrAlienObeliskFragment` + `FTransformFragment` | see below; the replicated bubble and loaded actors only exist in multiplayer or near the player |
+| Attack threshold | `UCrAlienObeliskTrait::Parameters.ChargeValueToActivateAttack` | 0.5 on CL-127004; percentage = charge / threshold |
 
-Terrain tiles: a permanent preview (the resident mip of each of the 36 segments, 64 px) plus full resolution on demand. The render callback publishes a bitmask of the visible tiles closest to the view centre, capped by `InGameMap.TileBudgetMiB`; the service forces their mips resident, copies them once streamed in (2048 px), and frees them 10 s after they leave the view or as soon as the panel closes. No native function pattern is used.
+POI states are captured every 2 s and live structures every 4 s while the panel is open.
+
+### Native monolith read
+
+No reflected source lists monoliths in solo. `plugin.cpp` exports `OnPluginLoadHooks` (client build only) and calls `ResolveNativeAccess`, which declares the loader feature `ingame-map-monoliths` and resolves two keys:
+
+- `FMassArchetypeData::GetFragmentDataForEntity`: the loader's map first, then the plugin's own 37-byte signature (one match in the CL-127004 executable), checked as a function start.
+- `UMassEntitySubsystem::EntityManager`: native field row for CL-127004 (offset `0x38`), same row as the SDK's `plugin_map.h`.
+
+`ScanObelisksGuarded` walks the entity storage of `FMassEntityManager` (storage at `+0x20`, variant type at `+0x60`, vtable slots `+0x10` archetype and `+0x48` valid index, all verified by disassembling `IsEntityValid` in the installed executable) and asks the game function for the two fragments. It is read-only, installs no hook, and runs under `__try/__except`: a fault or an unexpected storage type disables the read for the session. A key that does not resolve turns off only this feature.
+
+Rules when the game updates:
+
+- The local `StarRupture-Game-IDADump/` is not guaranteed to match the installed executable (it did not on CL-127004). Verify bytes and offsets on the installed executable before trusting an address.
+- Re-verify the signature count, the storage offsets and the vtable slots, then add the new changelist's field row. Do not widen the gate to an unverified build.
+
+### Icons
+
+- Item icons: `LoadItemIcon` (catalog types, by item class path from `manifest.js`) and `LoadItemIconsByName` (cargo items, one `GObjects` walk).
+- Native map marker textures under `/Game/Chimera/UI/Map/Markers/` and the teleporter icon: `LoadTextureAsset`. A freshly loaded texture is not on the GPU yet, so `LoadFromUTexture2D` returns null; the loader forces its mips resident and retries on the next service pass.
+
+### Static catalog
+
+`client/ingame_map_catalog.*` reads `manifest.js`, `resources-*.js` and `pois.js` (the `SRMAPDATA(...)` JSONP files produced by `tools/build_map_data.py`) from `Plugins/MapExtension/map-data/` next to the client DLL, on a background task at activation. Placements are not read.
+
+### Rupture strip and terrain tiles
+
+The rupture strip derives the phase from the elapsed time in the 3240 s cycle, because `wave`/`stage`/`step` read `None` outside a wave.
+
+Terrain tiles: a permanent preview (the resident mip of each of the 36 segments, 64 px) plus full resolution on demand. The render callback publishes a bitmask of the visible tiles closest to the view centre, capped by `InGameMap.TileBudgetMiB`; the service forces their mips resident, copies them once streamed in (2048 px), and frees them 10 s after they leave the view or as soon as the panel closes.
 
 ## Third-party code
 
@@ -49,7 +87,6 @@ Terrain tiles: a permanent preview (the resident mip of each of the 36 segments,
 
 - Visual Studio 2022 (17.8 or newer), or a newer Visual Studio with the v143 C++ build tools installed, the Desktop development with C++ workload and the Windows 10 SDK. The project and CI both use v143.
 - SDK layout: `StarRupture-Plugin-SDK` with `include/`, `Shared.props`, and `StarRupture SDK/`
-- Node.js `^20.19.0 || >=22.12.0` and pnpm 10.14.0 for `mapview`. The root `.nvmrc` selects Node 22.22.1. With nvm installed, run `nvm install && nvm use` from the repository root, then use `corepack pnpm` in `mapview/` (or an installed pnpm 10.14.0). Check `node --version` and `pnpm --version` before building; an older shell default is not a supported validation environment.
 
 ## Plugin build
 
@@ -138,27 +175,9 @@ Successful output ends with `HTTP smoke checks passed`; the test does not replac
 client/server builds or validation in the game. The generated SDK may emit its
 existing enum warning C4369 in this standalone build.
 
-## Frontend build
-
-From `MapExtension_Plugin/mapview/`:
-
-```bash
-pnpm install
-pnpm run check
-pnpm run build
-```
-
-The production build entry point is:
-
-```text
-MapExtension_Plugin/mapview/dist/MapExtensionViewer.html
-```
-
-The build output also includes `mapview/dist/map-tiles/` and `mapview/dist/map-data/` alongside the HTML entry point. Both folders must stay next to `MapExtensionViewer.html` for direct `file://` use.
-
 ## Static world catalog
 
-`tools/build_map_data.py` converts local reverse-engineering exports into the compact files committed under `mapview/public/map-data/`. Its default inputs are:
+`tools/build_map_data.py` converts local reverse-engineering exports into the compact files committed under `map-data/`. Its default inputs are:
 
 - `analyse_map/map_v2_resources.jsonl`
 - `analyse_map/map_v2_placements.jsonl`
@@ -173,38 +192,24 @@ Run it from the repository root:
 python3 tools/build_map_data.py
 ```
 
-`analyse_map/` is a strictly local, ignored input and must not be committed. Previously tracked exports were removed from the index while retaining local files; this does not remove them from older Git history. The generated `mapview/public/map-data/*.js` files are build inputs and must be committed because CI does not have the raw exports.
+`analyse_map/` is a strictly local, ignored input and must not be committed. The generated `map-data/*.js` files are build inputs and must be committed because CI does not have the raw exports.
 
-The format uses integer world decimetres, metre altitudes, dictionary/group indexes, locality sorting, and delta-encoded coordinate arrays. Hand-mineable HISM rocks are not published. The preferred ore-vein export supplies 660 individual deposit sockets with resource, purity, extractor and join confidence. When absent, the generator falls back to classifying sockets using nearby mineral meshes; uncertain purity stays `unknown`. Actor/PCG points of the same resource within the deduplication tolerance (500 cm on each horizontal axis) of a deposit are removed, and `unknown_ore` is never published. The current catalog contains 57,147 resources, 21,751 placements and 241 canonical POIs. Placements are split into building, zone and technical parts; supported boxes retain a projected ground footprint. The manifest no longer carries unused rupture rules.
+The format uses integer world decimetres, metre altitudes, dictionary/group indexes, locality sorting, and delta-encoded coordinate arrays. The preferred ore-vein export supplies 660 individual deposit sockets with resource, purity, extractor and join confidence.
 
-The files contain compact JSON wrapped as `SRMAPDATA(<payload>);`. This JSONP wrapper is intentional: browsers commonly block `fetch()` from a page opened through `file://`, while classic relative `<script src>` loading remains available. Do not replace it with `fetch()` unless the distribution model changes to an HTTP-served viewer.
+The files contain compact JSON wrapped as `SRMAPDATA(<payload>);`. The wrapper dates from the removed web viewer, which loaded the parts with `<script>` tags from a `file://` page; the in-game map strips it. Resource types carry an optional `item` class path used to load the game's item icon.
 
-The viewer loads parts lazily by enabled layer. `StaticMapCanvas.vue` renders large point and placement layers on canvas; the existing SVG remains responsible for live entities, annotations, and selectable catalog POIs. World coordinates are projected with `mapProjection.ts`, whose defaults must stay synchronized with `map_state_types.h`; a reachable plugin can override those defaults through the `map` object in `/cargo`.
-
-`applyDynamicPois` updates matched catalog plants and returns their live keys. `App.vue` always suppresses those duplicate runtime markers: a hidden catalog point must not reappear through its observation. Unmatched live plants use the same Resources layer, Plants category and per-type filters, plus the actor representation switch. The shared filters replace the old live-only Plants toggle; the legacy `entityVisibility.plantResource` preference no longer overrides them. Controls remain available for observed types if map-data cannot load. New observed types respect an active resource isolation choice.
-
-`getSelectionState` reads the current state array through `stateVersion`, so selecting a point does not freeze its availability. The open details panel and stationary catalog tooltip refresh with each state revision. A catalog position without a matching live observation remains `unknown`; no respawn timer infers availability.
+`./build.sh client ...` stages `manifest.js`, `pois.js` and `resources-*.js` into `build/<Configuration>/Plugins/MapExtension/map-data/`. The `placements-*.js` parts are generated but not read by the in-game map.
 
 ## Packaging a release
 
-1. Set `MODLOADER_BUILD_TAG` to the version you want to publish and, if needed, `MODLOADER_BUILD_AUTHOR` to the release author (see above), then build both `Client Release|x64` and `Server Release|x64` so that these files are produced:
-   - `build/Client Release/Plugins/MapExtension_Plugin.dll`
-   - `build/Server Release/Plugins/MapExtension_Plugin.dll`
-   - Build the client DLL with `./build.sh client release` and the server DLL with `./build.sh server release`.
-2. Move to `mapview/`, ensure Node.js 20.19.0+ or 22.12.0+ is active, then run `pnpm install && pnpm run check && pnpm run build`. The bundle lands in `mapview/dist/MapExtensionViewer.html`.
-3. Create a client archive containing:
-   - `build/Client Release/Plugins/MapExtension_Plugin.dll`
+1. Set `MODLOADER_BUILD_TAG` to the version you want to publish and, if needed, `MODLOADER_BUILD_AUTHOR` to the release author (see above), then build both `Client Release|x64` and `Server Release|x64` with `./build.sh client release` and `./build.sh server release`.
+2. Create a client archive containing:
+   - `Plugins/MapExtension_Plugin.dll` from `build/Client Release/Plugins/`
    - `Plugins/MapExtension_Plugin.json`, the update sidecar whose only field is `manifest_url` (see the GitHub Actions release section below); omit it only if the archive is not meant to receive automatic updates
-   - `mapview/dist/MapExtensionViewer.html`
-   - `mapview/dist/map-tiles/`
-   - `mapview/dist/map-data/`
-   - `Plugins/MapExtension/map-data/` holding `manifest.js`, `pois.js` and `resources-*.js` copied from `mapview/public/map-data/`: the catalog read by the experimental in-game map (`./build.sh client ...` stages this folder next to the built DLL)
-4. Create a viewer-only archive containing `mapview/dist/MapExtensionViewer.html`, `mapview/dist/map-tiles/`, and `mapview/dist/map-data/`. This is what the in-app update dialog links to, so it must be named `MapExtension_Plugin-<tag>-viewer.zip`.
-5. Create a server archive containing:
-   - `build/Server Release/Plugins/MapExtension_Plugin.dll`
-6. (Optional) add `README.md`, `README.fr.md`, `LICENSE`, notice files, and `licenses/` content alongside the binaries if you want a fuller release bundle.
-7. (Optional) include a sample `Plugins/config/MapExtension_Plugin.ini` if you want to ship defaults with instructions.
-8. Verify that no files from `.gitignore` leaked into the packages, then sign or checksum the archives before publishing them.
+   - `Plugins/MapExtension/map-data/` holding `manifest.js`, `pois.js` and `resources-*.js` from `map-data/` (`./build.sh client ...` stages this folder next to the built DLL)
+3. Create a server archive containing `Plugins/MapExtension_Plugin.dll` from `build/Server Release/Plugins/`.
+4. (Optional) add `README.md`, `README.fr.md`, `LICENSE`, notice files, and `licenses/` content alongside the binaries if you want a fuller release bundle.
+5. Verify that no files from `.gitignore` leaked into the packages, then sign or checksum the archives before publishing them.
 
 ## GitHub Actions release
 
@@ -222,15 +227,14 @@ The workflow:
 1. fetches the latest published release tag from `AlienXAXS/StarRupture-Plugin-SDK`
 2. checks out `MapExtension_Plugin` into a local `plugin/` workspace path
 3. checks out `StarRupture-Plugin-SDK` on the same release tag into a local `sdk/` workspace path
-4. builds both the client and server plugin DLLs against that SDK checkout, then builds the `mapview` bundle
-5. creates a client zip with the client DLL, `MapExtensionViewer.html`, and `Plugins/MapExtension_Plugin.json` sidecar whose only field is `manifest_url`; `.pdb` files are included when available
+4. builds both the client and server plugin DLLs against that SDK checkout
+5. creates a client zip with the client DLL, `Plugins/MapExtension/map-data/`, and `Plugins/MapExtension_Plugin.json` sidecar whose only field is `manifest_url`; `.pdb` files are included when available
 6. publishes `MapExtension_Plugin-client-manifest.json` and a direct client DLL asset for the modloader auto-updater
 7. creates a separate server zip with the server DLL
-8. creates a viewer-only zip `MapExtension_Plugin-<tag>-viewer.zip` with `MapExtensionViewer.html`, `map-tiles/`, and `map-data/`, which is the asset the viewer update dialog points users to
-9. creates a plugin tag in the format `ML-<sdk-version>-vX.Y` (for example `ML-2026.04.09-200640-v0.2` or `ML-v1.2.0-v0.2`, depending on the selected SDK tag)
-10. publishes a GitHub release in the plugin repository
+8. creates a plugin tag in the format `ML-<sdk-version>-vX.Y` (for example `ML-2026.04.09-200640-v0.2` or `ML-v1.2.0-v0.2`, depending on the selected SDK tag)
+9. publishes a GitHub release in the plugin repository
 
-The modloader auto-updater replaces `MapExtension_Plugin.dll` only. `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` live outside the game folder and are never updated, so any change to the `/cargo`, `/health`, or `/rupture-cycle` payload shape must stay backward compatible with an older viewer, or bump the viewer contract version described below so the viewer prompts the user to download the viewer zip.
+The modloader auto-updater replaces `MapExtension_Plugin.dll` only. `Plugins/MapExtension/map-data/` is never updated by it, so a release that changes the catalog must tell users to copy that folder again.
 
 The server build ships no sidecar and is not auto-updated. Sync protocol v6 requires an exact protocol-version match, so releases using it must tell server admins to update the client and dedicated-server DLLs together. A mixed-version pair ignores incompatible packets and cannot publish a remote snapshot.
 
@@ -242,7 +246,7 @@ Plant POIs are deliberately limited by the reward class in `ACrGatherableBaseAct
 
 The packaged static world catalog is the complete source for pre-generated plant and POI locations. The dynamic-resource inclusion/exclusion volumes do not contain exact runtime spawn points and must not be connected to the Ignitium or Star Tears visibility filters or turned into resource markers. Do not reintroduce a World Partition full-map scan, player movement, rupture-cycle pausing, or per-save POI cache to populate that data.
 
-`CapturePois` remains a throttled live complement for already loaded actors. It merges observations into an in-memory catalog for the active world only. A cell unloading does not remove its markers during that world, while live `bIsDepleted` state (`bIsPermanentlyGathered` is a persistence policy, not runtime depletion), `ACrOreActor::OreData.bIsDepleted`, and `ACrGatherableSpawnersRepActor` depleted-location arrays mark gathered markers as depleted. The catalog is cleared on world transitions and engine shutdown; Ignitium and Star Tears observations are also cleared when `RepGlobalGatherablePCGSeed` changes, or on entry into Heat/Moving without a replica (normal solo cycles). Previously sampled actor identities are retired until removed, preventing their immediate reintroduction. BeginPlay queues identities on both builds; runtime properties are read on the next capture after initialization. Loaded remembered actors are refreshed even between the five-second full scans. A forced seed change with no observed phase transition remains outside the solo fallback. The dynamic-resource inclusion/exclusion volumes are not used as fixed positions; only generated runtime actors validate site coordinates. `ResolveRuptureResourcePhase` deliberately uses the same 30/60/600/2550-second timeline as the viewer before falling back to the raw stage, so the resource kind cannot disagree with the displayed Arcadia phase. In the stable interval, `ApplyRuptureResourcePhase` reclassifies a validated, non-depleted Ignitium site as Star Tears unless a real Star Tears actor has already been observed within the site tolerance. The burning/cooling interval suppresses stale Star Tears, while the stabilizing interval permits both kinds. `useMapViewEntities` repeats this phase projection defensively from the displayed timeline so a stale or older `/cargo` payload cannot render Ignitium while the viewer says Arcadia is stable. Do not infer depletion from a nearby marker of the other rupture-resource kind because the two can coexist late in the cycle; the viewer gives Star Tears the higher SVG paint order at identical coordinates.
+`CapturePois` remains a throttled live complement for already loaded actors. It merges observations into an in-memory catalog for the active world only. A cell unloading does not remove its markers during that world, while live `bIsDepleted` state (`bIsPermanentlyGathered` is a persistence policy, not runtime depletion), `ACrOreActor::OreData.bIsDepleted`, and `ACrGatherableSpawnersRepActor` depleted-location arrays mark gathered markers as depleted. The catalog is cleared on world transitions and engine shutdown; Ignitium and Star Tears observations are also cleared when `RepGlobalGatherablePCGSeed` changes, or on entry into Heat/Moving without a replica (normal solo cycles). Previously sampled actor identities are retired until removed, preventing their immediate reintroduction. BeginPlay queues identities on both builds; runtime properties are read on the next capture after initialization. Loaded remembered actors are refreshed even between the five-second full scans. A forced seed change with no observed phase transition remains outside the solo fallback. The dynamic-resource inclusion/exclusion volumes are not used as fixed positions; only generated runtime actors validate site coordinates. `ResolveRuptureResourcePhase` deliberately uses the same 30/60/600/2550-second timeline as the viewer before falling back to the raw stage, so the resource kind cannot disagree with the displayed Arcadia phase. In the stable interval, `ApplyRuptureResourcePhase` reclassifies a validated, non-depleted Ignitium site as Star Tears unless a real Star Tears actor has already been observed within the site tolerance. The burning/cooling interval suppresses stale Star Tears, while the stabilizing interval permits both kinds. Do not infer depletion from a nearby marker of the other rupture-resource kind because the two can coexist late in the cycle; the viewer gives Star Tears the higher SVG paint order at identical coordinates.
 
 `CapturePois` excludes `rupture_phase.*` projections when retaining the previous snapshot. It then merges the raw observation catalog even on throttled scans, so `ApplyRuptureResourcePhase` derives the projection anew. A real Star Tears observation, including a depleted one, replaces the estimate without leaving an available duplicate; phase, world, and generation changes cannot retain the old projection as an observation.
 
@@ -330,35 +334,21 @@ The payload includes `counts.pois`, `counts.abandoned_bases`, `counts.plant_reso
 | `state` | `available`, `unavailable`, `unknown`, or `depleted`. Depletion takes precedence. Carried in protocol v6 flags and included in the POI revision hash. |
 | `depleted` | Boolean state from the live gatherable/ore actor when available; the last known position remains in the catalog after depletion. Abandoned bases emit `false`. |
 | `source` | Capture-path identifier such as `actor_scan.abandoned_base` or `actor_scan.gatherable`. |
-| `unique_key` | Public identity used by the viewer for selection and rendering. |
+| `unique_key` | Public identity of the POI. |
 | `world` | Unreal coordinates as numeric `x`, `y`, and `z`. |
 | `map` | Projected map coordinates as numeric `x` and `y`. |
 
 `counts.pois` equals the length of `pois`; the four per-kind counters (`abandoned_bases`, `plant_resources`, `ignitium`, and `star_tears`) add up to that total.
 
-The viewer renders abandoned bases with a dedicated fixed-color icon. Plant resources use stable resource-specific colors of `resource || label || unique_key`, after trimming and lowercasing, to derive an HSL color (hue from the full hash range, saturation 62–82%, lightness 60–72%). Ignitium and Star Tears use fixed resource-specific colors so their independent filters remain visually recognizable. Current plugin payloads use a solid core for available resources and the faded dashed/outlined rendering for depleted actors; the same rendering remains backward compatible with older payloads that contain `depleted: true`.
+Player entries in `/cargo` carry an optional boolean `self`, set to `true` on the marker representing the local player (the primary local player in solo sessions, or the marker flagged by the dedicated server for this client).
 
-Player entries in `/cargo` carry an optional boolean `self`, set to `true` on the marker representing the local viewer's own player (the primary local player in solo sessions, or the marker flagged by the dedicated server for this client). The viewer renders the `self` player with a distinct color and prefers it when centering on the player. Older plugins omit the field.
+## Viewer contract version (legacy)
 
-## Viewer contract version
+`/health` still returns `plugin_version`, `viewer_contract_version` (`kViewerContractVersion` in `map_state_json.cpp`) and `viewer_update`, for copies of the pre-0.8 browser viewer still in use. The viewer and its `MapExtension_Plugin-<tag>-viewer.zip` release asset are no longer built, so:
 
-Because the auto-updater replaces `MapExtension_Plugin.dll` only, a recent plugin can end up serving payloads to an older `MapExtensionViewer.html`. `/health` therefore also returns:
+- Do not bump `kViewerContractVersion`: an old viewer would then offer a download that no longer exists.
+- Keep `/cargo`, `/health` and `/rupture-cycle` backward compatible, or remove this legacy contract in the same change.
 
-- `plugin_version`: the build tag baked in through `/p:ModLoaderBuildTag`
-- `viewer_contract_version`: `kViewerContractVersion` in `map_state_json.cpp`
-- `viewer_update`: `mod_page_url`, plus `release_url` and `download_url` on published builds
-
-Contract 3 introduces non-harvestable and unknown live resource states: an older viewer would incorrectly display both as available from `depleted: false`. Update both contract constants together.
-
-The viewer compares `viewer_contract_version` against `VIEWER_CONTRACT_VERSION` in `mapview/src/lib/viewerContract.ts` and shows an update dialog when the plugin reports a higher value.
-
-Rules:
-
-- Bump `kViewerContractVersion` and `VIEWER_CONTRACT_VERSION` together, in the same change, whenever a payload change breaks older viewers (removed or renamed fields, changed semantics, changed coordinate projection).
-- Do not bump for purely additive, backward-compatible fields, or every user gets an update prompt for nothing.
-- The plugin builds the download URL, not the viewer. The viewer that shows the prompt is by definition the outdated one, so it must not carry a hardcoded URL pattern. `MapExtension_Plugin-<tag>-viewer.zip` in `.github/workflows/release.yml` and `BuildViewerUpdateJson` in `map_state_json.cpp` must stay in sync.
-- Local builds define `MAPEXTENSION_LOCAL_BUILD` through `PropertySheet.props` and advertise no download URL, since their fallback tag has no published assets.
-
-### Resource observation regression checks
+## Resource observation regression checks
 
 Run `python3 tools/tests/resource_observation_test.py` with Python 3 and a C++20-capable `g++`. It compiles the production phase, retention, depletion-match and wire-state code with minimal engine stand-ins. Scenarios cover normal solo cycles and replicated seeds, available/unavailable/unknown/depleted round trips, missing interaction data and progress/substage boundaries, an intact non-mineable Ignitium site, actual Star Tears replacing an estimate, ambiguous overlapping records, fresh observations overriding untyped records, removed records, and world/generation resets. It does not validate SDK runtime calls or actor lifetimes; complete the in-game scenarios in `IGNITIUM_STAR_TEARS_ANALYSIS.md` before claiming complete harvest coverage.

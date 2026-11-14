@@ -232,7 +232,7 @@ stage_map_data() {
   [[ "$TARGET" == "client" ]] || return 0
   local destination="$SCRIPT_DIR/build/$CONFIGURATION/Plugins/MapExtension/map-data"
   mkdir -p "$destination"
-  cp "$SCRIPT_DIR"/mapview/public/map-data/{manifest,pois,resources-*}.js "$destination/"
+  cp "$SCRIPT_DIR"/map-data/{manifest,pois,resources-*}.js "$destination/"
 }
 
 echo "Build de MapExtension_Plugin en ${CONFIGURATION}|x64"

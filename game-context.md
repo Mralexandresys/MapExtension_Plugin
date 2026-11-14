@@ -67,7 +67,8 @@ StarRupture utilise les coordonnées monde Unreal :
 - l'image de référence utilisée par MapExtension mesure `9019 × 11691` pixels.
 
 La projection de MapExtension est une transformation affine calibrée dans
-`map_state_types.h`. Elle doit rester synchronisée avec `mapview`. Elle est la
+`map_state_types.h` (coordonnées `map` de l'API HTTP ; la carte en jeu dessine
+directement en coordonnées monde). Elle est la
 projection utilisée par ce projet ; les exports disponibles ne prouvent pas qu'il
 s'agit de la transformation interne exacte du menu de carte du jeu.
 
@@ -592,7 +593,6 @@ Lorsqu'un comportement change, maintenir ce document avec les sources suivantes 
 - `tools/build_map_data.py` : conversion du catalogue statique ;
 - `analyse_map/readme.md` et `analyse_map/map_v2_catalog.json` : contenu et limites
   des exports ;
-- `mapview/README.md` : comportement visible du viewer ;
 - `README.md` et `README.fr.md` : contrat utilisateur général.
 
 Toute nouvelle affirmation de gameplay doit être liée à une donnée exportée, un
