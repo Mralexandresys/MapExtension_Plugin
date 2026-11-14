@@ -175,6 +175,11 @@ Port=9000
 
 [Runtime]
 RefreshIntervalMs=2000
+
+[InGameMap]
+Enabled=0
+ToggleKey=F8
+TileBudgetMiB=64
 ```
 
 - `Enabled`: enables or disables the plugin (`1` or `0`)
@@ -187,6 +192,9 @@ RefreshIntervalMs=2000
 - `LogRefreshTimings`: logs per-phase refresh timings (`1` or `0`)
 - `Port`: sets the local HTTP port used by the plugin
 - `RefreshIntervalMs`: sets the runtime refresh interval in milliseconds
+- `InGameMap.Enabled`: experimental proof of concept, off by default (`1` or `0`). Adds a "Logistics map" ModLoader panel that draws the game's own map terrain with cargo endpoints, cargo links (item and amount on hover), teleporters, players, the rupture-cycle phase and the static resource catalog of the web viewer (ore deposits with purity, plants, creatures, points of interest; one filter per type, purity filters for ore deposits, and the game's own item icons on the map). The catalog is read from `Plugins/MapExtension/map-data/`, shipped in the client archive. Drag to pan, mouse wheel to zoom. The web viewer remains the full interface. Applies immediately, no restart needed
+- `InGameMap.ToggleKey`: key that opens or closes that panel (default `F8`)
+- `InGameMap.TileBudgetMiB`: approximate video memory allowed for full-resolution terrain tiles (default `64`; `0` keeps the low-resolution preview only)
 
 ## Credits
 

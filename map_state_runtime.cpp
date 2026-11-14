@@ -9,6 +9,7 @@
 
 #if defined(MODLOADER_CLIENT_BUILD)
 #include "client/map_sync_client.h"
+#include "client/ingame_map_ui.h"
 #endif
 
 #if defined(MODLOADER_SERVER_BUILD)
@@ -109,6 +110,7 @@ namespace MapStateRuntime
 		{
 			LOG_WARN("Client network sync initialization failed; dedicated snapshot sync disabled.");
 		}
+		MapExtensionClient::InGameMap::Initialize();
 #endif
 
 #if defined(MODLOADER_SERVER_BUILD)
@@ -175,6 +177,7 @@ namespace MapStateRuntime
 
 		// Shutdown network sync modules
 #if defined(MODLOADER_CLIENT_BUILD)
+		MapExtensionClient::InGameMap::Shutdown();
 		MapExtensionClient::Sync::Shutdown();
 #endif
 

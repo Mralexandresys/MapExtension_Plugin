@@ -197,6 +197,10 @@
     <ClInclude Include="shared\resource_observation.h" />
     <ClInclude Include="client\map_sync_client.h" />
     <ClInclude Include="client\map_state_remote_cache.h" />
+    <ClInclude Include="client\ingame_map_catalog.h" />
+    <ClInclude Include="client\ingame_map_projection.h" />
+    <ClInclude Include="client\ingame_map_terrain_source.h" />
+    <ClInclude Include="client\ingame_map_ui.h" />
     <ClInclude Include="server\map_sync_server.h" />
   </ItemGroup>
   <ItemGroup>
@@ -241,6 +245,18 @@
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="client\map_state_remote_cache.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="client\ingame_map_catalog.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="client\ingame_map_terrain_source.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="client\ingame_map_ui.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>

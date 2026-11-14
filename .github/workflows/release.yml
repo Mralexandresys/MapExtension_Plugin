@@ -263,6 +263,10 @@ jobs:
           if (Test-Path $clientPdbSource) {
             Copy-Item $clientPdbSource (Join-Path $clientPluginsDir "MapExtension_Plugin.pdb") -Force
           }
+          # Static world catalog read by the experimental in-game map, next to the DLL.
+          $pluginMapDataDir = Join-Path $clientPluginsDir "MapExtension\map-data"
+          New-Item -ItemType Directory -Force -Path $pluginMapDataDir | Out-Null
+          Copy-Item "mapview\public\map-data\manifest.js", "mapview\public\map-data\pois.js", "mapview\public\map-data\resources-*.js" $pluginMapDataDir -Force
           Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $clientStageRoot "MapExtensionViewer.html") -Force
           if (Test-Path "mapview\dist\map-tiles") {
             Copy-Item "mapview\dist\map-tiles" (Join-Path $clientStageRoot "map-tiles") -Recurse -Force

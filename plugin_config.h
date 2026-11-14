@@ -76,6 +76,27 @@ namespace MapExtensionPluginConfig
 			ConfigValueType::Integer,
 			"2000",
 			"Realtime snapshot refresh interval in milliseconds while gameplay is running (lowered from 500 to reduce main-thread stalls during heavy replication)"
+		},
+		{
+			"InGameMap",
+			"Enabled",
+			ConfigValueType::Boolean,
+			"0",
+			"Experimental: in-game logistics map panel (ImGui)"
+		},
+		{
+			"InGameMap",
+			"ToggleKey",
+			ConfigValueType::Keybind,
+			"F8",
+			"Key that opens/closes the experimental in-game logistics map"
+		},
+		{
+			"InGameMap",
+			"TileBudgetMiB",
+			ConfigValueType::Integer,
+			"64",
+			"Approximate video memory budget for full-resolution terrain tiles of the in-game map (0 = preview quality only)"
 		}
 	};
 
@@ -145,6 +166,26 @@ namespace MapExtensionPluginConfig
 		static int RefreshIntervalMs()
 		{
 			return (s_config && s_self) ? s_config->ReadInt(s_self, "Runtime", "RefreshIntervalMs", 2000) : 2000;
+		}
+
+		static bool InGameMapEnabled()
+		{
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "InGameMap", "Enabled", false) : false;
+		}
+
+		static int InGameMapTileBudgetMiB()
+		{
+			return (s_config && s_self) ? s_config->ReadInt(s_self, "InGameMap", "TileBudgetMiB", 64) : 64;
+		}
+
+		static const char* InGameMapToggleKey()
+		{
+			static char key[64];
+			if (!s_config || !s_self || !s_config->ReadString(s_self, "InGameMap", "ToggleKey", key, sizeof(key), "F8"))
+			{
+				return "F8";
+			}
+			return key;
 		}
 
 	private:

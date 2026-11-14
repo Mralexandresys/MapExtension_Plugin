@@ -177,6 +177,11 @@ Port=9000
 
 [Runtime]
 RefreshIntervalMs=2000
+
+[InGameMap]
+Enabled=0
+ToggleKey=F8
+TileBudgetMiB=64
 ```
 
 - `Enabled` : active ou desactive le plugin (`1` ou `0`)
@@ -189,6 +194,9 @@ RefreshIntervalMs=2000
 - `LogRefreshTimings` : loggue les timings par phase de refresh (`1` ou `0`)
 - `Port` : definit le port HTTP local utilise par le plugin
 - `RefreshIntervalMs` : definit l'intervalle de refresh runtime en millisecondes
+- `InGameMap.Enabled` : preuve de concept experimentale, desactivee par defaut (`1` ou `0`). Ajoute un panneau ModLoader "Logistics map" qui dessine le terrain de la carte du jeu avec les points cargo, les liens cargo (item et quantite au survol), les teleporteurs, les joueurs, la phase du cycle de rupture et le catalogue statique de ressources du viewer web (gisements avec purete, plantes, creatures, points d'interet ; un filtre par type, des filtres de purete pour les gisements, et les icones d'items du jeu sur la carte). Le catalogue est lu depuis `Plugins/MapExtension/map-data/`, fourni dans l'archive client. Glisser pour deplacer, molette pour zoomer. Le viewer web reste l'interface complete. S'applique immediatement, sans redemarrage
+- `InGameMap.ToggleKey` : touche qui ouvre ou ferme ce panneau (defaut `F8`)
+- `InGameMap.TileBudgetMiB` : memoire video approximative autorisee pour les tuiles de terrain en pleine resolution (defaut `64` ; `0` garde uniquement l'apercu basse resolution)
 
 ## Remerciements
 

@@ -22,6 +22,22 @@
 
 Keep the runtime split along these boundaries. Do not move HTTP or JSON formatting back into `map_state_runtime.cpp` unless the split is being intentionally reverted.
 
+## Experimental in-game map (POC)
+
+Client-only, off unless `InGameMap.Enabled=1` (applied live through `RegisterOnConfigChanged`). Plan: `INGAME_MAP_POC_PLAN.md`; runtime measurements and decisions: `update/ingame_map_poc_journal.md`.
+
+- `client/ingame_map_terrain_source.*` (game thread): resolves `UCrMapMenuDevSettings` CDO -> `TerrainData` soft reference -> `UCrMapMenuTerrainData` on every call and returns a POD `TerrainDescriptor` (pivot, segment size, grid indices, R1/R2 resource names, radiation level). No UObject pointer is kept. Also copies a segment texture (`LoadFromUTexture2D`) and requests its mips (`SetForceMipLevelsToBeResident`).
+- `client/ingame_map_projection.h`: pure native-grid <-> world transform, with a compile-time round-trip check.
+- `client/ingame_map_ui.*`: ModLoader panel. A tick service publishes an immutable `{TerrainDescriptor, tile handles, CargoSnapshot}` every 500 ms while the panel is open; the render callback only reads that published state. The snapshot comes from `CopySnapshot()`, so solo and dedicated sessions use the existing data path.
+
+Facts measured in game (CL-127004): `MapTerrainSegmentSize` is in metres while the pivot is in centimetres (hence `kSegmentSizeToWorldUnits`); grid index X follows world Y and index Y follows world X; the native map shows the `Radiation2` brushes at radiation level 1, so only that variant is loaded.
+
+Static catalog: `client/ingame_map_catalog.*` reads the viewer's own catalog parts (`manifest.js`, `resources-*.js`, `pois.js`, the `SRMAPDATA(...)` JSONP files produced by `tools/build_map_data.py`) from `Plugins/MapExtension/map-data/` next to the client DLL, on a background task at activation. Placements are not read. There is a single catalog format: regenerate it with the tool and both the viewer and the plugin follow. Drawing is capped at 12,000 points per frame by regular subsampling. Each resource type carries an optional `item` field in `manifest.js` (the game item class path taken from the raw export); the plugin loads that class through the reflected `LoadClassAsset_Blocking`, reads its `ItemIcon` brush and draws the icon instead of a dot, three types per service pass. Types without an `item` keep a coloured dot. The viewer ignores the field.
+
+Rupture box: same model as `useRuptureTimeline.ts` (phase derived from the elapsed time in the 3240 s cycle), because `wave`/`stage`/`step` read `None` outside a wave.
+
+Terrain tiles: a permanent preview (the resident mip of each of the 36 segments, 64 px) plus full resolution on demand. The render callback publishes a bitmask of the visible tiles closest to the view centre, capped by `InGameMap.TileBudgetMiB`; the service forces their mips resident, copies them once streamed in (2048 px), and frees them 10 s after they leave the view or as soon as the panel closes. No native function pattern is used.
+
 ## Third-party code
 
 - JSON serialization uses vendored `nlohmann/json` in `third_party/nlohmann/json.hpp`.
@@ -182,6 +198,7 @@ The viewer loads parts lazily by enabled layer. `StaticMapCanvas.vue` renders la
    - `mapview/dist/MapExtensionViewer.html`
    - `mapview/dist/map-tiles/`
    - `mapview/dist/map-data/`
+   - `Plugins/MapExtension/map-data/` holding `manifest.js`, `pois.js` and `resources-*.js` copied from `mapview/public/map-data/`: the catalog read by the experimental in-game map (`./build.sh client ...` stages this folder next to the built DLL)
 4. Create a viewer-only archive containing `mapview/dist/MapExtensionViewer.html`, `mapview/dist/map-tiles/`, and `mapview/dist/map-data/`. This is what the in-app update dialog links to, so it must be named `MapExtension_Plugin-<tag>-viewer.zip`.
 5. Create a server archive containing:
    - `build/Server Release/Plugins/MapExtension_Plugin.dll`

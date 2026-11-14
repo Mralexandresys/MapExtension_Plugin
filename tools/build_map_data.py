@@ -452,6 +452,8 @@ def build_resources(
             type_items[type_id] = {
                 "en": item_name["source"].strip(),
                 "fr": (item_name.get("localized") or item_name["source"]).strip(),
+                # Game item class path: lets the in-game map load the item icon.
+                "item": ((entry.get("item") or {}).get("item_asset_path") or "").strip(),
             }
         localized = (entry.get("display_name") or "").strip()
         if localized and type_id not in type_labels:
@@ -597,6 +599,8 @@ def build_resources(
             "counts": {kind: kind_counts.get(kind, 0) for kind in RESOURCE_KINDS if kind_counts.get(kind)},
             "total": sum(kind_counts.values()),
         }
+        if item.get("item"):
+            entry_types["item"] = item["item"]
         if purity_counts.get(type_id):
             entry_types["purity_counts"] = {
                 level: purity_counts[type_id].get(level, 0)
