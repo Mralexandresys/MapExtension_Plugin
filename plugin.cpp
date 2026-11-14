@@ -4,6 +4,10 @@
 #include "plugin_config.h"
 #include "plugin_helpers.h"
 
+#if defined(MODLOADER_CLIENT_BUILD)
+#include "client/ingame_map_terrain_source.h"
+#endif
+
 static IPluginLogger* g_logger = nullptr;
 static IPluginConfig* g_config = nullptr;
 static IPluginHooks* g_hooks = nullptr;
@@ -47,6 +51,14 @@ __declspec(dllexport) PluginInfo* GetPluginInfo()
 {
 	return &s_pluginInfo;
 }
+
+#if defined(MODLOADER_CLIENT_BUILD)
+// Export optionnel : seul moment ou le loader accepte une resolution d'adresse.
+__declspec(dllexport) void OnPluginLoadHooks(IPluginSelf* self, IPluginHookScanner* scanner)
+{
+	MapExtensionClient::InGameMap::ResolveNativeAccess(self, scanner);
+}
+#endif
 
 __declspec(dllexport) bool PluginInit(IPluginSelf* self)
 {

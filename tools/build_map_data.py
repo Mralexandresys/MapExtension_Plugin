@@ -125,6 +125,16 @@ RESOURCE_ALIASES = {
     "sulphur_small": "sulphur",
 }
 
+# Plants the export does not link to an item: the item they yield (same
+# reasoning as the labels below), so the in-game map can show its icon.
+RESOURCE_ITEM_FALLBACK = {
+    "thornfruit": "/Game/Chimera/Items/I_Prickler.I_Prickler_C",
+    "nootka_lupine": "/Game/Chimera/Items/I_PrismHerb.I_PrismHerb_C",
+    "sikkim_rhubarb": "/Game/Chimera/Items/I_Glowcap.I_Glowcap_C",
+    "gold_fruit": "/Game/Chimera/Items/I_Grubbler.I_Grubbler_C",
+    "soulheart": "/Game/Chimera/Items/I_Sulheart.I_Sulheart_C",
+}
+
 RESOURCE_LABELS_EN = {
     "unknown_ore": "Unknown Ore",
     # These plants carry no item link in the export; the names are the
@@ -599,8 +609,9 @@ def build_resources(
             "counts": {kind: kind_counts.get(kind, 0) for kind in RESOURCE_KINDS if kind_counts.get(kind)},
             "total": sum(kind_counts.values()),
         }
-        if item.get("item"):
-            entry_types["item"] = item["item"]
+        item_path = item.get("item") or RESOURCE_ITEM_FALLBACK.get(type_id)
+        if item_path:
+            entry_types["item"] = item_path
         if purity_counts.get(type_id):
             entry_types["purity_counts"] = {
                 level: purity_counts[type_id].get(level, 0)

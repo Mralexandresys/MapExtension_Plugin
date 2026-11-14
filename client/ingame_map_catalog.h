@@ -29,6 +29,7 @@ namespace MapExtensionClient::InGameMap
 		std::vector<CatalogPoint> Points;
 		std::vector<uint8_t> Purity;      // vide ou aligne sur Points : 0 inconnu, 1 impur, 2 normal, 3 pur
 		std::vector<std::string> Names;   // vide ou aligne sur Points (points d'interet nommes)
+		std::vector<std::string> Guids;   // vide ou aligne sur Points : GUID du marqueur de POI du jeu
 	};
 
 	struct Catalog

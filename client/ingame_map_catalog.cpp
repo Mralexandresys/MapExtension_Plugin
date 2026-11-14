@@ -116,6 +116,7 @@ namespace
 			}
 			group->Points.push_back({ row.at("x").get<float>() * scale, row.at("y").get<float>() * scale });
 			group->Names.push_back(row.value("en", label));
+			group->Guids.push_back(row.value("guid", std::string()));
 			++catalog.PointCount;
 		}
 		catalog.Groups.insert(catalog.Groups.begin(), std::make_move_iterator(groups.begin()), std::make_move_iterator(groups.end()));

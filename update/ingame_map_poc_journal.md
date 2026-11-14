@@ -313,3 +313,309 @@ Rien de ce lot n'a tourné en jeu.
 2. Log attendu quelques secondes après l'ouverture : `item icons loaded: 15` ; sinon lignes `no icon for ...`.
 3. Les icônes correspondent-elles aux bons items ? Un à-coup à la première ouverture ?
 4. Filtres de pureté : décocher `Impure` et `Normal` ne laisse que les gisements purs.
+
+## 2026-11-14 — Items des cargos, Ignitium et Star Tears
+
+Lot précédent validé en jeu par l'utilisateur (« ça fonctionne ») et committé : `85e5f5e`.
+
+### Ce que le projet sait déjà d'Ignitium / Star Tears
+
+Référence : `IGNITIUM_STAR_TEARS_ANALYSIS.md` et `game-context.md` (section « Ignitium et Star Tears »). Le snapshot
+contient déjà tout : `PoiMarker` de type `Ignitium` / `StarTears`, avec `Depleted`, `Harvestability` et une `Source`
+qui commence par `rupture_phase.` quand le Star Tears est **projeté** depuis un site Ignitium non récolté (estimation,
+pas un acteur observé). La carte in-game ne recalcule donc rien : elle affiche ces marqueurs.
+
+- Deux calques séparés, cochés par défaut, dans le volet de filtres (`Rupture resources`), avec le nombre observé.
+  Les autres observations (bases abandonnées, plantes) restent derrière `Other observed in game`, décoché par défaut.
+- Icône de l'item ; épuisé = presque effacé, présent mais non récoltable = atténué, estimation = anneau orange.
+- Infobulle : état (`available` / `unavailable` / `depleted` / `unknown`) et mention de l'estimation.
+- Limite inchangée : seuls les sites réellement observés par le plugin apparaissent (acteurs chargés autour des joueurs).
+
+### Items des cargos
+
+- Le snapshot ne porte que le nom affiché de l'item (`CargoConnection::ItemDisplayName`), y compris par le protocole
+  serveur. Pour ne toucher ni aux types partagés ni au protocole, l'icône est retrouvée côté client par ce nom :
+  `LoadItemIconsByName` parcourt une fois `GObjects`, garde les CDO `UAuItemDataBase` et compare nom de classe,
+  `ItemName` et `UniqueItemName`. Le même parcours sert Ignitium (`I_FireWaveOre_C`) et Star Tears (`I_StarTears_C`).
+- Un parcours seulement quand un nom inconnu apparaît ; les noms introuvables sont retentés toutes les 30 s.
+- Affichage : icône de l'item posée sur chaque lien ; vue rapprochée, libellé `Item xN` sur le lien et icônes des
+  items à côté de chaque cargo (4 max) ; infobulle d'un cargo = une ligne par item avec quantité et destination.
+- Risque connu, non testé : en serveur dédié le nom vient du serveur ; si sa langue diffère de celle du client,
+  le nom ne correspond à aucun item local et le lien reste sans icône (le texte reste correct).
+
+Build client debug vert, aucun warning dans le code MapExtension. Changement client uniquement : build serveur non
+relancé. Rien de ce lot n'a tourné en jeu.
+
+### Checklist du prochain essai
+
+1. Recopier la DLL (le dossier `MapExtension` n'a pas changé).
+2. Log attendu : `item icons by name: N/M found, scan_ms=...` — relever `scan_ms` (coût du parcours de `GObjects`).
+3. Chaque lien cargo porte-t-il la bonne icône ? Infobulle d'un dispatcher : bons items, quantités, destinations ?
+4. Près d'un site Ignitium : icône visible, état correct ? Après la rupture : Star Tears estimé (anneau) puis observé ?
+
+## 2026-11-14 — Retours sur le lot cargo / rupture
+
+Retour utilisateur : les icônes s'affichent, Ignitium / Star Tears fonctionnent. Demandes traitées :
+
+- **Icônes des cargos uniquement dans l'infobulle.** Plus rien sur les liens ni à côté des cargos. Survol d'un lien ou
+  d'un cargo : `BeginTooltip` avec une ligne par item (icône, nom, quantité, destination ou provenance, 12 lignes max).
+- **Sélection d'un cargo au clic.** Ses liens passent en trait épais opaque, les autres à ~15 % d'opacité et ne
+  captent plus le survol ; anneau blanc sur le cargo. Re-clic ou clic dans le vide : retour à la normale. Un clic
+  est un relâchement sans déplacement de la carte.
+- **Fermeture au clavier.** `Echap` (panneau au premier plan ou curseur sur la carte, `IsKeyPressed`) et la touche
+  bindée relue par `IsKeyHeld` dans le rendu, au cas où le keybind du loader ne la reçoit pas panneau ouvert.
+  Anti-rebond de 400 ms entre les deux chemins ; la fermeture elle-même se fait sur le game thread.
+  Non vérifié : `Echap` peut aussi ouvrir le menu pause du jeu.
+- **Bandeau rupture** en haut au centre de la carte, repris de la `rupture-strip` du viewer web : phase courante,
+  temps restant, piste des cinq phases aux couleurs du viewer avec curseur (largeur minimale de 2 % pour
+  `Rupture incoming`). Remplace l'encart en haut à droite. Le panneau de détails dépliable n'est pas repris.
+- **Ignitium / Star Tears selon la phase.** Constat à la lecture du code : la règle existe déjà dans la capture
+  (`ApplyRuptureResourcePhase`, appliquée à chaque snapshot, donc aussi à la carte in-game) : burning + cooling =
+  Ignitium seul ; stabilizing = les deux ; stable + incoming = Star Tears, les sites Ignitium non récoltés étant
+  projetés en Star Tears. Ajout côté carte : le bandeau indique la ressource de la phase, avec son icône.
+  À confirmer avec l'utilisateur : ce qu'il a vu d'incorrect, si la règle ci-dessus ne correspond pas.
+
+Build client debug vert, aucun warning dans le code MapExtension. Changement client uniquement. Rien testé en jeu.
+
+## 2026-11-14 — États des points d'intérêt et des bases, correctif Star Tears
+
+Retour utilisateur : en `Arcadia stabilizing`, compteurs 4 / 4 et icône Star Tears affichée.
+
+- **Cause.** En phase de transition la capture ne filtre rien (`ApplyRuptureResourcePhase` sort tôt) : le jeu fait
+  déjà exister l'acteur Star Tears sur le site d'un Ignitium intact, et la carte dessinait le Star Tears par-dessus.
+- **Correctif (carte in-game seulement).** Un Star Tears situé à moins de 300 cm d'un Ignitium non épuisé est masqué
+  et ne compte plus. Hypothèse à confirmer en jeu : pendant `stabilizing` l'item à récolter est bien l'Ignitium.
+  Le viewer web et la capture ne sont pas modifiés.
+- **Option `Other observed in game` supprimée** : les bases viennent du catalogue, avec leur état (ci-dessous).
+
+### États lus dans le jeu (SDK CL-127004, aucun pattern)
+
+- `ACrMapMenuDataReplicationHelper::PointOfInterestReplicationData` : GUID du marqueur + `EPointOfInterestState`
+  (Hidden, VisibleUnknown, VisibleDiscovered, Disabled). Types de POI du jeu : Antena, AbandonedBase, Cave, Obelisk,
+  OrbitalLander, ForgottenEngine — les mêmes que le catalogue (241 POI, tous avec `guid`).
+- `ACrAbandonBaseInfoReplicator::AbandonBaseDataContainer` : par base (`AbandonBasePOIId`), statut de chaque objet à
+  trouver, coffre de plans, objet d'histoire et kyste d'infection.
+- Jointure par GUID au format `%08X-%08X-%08X-%08X` (A-B-C-D), relue toutes les 2 s. **Non prouvée** : le log
+  `poi states: game=N matched_catalog=M abandoned_bases=K` dira si le format et les acteurs sont bons en solo.
+- Affichage : POI découvert = plein, sinon atténué ; base = anneau vert (tout fait), orange (en cours), gris (rien) ;
+  infobulle avec l'état et les quatre compteurs.
+
+### Non fait, faute de source
+
+- **Obélisques** : `ECrAlienObeliskState` et `ChargeValue` vivent dans un fragment Mass (solo) ou une bulle répliquée
+  (client multi) ; pas d'accès réfléchi simple. Seul l'état de découverte du POI est affiché.
+- **Geo scanner** : aucune classe de ce nom dans le SDK. Candidat : les 39 POI `antenna`. À confirmer par l'utilisateur.
+- **« Quêtes »** : interprétées comme les objectifs de collecte des bases ; pas de lien avec un système de quêtes.
+
+Build client debug vert, aucun warning MapExtension. Client uniquement. Rien testé en jeu.
+
+## 2026-11-14 — Antennes (geo scanners), obélisques, icônes des plantes manquantes
+
+Précisions utilisateur : geo scanner = antenne (état activée ou non) ; obélisques = état + pourcentage de charge ;
+ces états doivent venir du jeu, pas du catalogue.
+
+### Antennes — lues en jeu
+
+- `ACrAntennasOwner::AntennaContainer.AntennasData` (répliqué) : `AntennaLocation` (FVector2f) + `ECrAntennaState`
+  (Infected, ReadyToCharge, Charging, ReadyToActivate, Activated, Locked) pour **toutes** les antennes.
+- Unité de `AntennaLocation` non documentée : si toutes les positions tiennent dans ±20 000, elles sont prises pour
+  des mètres et multipliées par 100. À vérifier avec le log (`first x= y=`).
+- Affichage : triangle coloré par état, infobulle avec l'état. Quand ces données existent, les points `Antenna` du
+  catalogue ne sont plus dessinés ; la case `Antenna` des filtres pilote les deux.
+
+### Obélisques — accès partiel
+
+- `ECrAlienObeliskState` (Disabled, Cooldown, Enabled, EnabledAndVisiblyCharged, AttackInProgress) et `ChargeValue`
+  existent, mais dans `FCrAlienObeliskFragment` (Mass). Deux accès réfléchis seulement :
+  1. `ACrMassAlienObeliskClientBubbleInfo` (client multijoueur) : position + état + charge des obélisques répliqués ;
+  2. acteurs `ACrAlienObelisk` chargés près du joueur : position + `PrevChargeValue` (charge seule, pas d'état).
+- **En solo, l'état n'est donc pas lisible** sans accéder au gestionnaire d'entités Mass en natif (piste : dump IDA de
+  `UCrAlienObeliskUpdateChargeValueProcessor`). Non entrepris.
+- Affichage : hexagone coloré par état (gris clair si inconnu), `NN%` en vue rapprochée, infobulle avec la valeur
+  brute. Hypothèse : `ChargeValue` entre 0 et 1.
+- Relecture toutes les 4 s (parcours de la liste d'acteurs), panneau ouvert seulement. Log à relever :
+  `live structures: antennas=N (...) obelisks replicated=R actors=A (first state= charge=) scan_ms=`.
+
+### Prickler et autres plantes sans icône
+
+Le Prickler était bien dans le catalogue (831 points) mais sans item, donc en pastilles de 3 px. Ajout dans
+`tools/build_map_data.py` d'un item de repli pour cinq plantes (Prickler, Prism Herb, Glowcap, Grubbler, Sulheart),
+classes présentes dans le SDK ; chemins `/Game/Chimera/Items/I_X.I_X_C` supposés d'après le motif des autres items.
+`manifest.js` régénéré : 20 types sur 21 ont un item (reste `aggressive_plant`). `pnpm run check` non relancé.
+
+Build client debug vert, aucun warning MapExtension. Client + outil + manifest. Rien testé en jeu.
+
+## 2026-11-14 — Monolithes : état lu dans les marqueurs de la carte native
+
+Retour utilisateur : antennes correctes ; aucune donnée pour les monolithes (logs non fournis, session solo supposée).
+
+- Nouvelle source, réfléchie et valable en solo : `ACrMapMenuDataReplicationHelper::BaseAttackMarkerDataContainer`
+  (`FBaseAttackMarkerDataFastArrayItem`) : `Location`, `AttackLocationIfAny`, `ECrAlienObeliskState` par obélisque.
+  C'est ce que la carte native utilise. Lue en premier ; bulle Mass et acteurs chargés ne servent plus qu'à ajouter
+  la charge à l'obélisque connu à moins de 10 m.
+- Inconnu : le jeu y met-il tous les obélisques ou seulement ceux qui menacent une base ? Le log
+  `obelisks map_markers=N` le dira (75 obélisques dans le catalogue).
+- Charge : toujours limitée à la bulle répliquée (multi) ou à l'acteur chargé près du joueur (`PrevChargeValue`).
+  La piste native (fragment Mass `FCrAlienObeliskFragment`) n'est pas entreprise.
+- Affichage ajouté : trait rouge de l'obélisque vers `AttackLocationIfAny` quand elle est renseignée.
+- Même règle d'unité que les antennes (mètres si tout tient dans ±20 000).
+
+Build client debug vert, aucun warning MapExtension. Client uniquement. Rien testé en jeu.
+
+## 2026-11-14 — Mesures du log utilisateur (17:20, solo)
+
+- `poi states: game=241 matched_catalog=241 abandoned_bases=29` : jointure par GUID **prouvée** (format A-B-C-D).
+- `live structures: antennas=37 (first x=-265031 y=-120521 state=5)` : positions d'antennes en cm, utilisateur
+  confirme l'affichage. 37 antennes côté jeu contre 39 dans le catalogue.
+- `obelisks map_markers=0 replicated=0 actors=0` : **aucune source réfléchie ne donne les obélisques en solo** sur
+  cette sauvegarde. Les marqueurs de la carte native semblent n'exister que pour un obélisque qui menace une base ;
+  aucun acteur `ACrAlienObelisk` chargé (rendu par ISM, ou joueur trop loin — non tranché).
+- `item icons by name: 19/19 found, scan_ms=17.6` ; `item icons loaded: 20` (les 5 chemins de repli des plantes sont bons).
+- `scan_ms=62.4` pour le premier relevé des structures : probablement la première résolution des classes
+  (`StaticClass`). Ajout d'un avertissement (5 max) si un passage suivant dépasse 10 ms, pour trancher.
+
+Reste pour les obélisques : lecture native du fragment Mass `FCrAlienObeliskFragment`. Le pseudocode de
+`UCrAlienObeliskUpdateChargeValueProcessor::Execute` montre le chemin du jeu (`ForEachEntityChunk`,
+`InternalGetFragmentDataPtr`) ; cela demande des signatures vérifiées sur l'exécutable installé et un hook, donc une
+décision de l'utilisateur (fragile aux mises à jour, risque de crash). Non entrepris.
+
+## 2026-11-14 — Lecture native des obélisques (décision utilisateur : « Oui, lance »)
+
+Vérifications avant d'écrire :
+
+- Aucune liste d'obélisques réfléchie : `ACrAlienObeliskSpawner` n'a aucun champ propre, `UCrBaseAttackStateSubsystem`
+  est opaque (0x50 octets de padding).
+- **Le dump `StarRupture-Game-IDADump/` (juillet 2026) ne correspond pas à l'exécutable installé** (octobre, CL-127004) :
+  les octets aux adresses du dump diffèrent. Ses adresses sont donc inutilisables ; seuls son assembleur et son
+  pseudocode servent de guide. Tout a été revérifié sur l'exe installé (lecture seule).
+- `FMassArchetypeData::GetFragmentDataForEntity` : signature de 37 octets (prologue + début du hachage), **1 seule
+  occurrence** dans l'exe installé, à `0x14445A880`. Retourne null si l'archétype n'a pas le fragment.
+- `FMassEntityManager::IsEntityValid` désassemblé sur l'exe installé, identique au dump : stockage d'entités à
+  `+0x20`, type du variant à `+0x60` (1 ou 2 = stockage construit, l'aiguilleur retourne l'adresse telle quelle),
+  vtable `+0x10` = archétype de l'index, `+0x48` = index valide.
+
+Implémentation (client uniquement) :
+
+- `plugin.cpp` exporte `OnPluginLoadHooks` (client) → `ResolveNativeAccess`. Fonctionnalité déclarée
+  `ingame-map-monoliths` avec deux clés : la fonction ci-dessus (table du loader d'abord, notre signature ensuite,
+  contrôle `FUNCTION_START`) et le champ natif `UMassEntitySubsystem::EntityManager` (ligne CL-127004, 0x38, comme
+  `plugin_map.h`). Un échec coupe seulement les monolithes ; sans déclaration acceptée, rien n'est demandé.
+- `ScanObelisksGuarded` : parcourt les index d'entités, demande `FCrAlienObeliskFragment` puis `FTransformFragment`.
+  Lecture seule, sous `__try/__except` ; une exception ou un stockage inattendu coupe la lecture pour la session.
+- Seuil d'attaque : `UCrAlienObeliskTrait::Parameters.ChargeValueToActivateAttack` lu dans les traits chargés
+  (réfléchi). Pourcentage = charge / seuil ; si les traits divergent (niveaux d'obélisque), valeur brute seule.
+- Aucun hook, aucune écriture mémoire. La lecture native complète les sources réfléchies (fusion à 10 m) et fait
+  autorité sur l'état et la charge.
+- Log : `obelisks native=N (entities=M) ... max=seuil scan_ms=`, et `obelisk charge threshold: traits= min= max=`.
+
+Inconnus : coût du parcours complet (M entités toutes les 4 s, à lire dans `scan_ms`) ; plage réelle de la charge ;
+cohérence du seuil entre niveaux. Limite assumée : valable pour CL-127004 seulement, à revérifier à chaque mise à
+jour du jeu.
+
+Builds : client debug et serveur release verts, aucun warning MapExtension. **Rien testé en jeu.**
+
+## 2026-11-14 — Icônes de marqueur de la carte native
+
+Demande utilisateur : réutiliser les textures `/Game/Chimera/UI/Map/Markers/T_UI_*_mapIcon`.
+
+- `LoadTextureAsset` (chemin d'asset → `LoadAsset_Blocking` → `LoadFromUTexture2D`), 3 chargements max par passe,
+  rangés dans `g_namedIcons` sous `marker:<nom>` (donc libérés et retentés comme les icônes d'items).
+- Utilisées : `abandonedBase`, `cave`, `forgottenEngine`, `orbitalLander` (POI du catalogue, atténuées si non
+  découvert, anneau de progression conservé pour les bases), `antenna` et `obelisk` (structures lues en jeu, teintées
+  par la couleur d'état), `player`.
+- Repli sur les formes géométriques tant qu'une icône n'est pas chargée.
+- Non utilisées, faute de donnée correspondante sur la carte : `baseCore`, `coop`, `deadBody`, `deathSpot`, `drone`,
+  `enemy`, `habitat`, `marker`, `unknown`, `zoom`, `T_PlayerFootstepMapMarker`, `T_WarningMapMarker`.
+- Inconnu : les textures sont-elles blanches (la teinte par état suppose que oui) ? À vérifier en jeu.
+
+Build client debug vert, aucun warning MapExtension. Rien testé en jeu.
+
+## 2026-11-14 — Base cores et icône des téléporteurs
+
+- Base cores : aucune position réfléchie dans `ACrBaseCoreReplicationHelper` (niveau, refroidissement, mais pas de
+  coordonnées) et `ECrBuildingType` n'a pas de valeur « base core ». Source retenue :
+  `ACrMapMenuDataReplicationHelper::BuildingsMarkerDataContainer` (`Location`, `BuildingName`, `BuildingUniqueName`),
+  filtrée sur un nom unique contenant « core » (insensible à la casse). **Filtre non vérifié** : le log
+  `building markers: N, base cores=M, unique names: ...` liste les noms uniques réellement présents pour le corriger.
+- Affichage : calque « Base cores » (coché par défaut), icône `T_UI_baseCore_mapIcon`, nom au zoom, infobulle.
+  Niveau du core non affiché (pas de jointure entité ↔ marqueur sans lecture native).
+- Téléporteurs : icône `/Game/Chimera/UI/Buildings/Teleporter/Textures/T_UI_teleporterIcon_128x128`, teintée par la
+  couleur du calque. La table des icônes de marqueur porte maintenant dossier + asset.
+
+Build client debug vert, aucun warning MapExtension. Rien testé en jeu.
+
+## 2026-11-14 — Niveau des base cores
+
+- Retour utilisateur : les base cores s'affichent (le filtre « core » sur le nom unique fonctionne ; log non fourni).
+- Niveau : `ACrBaseCoreReplicationHelper::BaseCoreDataContainer.BaseCoreData` (`UpgradeLevel`, `InfectionSphere`,
+  `CurrentCoolingCapacity`, `CurrentCoolingCapacityUsed`), joint au marqueur par handle d'entite :
+  `FCrBaseCoreData::BaseCore.Entity.CachedHandle` == `FBuildingMarkerDataFastArrayItem::BuildingHandle`. Tout réfléchi.
+  Repli : un seul core et une seule entrée → jointure directe.
+- Inconnus : `CachedHandle` est-il renseigné en solo (log `core data=N joined=M`) ? `UpgradeLevel` commence-t-il à 0
+  ou à 1 (affiché brut) ?
+- Affichage : « nom (lvl N) » au zoom, infobulle niveau + refroidissement utilisé/total, marqueur rouge si infecté.
+
+Build client debug vert, aucun warning MapExtension. Rien testé en jeu.
+
+## 2026-11-14 — Mesures du log utilisateur (20:01, solo)
+
+- **Lecture native des obélisques prouvée** : `obelisks native=75 (entities=65535) ... scan_ms=2.0`. 75 = nombre du
+  catalogue. Feature résolue sans échec au chargement. `entities=65535` : borne de `IsValidIndex` (probablement la
+  taille d'une page du stockage), non investigué puisque les 75 sont trouvés.
+- Seuil d'attaque : `obelisk charge threshold: traits=1 min=0.500 max=0.500` → pourcentage = charge / 0,5.
+- Base cores : `building markers: 109, base cores=60, core data=60 joined=60`, noms uniques
+  `BaseCore Habitat Teleporter HabitatBig`. Filtre « core » et jointure par `CachedHandle` **prouvés**.
+  `first level=0` : `UpgradeLevel` semble commencer à 0 (à confirmer avec l'utilisateur).
+- Icônes : `baseCore` et `teleporter` chargées ; les 7 autres en échec. Cause probable : `LoadFromUTexture2D` rend
+  null tant que la texture n'est pas sur le GPU (documenté dans l'interface) ; ces deux-là sont déjà affichées par le
+  HUD, les autres viennent d'être chargées. Correctif : `SetForceMipLevelsToBeResident` + nouvel essai à chaque passe
+  (0,5 s, 20 max) au lieu de 30 s, et cause de l'échec dans le log (`asset not found`, `not a Texture2D`,
+  `not resident`). **Non vérifié.**
+- `live structures scan is slow: 665.3 ms` au premier relevé : `FindObject` sans filtre de type construisait le nom
+  complet de chaque objet. Corrigé avec `EClassCastFlags::ScriptStruct`. À remesurer.
+
+Build client debug vert, aucun warning MapExtension.
+
+## 2026-11-14 — Log utilisateur 20:52 et niveau des bases
+
+- Icônes de marqueur : **9/9 chargées**, les 7 en échec passent après 1 attente (`waits=1`) → cause confirmée
+  (texture pas encore sur le GPU).
+- Utilisateur : le jeu compte les niveaux de base à partir de 1 → `Level = UpgradeLevel + 1`.
+- Premier relevé encore lent : `scan_ms=245.6` (665 avant), puis 2,0 ms. Reste suspecté : `FindObject` par nom
+  complet sur tous les ScriptStruct et premières résolutions `StaticClass`. Passage à `FindObjectFast` + vérification
+  du nom complet sur le seul résultat. À remesurer ; à-coup unique par session.
+- Un relevé pris avant la fin du chargement donne `building markers: 0 ... core data=60 joined=0`, corrigé au relevé
+  suivant (4 s).
+
+Build client debug vert, aucun warning MapExtension.
+
+## 2026-11-14 — Section cargo du volet des filtres
+
+- Log 21:04 : premier relevé des structures à 170 ms (665 → 245 → 170), suivants à 2 ms. À-coup unique par session,
+  reste attribué aux premières résolutions `StaticClass` ; non poursuivi.
+- Demande utilisateur : « Cargo » et « Links » quittent la barre du haut pour une section « Cargo » en tête du volet.
+- Ajouts : case « Unconnected cargo » (cochée par défaut ; décochée, un cargo sans lien est masqué), champ de
+  recherche et liste des items en transit (icône, nombre de liens, case à cocher). Un ou plusieurs items cochés :
+  seuls leurs liens et les cargos à leurs extrémités restent ; bouton « All » pour vider le filtre.
+- État du filtre côté render thread uniquement (`g_cargoItemFilter`, `g_cargoItemSearch`), aucune donnée partagée.
+
+Build client debug vert, aucun warning MapExtension. Rien testé en jeu.
+
+## 2026-11-14 — Plantage au démarrage (21:12 et 21:13), cause non trouvée
+
+Faits :
+
+- Journal Windows : 2 plantages (21:12:55, 21:13:18), module `StarRupture-ModLoader-Core.dll` 1.23.3, exception
+  `0xc0000409`, même décalage `0x3a9898` = `_invoke_watson` (PDB du loader) : arrêt volontaire du CRT du loader.
+  Aucun autre plantage du jeu sur 4 jours.
+- `ModLoader.log` : dernière ligne `[WorldEndPlay] SEH exception in original UWorld::EndPlay (code=0xC0000005)`,
+  43 ms après « Plugins ready ». Dans un lancement réussi, ce moment est le passage au menu principal
+  (`Browse: Map_MainMenu`), qui termine le monde de démarrage.
+- Le plugin s'est chargé normalement (signature résolue, `PluginInit` OK). Carte jamais ouverte.
+- Pas de processus du jeu resté en arrière-plan ; configs du loader et du plugin normales.
+
+Ce qui a changé depuis le dernier lancement réussi (21:04) : uniquement la section cargo du volet (code de rendu,
+exécuté seulement carte ouverte). Aucun code du plugin modifié sur le chemin de démarrage ou de fin de monde.
+
+Non établi : si le plantage vient du plugin. Test discriminant demandé à l'utilisateur : relancer, puis lancer sans
+la DLL.
