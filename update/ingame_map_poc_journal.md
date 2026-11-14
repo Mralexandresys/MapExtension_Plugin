@@ -634,3 +634,24 @@ la DLL.
   `THIRD_PARTY_NOTICES.md`, `game-context.md`, `changelog.fr.local` (local, non versionné).
 
 Builds : client debug, client release et serveur release verts. Le build client release n'a pas été testé en jeu.
+
+## 2026-11-14 — Réorganisation : dossier `src/` et découpage de la carte en jeu
+
+Demande utilisateur : optimiser, refactorer, mettre le code dans `src/`.
+
+- Tout le C++ du plugin passe sous `src/` (`src/client`, `src/server`, `src/shared`). `src/` est ajouté aux chemins
+  d'inclusion, les `#include` ne changent pas. `third_party/` reste à la racine. Projet, test Python et docs adaptés.
+- `ingame_map_ui.cpp` (2071 lignes) découpé le long de la frontière de threads :
+  `ingame_map_service.cpp` (game thread), `ingame_map_render.cpp` (render thread), `ingame_map_ui.cpp` (activation),
+  `ingame_map_internal.h` (constantes, `Published`, variables partagées en `inline`).
+- `ingame_map_terrain_source.*` ne garde que le terrain et les textures ; l'état du jeu et la lecture native passent
+  dans `ingame_map_live_state.*`.
+- Déplacement strict : comparaison ligne à ligne avant/après, aucune ligne de code perdue. Seuls ajouts :
+  `StartService` / `StopService` (extraits de `Enable` / `Disable`) et les déclarations de l'en-tête interne.
+- **Aucune optimisation appliquée.** Coûts mesurés en jeu : relevé des structures 2 ms toutes les 4 s, icônes 17 ms
+  une fois. Seul point lent connu : premier relevé à 170 ms (une fois par session), cause non mesurée finement.
+  Pistes non mesurées, donc non touchées : ensembles reconstruits à chaque image dans `DrawOverlays` et
+  `RenderCargoFilters`. `map_state_capture.cpp` (4414 lignes) non touché : code ancien, sans test en jeu disponible ici.
+
+Builds : client debug, client release, serveur release verts ; `resource_observation_test.py` passe.
+**Rien testé en jeu après la réorganisation.**

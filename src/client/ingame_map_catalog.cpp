@@ -1,6 +1,6 @@
 #include "ingame_map_catalog.h"
 
-#include "../third_party/nlohmann/json.hpp"
+#include "third_party/nlohmann/json.hpp"
 
 #include <algorithm>
 #include <filesystem>

@@ -10,9 +10,9 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-src = (ROOT / 'map_state_capture.cpp').read_text()
-server = (ROOT / 'server/map_sync_server.cpp').read_text()
-client = (ROOT / 'client/map_state_remote_cache.cpp').read_text()
+src = (ROOT / 'src/map_state_capture.cpp').read_text()
+server = (ROOT / 'src/server/map_sync_server.cpp').read_text()
+client = (ROOT / 'src/client/map_state_remote_cache.cpp').read_text()
 
 
 def between(text, start, end):
@@ -230,5 +230,5 @@ template<class T> using TArray=std::vector<T>;
     test.write_text(helpers + constants + rules + phase + matching + fill + wrappers + scenarios)
     binary = tmp / 'resource_test'
     subprocess.run(['g++', '-std=c++20', '-Wall', '-Wextra', '-Werror', '-I', str(tmp),
-                    '-I', str(ROOT), str(test), '-o', str(binary)], check=True)
+                    '-I', str(ROOT / 'src'), str(test), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

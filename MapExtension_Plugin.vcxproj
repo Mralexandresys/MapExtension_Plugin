@@ -116,7 +116,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir)src;$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -134,7 +134,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir)src;$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -152,7 +152,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir)src;$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
@@ -171,7 +171,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PluginApiIncludeDir);$(StarRuptureSDKConfigDir);$(StarRuptureSDKSourceDir);$(ProjectDir)src;$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
@@ -183,25 +183,27 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="map_state_capture.h" />
-    <ClInclude Include="map_state_http.h" />
-    <ClInclude Include="map_state_json.h" />
-    <ClInclude Include="map_state_runtime.h" />
-    <ClInclude Include="map_state_sdk_helpers.h" />
-    <ClInclude Include="map_state_types.h" />
-    <ClInclude Include="plugin.h" />
-    <ClInclude Include="plugin_config.h" />
-    <ClInclude Include="plugin_helpers.h" />
+    <ClInclude Include="src\map_state_capture.h" />
+    <ClInclude Include="src\map_state_http.h" />
+    <ClInclude Include="src\map_state_json.h" />
+    <ClInclude Include="src\map_state_runtime.h" />
+    <ClInclude Include="src\map_state_sdk_helpers.h" />
+    <ClInclude Include="src\map_state_types.h" />
+    <ClInclude Include="src\plugin.h" />
+    <ClInclude Include="src\plugin_config.h" />
+    <ClInclude Include="src\plugin_helpers.h" />
     <ClInclude Include="third_party/nlohmann/json.hpp" />
-    <ClInclude Include="shared\map_sync_protocol.h" />
-    <ClInclude Include="shared\resource_observation.h" />
-    <ClInclude Include="client\map_sync_client.h" />
-    <ClInclude Include="client\map_state_remote_cache.h" />
-    <ClInclude Include="client\ingame_map_catalog.h" />
-    <ClInclude Include="client\ingame_map_projection.h" />
-    <ClInclude Include="client\ingame_map_terrain_source.h" />
-    <ClInclude Include="client\ingame_map_ui.h" />
-    <ClInclude Include="server\map_sync_server.h" />
+    <ClInclude Include="src\shared\map_sync_protocol.h" />
+    <ClInclude Include="src\shared\resource_observation.h" />
+    <ClInclude Include="src\client\map_sync_client.h" />
+    <ClInclude Include="src\client\map_state_remote_cache.h" />
+    <ClInclude Include="src\client\ingame_map_catalog.h" />
+    <ClInclude Include="src\client\ingame_map_live_state.h" />
+    <ClInclude Include="src\client\ingame_map_projection.h" />
+    <ClInclude Include="src\client\ingame_map_terrain_source.h" />
+    <ClInclude Include="src\client\ingame_map_ui.h" />
+    <ClInclude Include="src\client\ingame_map_internal.h" />
+    <ClInclude Include="src\server\map_sync_server.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="$(StarRuptureSDKSourceDir)Basic.cpp">
@@ -225,42 +227,54 @@
     <ClCompile Include="$(StarRuptureSDKSourceDir)CommonUI_functions.cpp">
       <Visible>false</Visible>
     </ClCompile>
-    <ClCompile Include="map_state_capture.cpp" />
+    <ClCompile Include="src\map_state_capture.cpp" />
 
-    <ClCompile Include="map_state_http.cpp">
+    <ClCompile Include="src\map_state_http.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="map_state_json.cpp">
+    <ClCompile Include="src\map_state_json.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>
 
-    <ClCompile Include="map_state_runtime.cpp" />
-    <ClCompile Include="dllmain.cpp" />
-    <ClCompile Include="plugin.cpp" />
-    <ClCompile Include="plugin_config.cpp" />
-    <ClCompile Include="client\map_sync_client.cpp">
+    <ClCompile Include="src\map_state_runtime.cpp" />
+    <ClCompile Include="src\dllmain.cpp" />
+    <ClCompile Include="src\plugin.cpp" />
+    <ClCompile Include="src\plugin_config.cpp" />
+    <ClCompile Include="src\client\map_sync_client.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="client\map_state_remote_cache.cpp">
+    <ClCompile Include="src\client\map_state_remote_cache.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="client\ingame_map_catalog.cpp">
+    <ClCompile Include="src\client\ingame_map_catalog.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="client\ingame_map_terrain_source.cpp">
+    <ClCompile Include="src\client\ingame_map_live_state.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="client\ingame_map_ui.cpp">
+    <ClCompile Include="src\client\ingame_map_terrain_source.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="server\map_sync_server.cpp">
+    <ClCompile Include="src\client\ingame_map_ui.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="src\client\ingame_map_service.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="src\client\ingame_map_render.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="src\server\map_sync_server.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Client Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Client Release'">true</ExcludedFromBuild>
     </ClCompile>

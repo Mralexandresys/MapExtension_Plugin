@@ -28,6 +28,8 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
 
 ## Important structure
 
+All plugin C++ lives under `src/`. Paths below that start with a source file name, `client/`, `server/` or `shared/` are relative to `src/`; `src/` is on the include path, so includes do not carry the prefix.
+
 - `plugin.cpp`: plugin metadata, startup, shutdown, config/runtime registration, and the client-only `OnPluginLoadHooks` export.
 - `plugin.h`, `dllmain.cpp`: exported plugin entry points and Windows DLL attach/detach plumbing.
 - `plugin_config.h`: config schema and typed config accessors.
@@ -38,7 +40,7 @@ Solo/local sessions use local game state. Dedicated-server sessions use the serv
 - `map_state_json.cpp` / `.h`: client-only JSON payload serialization.
 - `map_state_runtime.cpp` / `.h`: callback registration, HTTP startup/shutdown, and client/server sync module lifecycle.
 - `map_state_types.h`: shared snapshot types and map projection constants.
-- `client/`: client snapshot requests and remote snapshot cache, plus the in-game map (`ingame_map_ui.*` panel and rendering, `ingame_map_terrain_source.*` game-thread capture and native reads, `ingame_map_catalog.*` static catalog loader, `ingame_map_projection.h`).
+- `client/`: client snapshot requests and remote snapshot cache, plus the in-game map: `ingame_map_ui.*` activation and panel registration, `ingame_map_service.cpp` game-thread service, `ingame_map_render.cpp` render-thread drawing and filters, `ingame_map_internal.h` state shared by those three, `ingame_map_terrain_source.*` terrain tiles and icon textures, `ingame_map_live_state.*` replicated game state and native reads, `ingame_map_catalog.*` static catalog loader, `ingame_map_projection.h`.
 - `server/`: server-side authoritative snapshot capture and response streaming.
 - `shared/map_sync_protocol.h`: client/server packet definitions.
 - `PropertySheet.props`: MSBuild property sheet for fallback build-tag definitions.
@@ -114,7 +116,7 @@ Server validation command: `./build.sh server release --summary`.
 - Client builds define `MODLOADER_CLIENT_BUILD`; server builds define `MODLOADER_SERVER_BUILD`.
 - `map_state_http.cpp`, `map_state_json.cpp`, and `client/*.cpp` are excluded from server configurations in the project file.
 - `server/map_sync_server.cpp` is excluded from client configurations in the project file.
-- Shared C++ used by both builds lives at the repository root and in `shared/`; changes there require both client and server validation.
+- Shared C++ used by both builds lives directly in `src/` and in `src/shared/`; changes there require both client and server validation.
 - The runtime startup path is `PluginInit` in `plugin.cpp` -> `MapExtensionPluginConfig::Config::Initialize` -> `MapStateRuntime::RegisterCallbacks`.
 - `MapStateRuntime::RegisterCallbacks` owns hook registration, local HTTP startup, and initialization of both sync modules; keep lifecycle changes symmetric with shutdown.
 - `/cargo` and `/rupture-cycle` HTTP requests trigger or use snapshots captured by `map_state_capture.cpp`; JSON shape changes belong in `map_state_json.cpp` and matching docs.
@@ -137,8 +139,8 @@ Server validation command: `./build.sh server release --summary`.
 
 ## In-game map threading and native reads
 
-- The game-thread service in `client/ingame_map_ui.cpp` publishes an immutable snapshot every 500 ms while the panel is open; the render callback reads only that. Do not read UObjects from the render callback, and do not keep UObject pointers across service passes.
+- The game-thread service in `client/ingame_map_service.cpp` publishes an immutable snapshot every 500 ms while the panel is open; the render callback (`client/ingame_map_render.cpp`) reads only that. State shared between the two is declared `inline` in `client/ingame_map_internal.h`; everything else stays file-local. Do not read UObjects from the render callback, and do not keep UObject pointers across service passes.
 - `LoadFromUTexture2D` returns null for a texture that is not on the GPU yet. Force its mips resident and retry on a later pass instead of treating it as missing.
-- Native reads (`ResolveNativeAccess`, `ScanObelisksGuarded` in `client/ingame_map_terrain_source.cpp`) must stay behind a loader feature declared in `OnPluginLoadHooks`, so an unresolved key turns off that feature and never the plugin. Keep them read-only, hook-free and under `__try/__except`.
+- Native reads (`ResolveNativeAccess`, `ScanObelisksGuarded` in `client/ingame_map_live_state.cpp`) must stay behind a loader feature declared in `OnPluginLoadHooks`, so an unresolved key turns off that feature and never the plugin. Keep them read-only, hook-free and under `__try/__except`.
 - Native offsets, vtable slots and signatures are valid for one game changelist (CL-127004 today). `StarRupture-Game-IDADump/` is a local, untracked reading aid that may not match the installed executable: verify bytes on the installed executable before using an address, and never widen the changelist gate to an unverified build.
 - Prefer a reflected source over a native read whenever the game replicates the data (`ACrMapMenuDataReplicationHelper`, `ACrAbandonBaseInfoReplicator`, `ACrAntennasOwner`, `ACrBaseCoreReplicationHelper`).

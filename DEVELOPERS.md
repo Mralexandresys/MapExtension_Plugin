@@ -2,7 +2,7 @@
 
 ## Repository layout
 
-- plugin source: `MapExtension_Plugin/`
+- plugin source: `MapExtension_Plugin/src/` (paths in this document that start with a source file name, `client/`, `server/` or `shared/` are relative to it)
 - static world catalog (committed build input): `MapExtension_Plugin/map-data/`
 - static world-catalog generator: `MapExtension_Plugin/tools/build_map_data.py`
 
@@ -27,10 +27,14 @@ Keep the runtime split along these boundaries. Do not move HTTP or JSON formatti
 
 Client-only, on unless `InGameMap.Enabled=0` (applied live through `RegisterOnConfigChanged`). Original plan: `INGAME_MAP_POC_PLAN.md`; runtime measurements and decisions: `update/ingame_map_poc_journal.md`.
 
-- `client/ingame_map_terrain_source.*` (game thread): everything that touches the game. Resolves `UCrMapMenuDevSettings` CDO -> `TerrainData` soft reference -> `UCrMapMenuTerrainData` on every call and returns a POD `TerrainDescriptor`. Copies segment textures, item icons and marker textures (`LoadFromUTexture2D`). Captures POI states, antennas, base cores and monoliths. No UObject pointer is kept across calls, except the two native `UScriptStruct` used by the monolith read (rooted, never collected).
+- `client/ingame_map_terrain_source.*` (game thread): terrain and textures. Resolves `UCrMapMenuDevSettings` CDO -> `TerrainData` soft reference -> `UCrMapMenuTerrainData` on every call and returns a POD `TerrainDescriptor`. Copies segment textures, item icons and marker textures (`LoadFromUTexture2D`).
+- `client/ingame_map_live_state.*` (game thread): POI states, antennas, base cores and monoliths, including the native read. No UObject pointer is kept across calls, except the two native `UScriptStruct` used by the monolith read (rooted, never collected).
 - `client/ingame_map_projection.h`: pure native-grid <-> world transform, with a compile-time round-trip check.
 - `client/ingame_map_catalog.*`: static catalog loader (see below).
-- `client/ingame_map_ui.*`: ModLoader panel. A tick service publishes an immutable snapshot (`Published`: terrain, tile handles, `CargoSnapshot`, catalog, icons, POI states, live structures) every 500 ms while the panel is open; the render callback only reads that published state. Filter and selection state lives on the render thread only. The cargo snapshot comes from `CopySnapshot()`, so solo and dedicated sessions use the existing data path.
+- `client/ingame_map_ui.*`: activation, panel and hook registration.
+- `client/ingame_map_internal.h`: constants, the `Published` snapshot and the few variables shared across threads (`inline`); not included outside the in-game map.
+- `client/ingame_map_render.cpp`: render-thread drawing, tooltips, filters and view state.
+- `client/ingame_map_service.cpp`: game-thread service. It publishes an immutable snapshot (`Published`: terrain, tile handles, `CargoSnapshot`, catalog, icons, POI states, live structures) every 500 ms while the panel is open; the render callback only reads that published state. Filter and selection state lives on the render thread only. The cargo snapshot comes from `CopySnapshot()`, so solo and dedicated sessions use the existing data path.
 
 Facts measured in game (CL-127004): `MapTerrainSegmentSize` is in metres while the pivot is in centimetres (hence `kSegmentSizeToWorldUnits`); grid index X follows world Y and index Y follows world X; the native map shows the `Radiation2` brushes at radiation level 1, so only that variant is loaded.
 
@@ -167,7 +171,7 @@ From an x64 Visual Studio Developer Command Prompt with v143 selected, at the re
 
 ```bat
 if not exist build\http-smoke mkdir build\http-smoke
-cl /nologo /std:c++20 /EHsc /MD /I. /IStarRupture-Plugin-SDK\include /I"StarRupture-Plugin-SDK\StarRupture SDK\Client" /I"StarRupture-Plugin-SDK\StarRupture SDK\Client\SDK" tools\tests\http_server_smoke.cpp map_state_http.cpp plugin_config.cpp /Fo:build\http-smoke\ /Fe:build\http-smoke\http_server_smoke.exe
+cl /nologo /std:c++20 /EHsc /MD /I. /Isrc /IStarRupture-Plugin-SDK\include /I"StarRupture-Plugin-SDK\StarRupture SDK\Client" /I"StarRupture-Plugin-SDK\StarRupture SDK\Client\SDK" tools\tests\http_server_smoke.cpp src\map_state_http.cpp src\plugin_config.cpp /Fo:build\http-smoke\ /Fe:build\http-smoke\http_server_smoke.exe
 build\http-smoke\http_server_smoke.exe
 ```
 

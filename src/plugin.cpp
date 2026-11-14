@@ -5,7 +5,7 @@
 #include "plugin_helpers.h"
 
 #if defined(MODLOADER_CLIENT_BUILD)
-#include "client/ingame_map_terrain_source.h"
+#include "client/ingame_map_live_state.h"
 #endif
 
 static IPluginLogger* g_logger = nullptr;
