@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert the raw StarRupture map exports into the compact viewer catalog.
+"""Convert the raw StarRupture map exports into the compact static catalog.
 
 Inputs (see analyse_map/readme.md):
 
@@ -7,17 +7,15 @@ Inputs (see analyse_map/readme.md):
     analyse_map/map_v2_placements.jsonl   22k buildings, volumes and technical actors
     analyse_map/map_v2_pois.geojson       241 canonical points of interest
 
-Output: mapview/public/map-data/*.js
+Output: map-data/*.js, read by the in-game map from the folder next to the
+client DLL (`Plugins/MapExtension/map-data`).
 
-The viewer is opened directly from the file system, where `fetch()` on a
-`file://` URL is blocked by browsers. Classic `<script>` tags are not, so every
-part is written as a tiny JSONP wrapper (`SRMAPDATA(<json>)`) around otherwise
-plain compact JSON. The files stay next to `MapExtensionViewer.html` exactly
-like `map-tiles/`, and are never inlined into the HTML.
+Every part is a tiny JSONP wrapper (`SRMAPDATA(<json>)`) around otherwise plain
+compact JSON. The wrapper dates from the removed web viewer, which loaded the
+parts with `<script>` tags; the in-game map strips it.
 
-Coordinates are stored in decimetres (world centimetres / 10) because the map
-image resolution is roughly 48 cm per pixel; the viewer converts them to map
-space with the same projection constants as `map_state_types.h`.
+Coordinates are stored in decimetres (world centimetres / 10); the in-game map
+scales them back to world centimetres.
 """
 
 from __future__ import annotations
@@ -123,6 +121,16 @@ RESOURCE_ALIASES = {
     "purplant_small": "purplant",
     "sulphur_large": "sulphur",
     "sulphur_small": "sulphur",
+}
+
+# Plants the export does not link to an item: the item they yield (same
+# reasoning as the labels below), so the in-game map can show its icon.
+RESOURCE_ITEM_FALLBACK = {
+    "thornfruit": "/Game/Chimera/Items/I_Prickler.I_Prickler_C",
+    "nootka_lupine": "/Game/Chimera/Items/I_PrismHerb.I_PrismHerb_C",
+    "sikkim_rhubarb": "/Game/Chimera/Items/I_Glowcap.I_Glowcap_C",
+    "gold_fruit": "/Game/Chimera/Items/I_Grubbler.I_Grubbler_C",
+    "soulheart": "/Game/Chimera/Items/I_Sulheart.I_Sulheart_C",
 }
 
 RESOURCE_LABELS_EN = {
@@ -452,6 +460,8 @@ def build_resources(
             type_items[type_id] = {
                 "en": item_name["source"].strip(),
                 "fr": (item_name.get("localized") or item_name["source"]).strip(),
+                # Game item class path: lets the in-game map load the item icon.
+                "item": ((entry.get("item") or {}).get("item_asset_path") or "").strip(),
             }
         localized = (entry.get("display_name") or "").strip()
         if localized and type_id not in type_labels:
@@ -597,6 +607,9 @@ def build_resources(
             "counts": {kind: kind_counts.get(kind, 0) for kind in RESOURCE_KINDS if kind_counts.get(kind)},
             "total": sum(kind_counts.values()),
         }
+        item_path = item.get("item") or RESOURCE_ITEM_FALLBACK.get(type_id)
+        if item_path:
+            entry_types["item"] = item_path
         if purity_counts.get(type_id):
             entry_types["purity_counts"] = {
                 level: purity_counts[type_id].get(level, 0)
@@ -754,7 +767,7 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(__file__).resolve().parent.parent / "mapview" / "public" / "map-data",
+        default=Path(__file__).resolve().parent.parent / "map-data",
         help="directory receiving the generated catalog",
     )
     arguments = parser.parse_args()

@@ -24,16 +24,10 @@ obj/
 *.dmp
 *.log
 
-# Frontend artifacts
-mapview/node_modules/
-mapview/dist/
-mapview/.vite/
-mapview/.eslintcache
-
 # Local SDK checkout
 StarRupture-Plugin-SDK/
 
-# Local raw exports; only mapview/public/map-data/ is distributed
+# Local raw exports; only map-data/ is distributed
 analyse_map/
 
 # Misc editor/system files

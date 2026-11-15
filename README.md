@@ -1,100 +1,45 @@
 # MapExtension_Plugin
 
-Filters and Advanced are always available, regardless of the preset. Network, Exploration and Harvest sit on one row; the developer-only Technical preset is a switch at the top of Advanced. Cargo link and unlinked-point settings sit under the cargo rows, and "only my markers and zones" heads the Filters tab. The Resources family groups the isolate shortcut, rupture sites, extractor deposits and hand-gathered resources; its All/None only affects resources, and Advanced contains the global layer controls. Reset restores both live and static filters to the current preset, including purity. Isolating a resource is a shortcut that can then be refined. Collapsed filters leave the keyboard focus order.
-
-The viewer uses a compact session bar, a dark blue filter sidebar and cyan selection accents. Refresh timing is available in Settings; the rupture timeline stays visible above the map.
-
 French README: `README.fr.md`
 
-`MapExtension_Plugin` exposes StarRupture map data through a local HTTP endpoint and includes `mapview`, a local web interface used to display the map, entities, their connections, and the rupture cycle timeline.
+`MapExtension_Plugin` adds a logistics map inside StarRupture. Press `F8` in game to open a ModLoader panel that draws the game's own map terrain with your cargo network, teleporters, players, base cores, monoliths, antennas, resources and the rupture cycle.
+
+Since version 0.8 the map lives in the game. The former browser viewer (`MapExtensionViewer.html`, `map-tiles/`) and its local HTTP API are removed; see [Upgrading from 0.7](#upgrading-from-07).
 
 The plugin works in both single-player and multiplayer. For solo/local sessions, install the client build only. For dedicated-server sessions, install the client build on the player machine and the server build on the dedicated server so the server can send map and rupture-cycle data to connected clients.
 
 ## Features
 
-- See which `Cargo Dispatchers` are linked to which `Cargo Receivers`, and vice versa
-- View their positions directly on the map
-- See the items and amounts requested by cargo connections (without measuring actual throughput)
-- Display the positions of `teleporters`
-- Display the positions of `players`, with your own player highlighted in a distinct color
-- Display abandoned bases, supported gatherable plants, Ignitium, and Star Tears as points of interest (POIs), including Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, Sulheart, Grubbler, and Glowcap
-- Browse a pre-generated world catalog containing major POIs, plants, minerals, animal resources, buildings, zones, and optional technical elements, with searchable persistent filters
-- Accumulate live resource observations across streamed areas instead of dropping markers when the player leaves the current loading radius
-- Keep depleted or permanently gathered resource positions observed during the active world on the map with a distinct depleted state
-- Use a compact rupture-cycle view with phase, remaining-time, legend, and timeline details
-- Filter the map down to personal markers and zones only
-- Center the map on your own player with the `Player` control or the `P` shortcut
-- Expose `GET /health`, `GET /cargo`, and `GET /rupture-cycle` on the local HTTP server
+- Open the map with `F8` (configurable), close it with the same key or `Escape`; drag to pan, mouse wheel to zoom, optional "Follow me"
+- See which `Cargo Dispatchers` are linked to which `Cargo Receivers`; hover a cargo or a link to see the transported items with their icons and requested amounts (requested amounts, not measured throughput)
+- Click a cargo to isolate its links; the others fade out
+- Filter the cargo network by transported item, with a search box, and optionally hide cargo points that have no link
+- Display `teleporters` and `players`, with your own player highlighted
+- Display your base cores with their name, level, cooling usage and infection state
+- Display every monolith with its state (disabled, cooldown, enabled, charged, attack in progress), its charge as a percentage of the attack threshold, and the target of an attack in progress
+- Display antennas (geo scanners) with their state
+- Display abandoned bases with their discovery state and collection progress (items, blueprint chests, story items, infection cysts), plus caves and other points of interest
+- Display Ignitium and Star Tears according to the rupture phase, with a rupture strip at the top of the map showing the phase, the time left and the resource of that phase
+- Browse a pre-generated world catalog: ore deposits with purity, plants, creatures and points of interest, one filter per type, drawn with the game's own icons
 - Receive authoritative map and rupture-cycle snapshots from the server build in dedicated-server sessions
-- Fall back to the local `UCrEnviroWaveSubsystem` in solo/local sessions when no server snapshot is available
 
-## Mapview
+## Where the data comes from
 
-The included `mapview` is a local web UI designed to read the plugin data and display it in a browser by opening the generated `dist/MapExtensionViewer.html` file.
+- **Cargo, teleporters, players, rupture cycle**: read from the running game (or streamed by the server build on a dedicated server), refreshed every `RefreshIntervalMs`.
+- **Antennas, abandoned bases, discovery states, base core names and levels**: read from the data the game replicates for its own map.
+- **Monoliths and base core positions**: monolith state and charge only exist in the game's internal entity data, and the game publishes its base markers tens of seconds after a world loads. The client build reads both natively, read-only, through a function located by signature. This is validated for game build CL-127004. After a game update that moves it, the mod loader turns off only that feature ("In-game map: monolith state and charge"): monoliths lose their state, base cores appear with the game's own delay, and the rest of the plugin keeps working.
+- **Ore deposits, plants, creatures, points of interest**: a static catalog shipped with the client archive in `Plugins/MapExtension/map-data/`. Positions are pre-generated; they are not live observations.
+- **Ignitium and Star Tears**: observed in areas loaded near players, then projected from the rupture phase.
 
-When packaged, keep the generated `map-tiles/` and `map-data/` folders next to `MapExtensionViewer.html`; the viewer loads the map background from the tiles and the static world catalog from the compact data files.
+The plugin only observes. It does not automate gameplay, change saves, or issue in-game commands.
 
-It consumes both cargo/map data and the rupture cycle endpoint to render the timeline shown in the HUD replacement UI.
+## Ignitium and Star Tears
 
-The viewer combines live plugin observations with a pre-generated static world catalog. Major POIs are rendered as selectable pins, while the larger resource, building, and zone layers use a canvas renderer. Searchable filters control layers, resource categories and types, representation sources, buildings, zones, and technical elements; filter choices persist in `localStorage`.
+Positions come from runtime actors validated in loaded areas. While the published timeline is in Arcadia stable (from 690 seconds in the 3240-second cycle), a validated, unharvested Ignitium site is exposed as Star Tears instead of Ignitium; an actual Star Tears observation at the same site replaces that projection. During the stabilizing transition the in-game map shows Ignitium only where both are reported at the same site.
 
-The catalog supplies plant positions; live observations update the same points with their last observed availability. A point without an observation has an unknown state. Observed plants are shown as available or depleted, and their positions remain on the map after harvesting. The map, tooltip and open details panel follow each new observation, including renewed availability. These are last known states, not continuous checks of unloaded areas. The Plants category and per-resource filters apply to both catalogued and observed positions. The Network preset leaves plants hidden until requested.
+Markers distinguish available, not harvestable at the moment, depleted and estimated-from-cycle states. Unloading an area is not evidence of harvesting.
 
-The frontend curates class-based placements in the `building` layer: only Unreal actor types whose names contain `KeyCard`, `Coralion_Egg`, or `Spawner` (case-insensitive) are rendered. This rule does not change the `zone` or `technical` layers.
-
-Abandoned bases use their own map icon. Plant resources use a stable palette color derived from the resource name, while Ignitium and Star Tears have fixed resource-specific colors. Depleted resources remain visible as faded outlined markers. Separate filters control abandoned bases, plant resources, Ignitium, and Star Tears.
-
-Ignitium and Star Tears filters use positions validated from runtime actors in areas loaded near players. The broad PCG inclusion/exclusion volumes are not displayed as resource locations. While the published timeline is in Arcadia stable (from 690 seconds in the 3240-second cycle, with `PreWave` as a fallback when elapsed time is unavailable), a validated, unharvested Ignitium site is exposed as Star Tears instead of Ignitium. This projection is recalculated from observations on every capture; an actual Star Tears observation at the same site replaces it, including when depleted, so an old projection cannot leave an available duplicate. During the stabilizing transition, both resources can be displayed in the late-cycle overlap, with Star Tears drawn above the underlying Ignitium marker.
-
-Ignitium and Star Tears distinguish **available**, **not harvestable at the moment**, **depleted**, and **unknown**. Ignitium uses the game's mining query; observed Star Tears use the loaded interaction rules for their class and cycle phase. Missing rules leave the state unknown. An intact but temporarily non-harvestable Ignitium site can still produce the projected Star Tears marker. That marker is labelled **Available (estimated from cycle)**; an actual Star Tears observation takes priority. Unloading an area is not evidence of harvesting. Replicated depletion positions only update a known resource when the spatial match is unique, so overlapping resources are not both marked depleted. A fresh actor/subsystem observation takes priority over these untyped position records.
-
-The rupture bar shows the phase and remaining time. Click it or press `Enter`/`Space` to open details; `Escape`, Close or an outside click closes them. On mobile, the bar stays visible without horizontal scrolling, details stay within the viewport, and the map controls have reserved space below the filters. The `Player` control or `P` shortcut centers on the `self` player, falling back to the first player when that flag is absent.
-
-The timeline uses a calibrated 3240-second cycle (30/60/600/2550), animated between observations. It can drift from the game; raw Heat/Cold settings do not directly map to these phases. This calibration is deliberately retained.
-
-## Plant coverage
-
-The bundled static world catalog provides the complete pre-generated map data for plants and POIs. It is loaded directly by the viewer, so the plugin no longer drives a full World Partition scan, moves the player, pauses rupture activity, or writes a per-save POI cache.
-
-The live snapshot can still capture supported `ACrGatherableBaseActor` and `ACrOreActor` instances in already loaded areas to reflect the active world. Those observations stay in memory only for the current world; live actor state and the game's replicated depleted-location data retain the last known positions of depleted resources. Ignitium and Star Tears observations are discarded when the replicated global PCG seed changes. In solo play, where that replica is absent, entering Heat/Moving starts a new local generation. Previously sampled actors still awaiting removal are excluded from the new generation. A forced solo seed change without a phase transition is not detected by this fallback.
-
-Reward-class detection publishes Hydrobulb, Polifruit, Oxallop, Purplant, Serpent Root, Prickler, Prism Herb, and Sulheart. Explicit gatherable actor classes additionally cover the Grubbler tree, Prickler, Glowcap, Prism Herb, and the game's generic `Plant_h` gatherable. Actors whose `InteractionRewardResource` is `I_StarTears_C` publish Star Tears; `ACrOreActor` instances whose `Resource` is `I_FireWaveOre_C` publish Ignitium.
-
-## `/cargo` POI data
-
-`GET /cargo` includes POI totals in `counts` and a `pois` array:
-
-```json
-{
-  "counts": {
-    "pois": 1,
-    "abandoned_bases": 0,
-    "plant_resources": 1,
-    "ignitium": 0,
-    "star_tears": 0
-  },
-  "pois": [
-    {
-      "kind": "plant_resource",
-      "label": "Hydrobulb",
-      "resource": "Hydrobulb",
-      "depleted": false,
-      "state": "available",
-      "source": "actor_observation.gatherable",
-      "unique_key": "example-plant-key",
-      "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
-      "map": { "x": 0.0, "y": 0.0 }
-    }
-  ]
-}
-```
-
-- `kind` is `abandoned_base`, `plant_resource`, `ignitium`, or `star_tears`.
-- `label` is the display label; `resource` is the detected resource name and can be empty for an abandoned base.
-- `depleted` is `true` for depleted resource actors observed during the active world. Their last known positions remain published so the viewer can render them as faded outlined markers.
-- `state` is `available`, `unavailable`, `unknown`, or `depleted`; it distinguishes temporary non-harvestability from depletion. Viewer contract 3 adds these semantics; replace the viewer along with the plugin. Older payloads without `state` fall back to `depleted`.
-- `source` identifies the capture path, `unique_key` identifies the POI to the viewer, `world` contains Unreal `x`/`y`/`z` coordinates, and `map` contains projected `x`/`y` coordinates.
-- `counts.pois` is the total POI count; `counts.abandoned_bases`, `counts.plant_resources`, `counts.ignitium`, and `counts.star_tears` contain the per-kind totals.
+The timeline uses a calibrated 3240-second cycle (30/60/600/2430/120 seconds), animated between observations. It can drift from the game.
 
 ## Dedicated-server sync compatibility
 
@@ -104,38 +49,40 @@ Dedicated-server snapshots use sync protocol v6, which carries POIs in pages of 
 
 ## Installation and updates
 
+Requires [StarRupture-ModLoader](https://github.com/AlienXAXS/StarRupture-ModLoader).
+
 The client release archive contains:
 
 - `Plugins/MapExtension_Plugin.dll`
 - `Plugins/MapExtension_Plugin.json`
-- `MapExtensionViewer.html`
-- `map-tiles/`
-- `map-data/`
+- `Plugins/MapExtension/map-data/` (static world catalog)
 
-Copy the `Plugins/` content into `StarRupture/Binaries/Win64/Plugins/`, then keep `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` together anywhere on the machine.
+Install:
+
+1. Copy the content of the archive's `Plugins/` folder into `StarRupture/Binaries/Win64/ModLoader/Plugins/`. Keep the `MapExtension/` folder next to the DLL: without it the map still opens, but ore deposits, plants, creatures and points of interest are missing.
+2. Start the game, load a save, and press `F8`.
+3. Dedicated server only: copy the server archive's `Plugins/MapExtension_Plugin.dll` into the server's `ModLoader/Plugins/` folder.
 
 `MapExtension_Plugin.json` is the modloader update sidecar. Its only field is `manifest_url`, pointing at the `latest/download` release manifest. When the sidecar is present, the modloader checks for a newer plugin version at startup and replaces `MapExtension_Plugin.dll` before loading any plugin. Installing only the standalone DLL asset disables automatic updates.
 
 Two limits are worth knowing:
 
-- The auto-updater replaces the DLL only. `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` are never touched, since they live outside the game folder. The viewer detects incompatible payload contracts: when the plugin reports a contract newer than the one the local viewer was built with, a dialog offers a direct download of the matching `MapExtension_Plugin-<tag>-viewer.zip` asset, along with links to the GitHub release and the mod page. Backward-compatible viewer improvements may not trigger that dialog, so install the matching viewer archive manually to receive new UI features. Replace `MapExtensionViewer.html`, `map-tiles/`, and `map-data/` together, then reload the page.
+- The auto-updater replaces the DLL only. `Plugins/MapExtension/map-data/` is not updated; when a release changes the catalog, copy that folder again from the client archive.
 - The server build is not covered by the sidecar. Sync protocol v6 requires matching client and server builds, so update both DLLs together and replace the dedicated-server DLL by hand.
 
 Automatic updates can be disabled modloader-wide with `[AutoUpdate] Enabled=0` in `modloader.ini`.
 
-## Interface choice
+### Upgrading from 0.7
 
-The initial goal was a more direct integration into the in-game UI.
-
-In practice, StarRupture's UI turned out to be too limited to produce something reliable and maintainable in good conditions. The project therefore moved to a local web interface.
-
-This is not necessarily the ideal integration model, but it is currently the most effective way to iterate quickly, display the data correctly, and keep the tool usable.
+- Replace the client DLL and copy the new `Plugins/MapExtension/` folder next to it.
+- `MapExtensionViewer.html`, `map-tiles/` and the `map-data/` folder you kept next to the viewer are no longer used; delete them.
+- The in-game map is now enabled by default. An existing `MapExtension_Plugin.ini` keeps its own `[InGameMap] Enabled` value: set it to `1` if it is `0`.
+- The local HTTP API (`/health`, `/cargo`, `/rupture-cycle`) is removed with the viewer. An older copy of the viewer no longer receives data, and the `[Http] Port` setting is ignored; the plugin opens no network port.
+- Dedicated server: sync protocol is still v6; update the server DLL together with the client.
 
 ## Project status
 
-This is a first functional draft.
-
-The project will continue to evolve soon, and feedback, fixes, and contributions are welcome.
+The project keeps evolving; feedback, fixes, and contributions are welcome.
 
 The plugin builds against `StarRupture-Plugin-SDK`.
 
@@ -170,11 +117,13 @@ LogResourceObservations=0
 LogActorScanFallback=0
 LogRefreshTimings=0
 
-[Http]
-Port=9000
-
 [Runtime]
 RefreshIntervalMs=2000
+
+[InGameMap]
+Enabled=1
+ToggleKey=F8
+TileBudgetMiB=64
 ```
 
 - `Enabled`: enables or disables the plugin (`1` or `0`)
@@ -185,14 +134,16 @@ RefreshIntervalMs=2000
 - `LogResourceObservations`: logs observed resource state changes, local generation resets and changes in the number of ambiguous depletion records (`1` or `0`). Enable with `LogRuptureCycleEvents` on the solo/host/server authority to compare a harvest and a full cycle. These are observation times, not exact harvest times or player attribution; a short-lived actor may disappear between captures. Native harvest hooks still require executable-specific validation.
 - `LogActorScanFallback`: logs actor scan fallback (`1` or `0`)
 - `LogRefreshTimings`: logs per-phase refresh timings (`1` or `0`)
-- `Port`: sets the local HTTP port used by the plugin
 - `RefreshIntervalMs`: sets the runtime refresh interval in milliseconds
+- `InGameMap.Enabled`: enables the in-game map panel, on by default (`1` or `0`). Applies immediately, no restart needed
+- `InGameMap.ToggleKey`: key that opens or closes that panel (default `F8`)
+- `InGameMap.TileBudgetMiB`: approximate video memory allowed for full-resolution terrain tiles (default `64`; `0` keeps the low-resolution preview only)
 
 ## Credits
 
 - Thanks to `AlienXAXS` for `StarRupture-ModLoader`, the mod loader that made `MapExtension_Plugin` possible:
   `https://github.com/AlienXAXS/StarRupture-ModLoader`
-- Thanks to `bithoarder` for `StarRuptureMap`, used for the StarRupture game map:
+- Thanks to `bithoarder` for `StarRuptureMap`, whose map was the background of the former web viewer:
   `https://github.com/bithoarder/StarRuptureMap/`
 - This project is also inspired by `StarRuptureSaveMap`:
   `https://github.com/thanamatos/StarRuptureSaveMap`

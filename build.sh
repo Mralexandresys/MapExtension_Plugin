@@ -227,6 +227,14 @@ PLUGIN_SDK_SHARED_PROPS_WIN_PATH="$(wslpath -w "$PLUGIN_SDK_SHARED_PROPS")"
 PLUGIN_API_INCLUDE_DIR_WIN_PATH="$(wslpath -w "$PLUGIN_API_INCLUDE_DIR")"
 STARRUPTURE_SDK_BASE_DIR_WIN_PATH="$(wslpath -w "$STARRUPTURE_SDK_BASE_DIR")"
 
+# The in-game map reads the static world catalog from a folder next to the client DLL.
+stage_map_data() {
+  [[ "$TARGET" == "client" ]] || return 0
+  local destination="$SCRIPT_DIR/build/$CONFIGURATION/Plugins/MapExtension/map-data"
+  mkdir -p "$destination"
+  cp "$SCRIPT_DIR"/map-data/{manifest,pois,resources-*}.js "$destination/"
+}
+
 echo "Build de MapExtension_Plugin en ${CONFIGURATION}|x64"
 echo "MSBuild : $MSBUILD_PATH"
 echo "SDK : $SDK_ROOT"
@@ -286,6 +294,10 @@ if $WRITE_LOG; then
   persist_log
   trap - EXIT
 
+  if [[ "$BUILD_STATUS" -eq 0 ]]; then
+    stage_map_data
+  fi
+
   if $SHOW_SUMMARY; then
     echo
     if [[ -x "$SCRIPT_DIR/summarize_build.sh" ]]; then
@@ -299,3 +311,4 @@ if $WRITE_LOG; then
 fi
 
 "${BUILD_CMD[@]}"
+stage_map_data

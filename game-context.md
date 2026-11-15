@@ -67,7 +67,8 @@ StarRupture utilise les coordonnées monde Unreal :
 - l'image de référence utilisée par MapExtension mesure `9019 × 11691` pixels.
 
 La projection de MapExtension est une transformation affine calibrée dans
-`map_state_types.h`. Elle doit rester synchronisée avec `mapview`. Elle est la
+`map_state_types.h` (héritée de l'ancien viewer web, plus lue depuis la 0.8 ; la carte en jeu dessine
+directement en coordonnées monde). Elle est la
 projection utilisée par ce projet ; les exports disponibles ne prouvent pas qu'il
 s'agit de la transformation interne exacte du menu de carte du jeu.
 
@@ -418,7 +419,7 @@ Le front mobile de rupture n'est pas une zone statique dessinée sur la carte.
 - en solo/local, le plugin utilise préférentiellement
   `UCrEnviroWaveSubsystem` ;
 - sur serveur dédié, le serveur capture l'état autoritatif et l'envoie au client ;
-- le client expose ensuite ce snapshot distant à son viewer HTTP local.
+- le client fournit ensuite ce snapshot distant à la carte en jeu.
 
 « Autoritatif » signifie que le serveur est la source retenue pour la session. Cela
 ne supprime pas la périodicité de capture ni le délai réseau.
@@ -486,7 +487,7 @@ Le build serveur capture les données autoritatives. Le build client :
 
 1. demande un snapshot au serveur ;
 2. reçoit et met en cache les données ;
-3. expose ce cache sur l'API HTTP locale consommée par le navigateur.
+3. fournit ce cache à la carte en jeu.
 
 Les deux builds doivent utiliser la même version du protocole. Le protocole actuel
 est la version `5` et ne tente pas de downgrade. Les données synchronisées incluent
@@ -592,7 +593,6 @@ Lorsqu'un comportement change, maintenir ce document avec les sources suivantes 
 - `tools/build_map_data.py` : conversion du catalogue statique ;
 - `analyse_map/readme.md` et `analyse_map/map_v2_catalog.json` : contenu et limites
   des exports ;
-- `mapview/README.md` : comportement visible du viewer ;
 - `README.md` et `README.fr.md` : contrat utilisateur général.
 
 Toute nouvelle affirmation de gameplay doit être liée à une donnée exportée, un

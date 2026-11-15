@@ -100,19 +100,6 @@ jobs:
           path: sdk
           submodules: recursive
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: pnpm
-          cache-dependency-path: plugin/mapview/pnpm-lock.yaml
-
       - name: Build plugin DLLs
         shell: pwsh
         working-directory: plugin
@@ -187,16 +174,6 @@ jobs:
             exit $LASTEXITCODE
           }
 
-      - name: Build mapview bundle
-        shell: pwsh
-        working-directory: plugin/mapview
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          $ErrorActionPreference = 'Stop'
-          pnpm install --frozen-lockfile
-          pnpm run check
-          pnpm run build
-
       - name: Package release assets
         id: package
         shell: pwsh
@@ -209,7 +186,6 @@ jobs:
           $clientPluginsDir = Join-Path $clientStageRoot "Plugins"
           $serverStageRoot = Join-Path $packageRoot "MapExtension_Plugin-server"
           $serverPluginsDir = Join-Path $serverStageRoot "Plugins"
-          $viewerStageRoot = Join-Path $packageRoot "MapExtension_Plugin-viewer"
           $clientDllSource = Join-Path $repoRoot "build\Client Release\Plugins\MapExtension_Plugin.dll"
           $clientPdbSource = Join-Path $repoRoot "build\Client Release\Plugins\MapExtension_Plugin.pdb"
           $serverDllSource = Join-Path $repoRoot "build\Server Release\Plugins\MapExtension_Plugin.dll"
@@ -220,7 +196,6 @@ jobs:
           }
           New-Item -ItemType Directory -Force -Path $clientPluginsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $serverPluginsDir | Out-Null
-          New-Item -ItemType Directory -Force -Path $viewerStageRoot | Out-Null
 
           $sdkRoot = Join-Path $env:GITHUB_WORKSPACE "sdk"
           $interfaceHeader = Get-ChildItem -Path $sdkRoot -Filter "plugin_interface.h" -Recurse |
@@ -263,23 +238,11 @@ jobs:
           if (Test-Path $clientPdbSource) {
             Copy-Item $clientPdbSource (Join-Path $clientPluginsDir "MapExtension_Plugin.pdb") -Force
           }
-          Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $clientStageRoot "MapExtensionViewer.html") -Force
-          if (Test-Path "mapview\dist\map-tiles") {
-            Copy-Item "mapview\dist\map-tiles" (Join-Path $clientStageRoot "map-tiles") -Recurse -Force
-          }
-          if (Test-Path "mapview\dist\map-data") {
-            Copy-Item "mapview\dist\map-data" (Join-Path $clientStageRoot "map-data") -Recurse -Force
-          }
+          # Static world catalog read by the in-game map, next to the DLL.
+          $pluginMapDataDir = Join-Path $clientPluginsDir "MapExtension\map-data"
+          New-Item -ItemType Directory -Force -Path $pluginMapDataDir | Out-Null
+          Copy-Item "map-data\manifest.js", "map-data\pois.js", "map-data\resources-*.js" $pluginMapDataDir -Force
 
-          # Viewer-only archive: the modloader auto-updater replaces the DLL but never
-          # these files, so the viewer points users here when it detects it is outdated.
-          Copy-Item "mapview\dist\MapExtensionViewer.html" (Join-Path $viewerStageRoot "MapExtensionViewer.html") -Force
-          if (Test-Path "mapview\dist\map-tiles") {
-            Copy-Item "mapview\dist\map-tiles" (Join-Path $viewerStageRoot "map-tiles") -Recurse -Force
-          }
-          if (Test-Path "mapview\dist\map-data") {
-            Copy-Item "mapview\dist\map-data" (Join-Path $viewerStageRoot "map-data") -Recurse -Force
-          }
           Copy-Item $serverDllSource (Join-Path $serverPluginsDir "MapExtension_Plugin.dll") -Force
           if (Test-Path $serverPdbSource) {
             Copy-Item $serverPdbSource (Join-Path $serverPluginsDir "MapExtension_Plugin.pdb") -Force
@@ -287,9 +250,6 @@ jobs:
 
           $clientZipPath = Join-Path $env:GITHUB_WORKSPACE "MapExtension_Plugin-$tag-client.zip"
           $serverZipPath = Join-Path $env:GITHUB_WORKSPACE "MapExtension_Plugin-$tag-server.zip"
-          # Asset name must stay in sync with the download URL built by
-          # BuildViewerUpdateJson in map_state_json.cpp.
-          $viewerZipPath = Join-Path $env:GITHUB_WORKSPACE "MapExtension_Plugin-$tag-viewer.zip"
 
           if (Test-Path $clientZipPath) {
             Remove-Item $clientZipPath -Force
@@ -297,16 +257,11 @@ jobs:
           if (Test-Path $serverZipPath) {
             Remove-Item $serverZipPath -Force
           }
-          if (Test-Path $viewerZipPath) {
-            Remove-Item $viewerZipPath -Force
-          }
           Compress-Archive -Path "$clientStageRoot\*" -DestinationPath $clientZipPath
           Compress-Archive -Path "$serverStageRoot\*" -DestinationPath $serverZipPath
-          Compress-Archive -Path "$viewerStageRoot\*" -DestinationPath $viewerZipPath
 
           "CLIENT_ZIP_PATH=$clientZipPath" >> $env:GITHUB_OUTPUT
           "SERVER_ZIP_PATH=$serverZipPath" >> $env:GITHUB_OUTPUT
-          "VIEWER_ZIP_PATH=$viewerZipPath" >> $env:GITHUB_OUTPUT
           "CLIENT_DLL_PATH=$clientDllAssetPath" >> $env:GITHUB_OUTPUT
           "CLIENT_MANIFEST_PATH=$manifestPath" >> $env:GITHUB_OUTPUT
 
@@ -396,10 +351,11 @@ jobs:
             'release', 'create', $tag,
             "${{ steps.package.outputs.CLIENT_ZIP_PATH }}",
             "${{ steps.package.outputs.SERVER_ZIP_PATH }}",
-            "${{ steps.package.outputs.VIEWER_ZIP_PATH }}",
             "${{ steps.package.outputs.CLIENT_DLL_PATH }}",
             "${{ steps.package.outputs.CLIENT_MANIFEST_PATH }}",
             '--repo', '${{ github.repository }}',
+            # Tag the commit that was built, not the tip of the default branch.
+            '--target', '${{ github.sha }}',
             '--title', "MapExtension_Plugin $tag",
             '--notes', $notes
           )
@@ -421,7 +377,6 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Draft: `{0}`' -f '${{ inputs.draft }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Client zip: `{0}`' -f '${{ steps.package.outputs.CLIENT_ZIP_PATH }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Server zip: `{0}`' -f '${{ steps.package.outputs.SERVER_ZIP_PATH }}')
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Viewer zip: `{0}`' -f '${{ steps.package.outputs.VIEWER_ZIP_PATH }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Client DLL auto-update asset: `{0}`' -f '${{ steps.package.outputs.CLIENT_DLL_PATH }}')
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ('- Client manifest asset: `{0}`' -f '${{ steps.package.outputs.CLIENT_MANIFEST_PATH }}')
           if ('${{ inputs.draft }}' -eq 'false') {

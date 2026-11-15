@@ -1,0 +1,4414 @@
+#include "map_state_capture.h"
+
+
+#include "map_state_sdk_helpers.h"
+#include "plugin_config.h"
+#include "plugin_helpers.h"
+#include "shared/map_sync_protocol.h"
+
+#if !defined(MODLOADER_SERVER_BUILD)
+#include "client/map_sync_client.h"
+#include "client/map_state_remote_cache.h"
+#endif
+
+#if defined(MODLOADER_SERVER_BUILD)
+#include "server/map_sync_server.h"
+#endif
+
+#include "AuItems_classes.hpp"
+#include "BP_PackageReceiver_classes.hpp"
+#include "BP_PackageSender_classes.hpp"
+#include "BP_Sulphur_Logic_Large_AbandonedBase_classes.hpp"
+#include "BP_Teleporter_classes.hpp"
+#include "Chimera_classes.hpp"
+#include "Chimera_structs.hpp"
+#include "CoreUObject_classes.hpp"
+#include "Engine_classes.hpp"
+#include "I_FireWaveOre_classes.hpp"
+#include "I_StarTears_classes.hpp"
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <mutex>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+
+#ifdef min
+#undef min
+#endif
+
+#ifdef max
+#undef max
+#endif
+
+using CargoConnection = MapStateRuntime::Detail::CargoConnection;
+using CargoKind = MapStateRuntime::Detail::CargoKind;
+using CargoMarker = MapStateRuntime::Detail::CargoMarker;
+using CargoSnapshot = MapStateRuntime::Detail::CargoSnapshot;
+using RuptureCycleSnapshot = MapStateRuntime::Detail::RuptureCycleSnapshot;
+using PlayerMarker = MapStateRuntime::Detail::PlayerMarker;
+using PoiKind = MapStateRuntime::Detail::PoiKind;
+using PoiMarker = MapStateRuntime::Detail::PoiMarker;
+using ReceiverLinkInfo = MapStateRuntime::Detail::ReceiverLinkInfo;
+using TeleporterMarker = MapStateRuntime::Detail::TeleporterMarker;
+
+namespace
+{
+	constexpr int kMaxLoggedMarkersPerSnapshot = 8;
+	constexpr int kMaxLoggedActorsPerKind = 4;
+	constexpr int64_t kCargoActorRefreshMinIntervalMs = 750;
+	constexpr int64_t kConnectionRetentionMs = 15000;
+	// POI actors (abandoned bases, gatherable resources, rupture resources) are static or
+	// slow-changing; rescanning them with GetAllActorsOfClass on every refresh
+	// would be wasteful, so scans are throttled and the previous snapshot's
+	// POIs are reused in between.
+	constexpr int64_t kPoiScanMinIntervalMs = 5000;
+	// Replicated depleted-gatherable locations can differ slightly from the
+	// actor location observed while the plant was alive (serialization
+	// rounding, pivot differences). Match only the closest catalog plant in
+	// this radius so nearby resources are not all marked depleted together.
+	constexpr double kDepletedPlantMatchRadius = 150.0;
+	// Ignitium cools into Star Tears at the same generated site, but the ore and
+	// gatherable actor pivots need not be identical. Use a small horizontal
+	// tolerance only to prefer an observed Star Tears actor over a phase-derived
+	// marker for the already validated Ignitium site.
+	constexpr double kRuptureResourceSiteMatchRadius = 300.0;
+	// Keep rupture-resource classification synchronized with the timeline sent
+	// by the in-game map rupture strip.
+	constexpr double kRuptureBurningSeconds = 30.0;
+	constexpr double kRuptureCoolingSeconds = 60.0;
+	constexpr double kRuptureStabilizingSeconds = 600.0;
+	constexpr double kRuptureCycleSeconds = 3240.0;
+	// A world-only persistence key is intentionally not used because it can
+	// mix independent save files that share the same map.
+	struct TrackedChimeraWorldState final
+	{
+		SDK::UWorld* World = nullptr;
+		std::string WorldName;
+		bool Ready = false;
+	};
+
+	using MapStateSdk::EnviroWaveStageToString;
+	using MapStateSdk::EnviroWaveStepToString;
+	using MapStateSdk::EnviroWaveToString;
+	using MapStateSdk::FadeoutSubstageToString;
+	using MapStateSdk::GetCurrentUnixTimeMilliseconds;
+	using MapStateSdk::GrowbackSubstageToString;
+	using MapStateSdk::IsChimeraWorldName;
+	using MapStateSdk::PreWaveSubstageToString;
+	using MapStateSdk::TryGetStaticClass;
+	using MapStateSdk::TryGetWorldSubsystem;
+	using MapStateSdk::TryIsObjectOfClass;
+	using MapStateSdk::TryProbeWorldNameRaw;
+	using MapResources::Harvestability;
+
+	void ClearChimeraWorldState(const char* reason);
+	void ResetObservedPlantCatalog();
+	void ApplyRuptureCycleObservationTimestamp(MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot);
+	void StorePersistentRuptureCycleSnapshot(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot);
+
+	bool g_runtimePlanLogged = false;
+	bool g_engineTickSeen = false;
+	int g_anyWorldBeginPlayCount = 0;
+	int g_saveLoadedCount = 0;
+	int g_experienceLoadedCount = 0;
+	SDK::UWorld* g_lastChimeraWorld = nullptr;
+	std::string g_lastWorldName;
+	bool g_chimeraWorldReady = false;
+	float g_engineTickAccumulatorSeconds = 0.0f;
+	int64_t g_lastCargoActorRefreshAtUnixMs = 0;
+	int64_t g_lastPoiScanAtUnixMs = 0;
+	bool g_poiScanInProgress = false;
+	std::string g_lastPoiScanWorldName;
+
+	// Timestamp at which the ChimeraMain world was first detected. Realtime
+	// refreshes are suppressed for kPostWorldBeginPlayGraceMs after this point
+	// to avoid main-thread stalls during the heavy replication / Mass /
+	// Logistics initialization phase that immediately follows world begin play.
+	int64_t g_chimeraWorldDetectedAtUnixMs = 0;
+	constexpr int64_t kPostWorldBeginPlayGraceMs = 8000;
+	std::mutex g_runtimeStateMutex;
+	std::mutex g_poiScanMutex;
+	std::mutex g_snapshotMutex;
+	CargoSnapshot g_snapshot{};
+	std::unordered_set<uint32_t> g_requestedCustomNameEntityIds;
+	std::string g_lastRuptureCycleStateChangeKey;
+	bool g_lastRuptureCycleStateChangeKeyValid = false;
+	MapStateRuntime::Detail::RuptureCycleSnapshot g_lastPersistentRuptureCycleSnapshot{};
+	bool g_lastPersistentRuptureCycleSnapshotValid = false;
+	std::string g_lastRuptureCycleObservedSignature;
+	bool g_lastRuptureCycleObservedSignatureValid = false;
+	int64_t g_lastRuptureCycleObservedAtUnixMs = 0;
+	bool g_objectWalkerWaveFallbackLogged = false;
+	std::atomic<bool> g_cargoRefreshRequested = false;
+	std::atomic<int64_t> g_lastCargoRefreshRequestAtUnixMs = 0;
+
+	// Resolved CrEnviroWaveSubsystem for the tracked world. Shared by the
+	// rupture-cycle read path and the delegate hook path so neither pays for a
+	// ProcessEvent (GetWorldSubsystem) or a GObjects walk more than necessary.
+	// Invalidated on world end play, world change and engine shutdown.
+	struct WaveSubsystemCacheState final
+	{
+		SDK::UWorld* World = nullptr;
+		SDK::UCrEnviroWaveSubsystem* Subsystem = nullptr;
+		int64_t NextResolveAttemptAtUnixMs = 0;
+		int64_t NextObjectWalkerAttemptAtUnixMs = 0;
+	};
+	std::mutex g_waveSubsystemCacheMutex;
+	WaveSubsystemCacheState g_waveSubsystemCache{};
+	// Backoff after a failed resolution: GetWorldSubsystem goes through
+	// ProcessEvent, so it must not run once per frame in a world where the
+	// subsystem legitimately does not exist.
+	constexpr int64_t kWaveSubsystemResolveRetryIntervalMs = 1000;
+	// The SDK documents FindObjectsByClassNameInto as expensive (walks GObjects,
+	// tens of thousands of entries) and requires callers to cache results.
+	constexpr int64_t kWaveSubsystemObjectWalkerRetryIntervalMs = 10000;
+
+	void ResetPoiScanState()
+	{
+		std::lock_guard<std::mutex> lock(g_poiScanMutex);
+		g_lastPoiScanAtUnixMs = 0;
+		g_poiScanInProgress = false;
+		g_lastPoiScanWorldName.clear();
+	}
+
+	void ClearPublishedSnapshot(const char* reason)
+	{
+		CargoSnapshot emptySnapshot{};
+		{
+			std::lock_guard<std::mutex> lock(g_snapshotMutex);
+			emptySnapshot.Generation = g_snapshot.Generation + 1;
+			if (emptySnapshot.Generation == 0)
+			{
+				emptySnapshot.Generation = 1;
+			}
+			emptySnapshot.Reason = reason ? reason : "WorldCleared";
+			g_snapshot = std::move(emptySnapshot);
+		}
+	}
+
+#if defined(PLUGIN_INTERFACE_VERSION_MAX) && PLUGIN_INTERFACE_VERSION_MAX >= 47
+	struct RuptureCycleDelegateHooks final
+	{
+		SDK::UWorld* World = nullptr;
+		SDK::UCrEnviroWaveSubsystem* WaveSubsystem = nullptr;
+		DelegateHookHandle WaveStarted = 0;
+		DelegateHookHandle FadeoutSubstageChanged = 0;
+		DelegateHookHandle GrowbackSubstageChanged = 0;
+		DelegateHookHandle PreWaveSubstageChanged = 0;
+		bool Installed = false;
+		int64_t NextAttemptAtUnixMs = 0;
+	};
+	std::mutex g_ruptureCycleDelegateHooksMutex;
+	RuptureCycleDelegateHooks g_ruptureCycleDelegateHooks{};
+	bool g_ruptureCycleDelegateUnavailableLogged = false;
+	bool g_ruptureCycleDelegateHookFailureLogged = false;
+	constexpr int64_t kRuptureCycleDelegateHookRetryIntervalMs = 5000;
+#endif
+
+	bool ShouldLogLifecycle()
+	{
+		return MapExtensionPluginConfig::Config::VerboseLifecycleLogs();
+	}
+
+	bool ShouldLogRuptureDiagnostics()
+	{
+		return MapExtensionPluginConfig::Config::LogRuptureCycleEvents();
+	}
+
+	float GetRefreshIntervalSeconds()
+	{
+		int refreshMs = MapExtensionPluginConfig::Config::RefreshIntervalMs();
+		if (refreshMs < 500)
+		{
+			refreshMs = 500;
+		}
+		return static_cast<float>(refreshMs) / 1000.0f;
+	}
+
+	struct RefreshTimingLog final
+	{
+		bool Enabled = false;
+		const char* Reason = nullptr;
+		int64_t StartedAtMs = 0;
+		int64_t LastPhaseAtMs = 0;
+
+		explicit RefreshTimingLog(const char* reason)
+			: Enabled(MapExtensionPluginConfig::Config::LogRefreshTimings())
+			, Reason(reason ? reason : "unknown")
+		{
+			if (!Enabled)
+			{
+				return;
+			}
+
+			StartedAtMs = GetCurrentUnixTimeMilliseconds();
+			LastPhaseAtMs = StartedAtMs;
+		}
+
+		void Phase(const char* name)
+		{
+			if (!Enabled)
+			{
+				return;
+			}
+
+			const int64_t nowMs = GetCurrentUnixTimeMilliseconds();
+			LOG_INFO(
+				"Refresh timing '%s': %s=%lld ms",
+				Reason,
+				name ? name : "phase",
+				static_cast<long long>(nowMs - LastPhaseAtMs));
+			LastPhaseAtMs = nowMs;
+		}
+
+		void Finish(const CargoSnapshot& snapshot)
+		{
+			if (!Enabled)
+			{
+				return;
+			}
+
+			const int64_t nowMs = GetCurrentUnixTimeMilliseconds();
+			LOG_INFO(
+				"Refresh timing '%s': total=%lld ms markers=%zu connections=%zu teleporters=%zu players=%zu pois=%zu",
+				Reason,
+				static_cast<long long>(nowMs - StartedAtMs),
+				snapshot.Markers.size(),
+				snapshot.Connections.size(),
+				snapshot.Teleporters.size(),
+				snapshot.Players.size(),
+				snapshot.Pois.size());
+		}
+	};
+
+#if !defined(MODLOADER_SERVER_BUILD)
+	bool TryUseDedicatedRemoteSnapshot(
+		SDK::ACrGameStateBase* gameState,
+		const CargoSnapshot& previousSnapshot,
+		const char* reason,
+		const std::string& worldName,
+		uint64_t generation,
+		CargoSnapshot& outSnapshot)
+	{
+		if (!gameState || !gameState->bIsDedicatedServer)
+		{
+			return false;
+		}
+
+		CargoSnapshot snapshot = previousSnapshot;
+		CargoSnapshot remoteCargoSnapshot{};
+		const bool hasRemoteCargo = MapExtensionClient::Sync::TryCopyRemoteCargoSnapshot(remoteCargoSnapshot);
+		if (hasRemoteCargo)
+		{
+			snapshot = remoteCargoSnapshot;
+		}
+		else
+		{
+			snapshot.Markers.clear();
+			snapshot.Connections.clear();
+			snapshot.Teleporters.clear();
+			snapshot.Players.clear();
+			snapshot.Pois.clear();
+			snapshot.SenderCount = 0;
+			snapshot.ReceiverCount = 0;
+			snapshot.ConnectionCount = 0;
+			snapshot.TeleporterCount = 0;
+			snapshot.PlayerCount = 0;
+			snapshot.AbandonedBaseCount = 0;
+			snapshot.PlantResourceCount = 0;
+			snapshot.IgnitiumCount = 0;
+			snapshot.StarTearsCount = 0;
+			snapshot.ActorReceiverCount = 0;
+			snapshot.ActorSenderCount = 0;
+			snapshot.UsedReplicator = false;
+			snapshot.HasPackageTransportReplicator = false;
+			snapshot.UsedActorFallback = false;
+			snapshot.HasTeleportReplicator = false;
+			snapshot.UsedTeleporterReplicator = false;
+		}
+
+		snapshot.Generation = generation;
+		snapshot.Reason = reason ? reason : "unknown";
+		if (!worldName.empty())
+		{
+			snapshot.WorldName = worldName;
+		}
+
+		RuptureCycleSnapshot remoteRuptureSnapshot{};
+		if (MapExtensionClient::Sync::TryCopyRemoteRuptureCycleSnapshot(remoteRuptureSnapshot))
+		{
+			snapshot.RuptureCycle = remoteRuptureSnapshot;
+		}
+		else if (!hasRemoteCargo)
+		{
+			snapshot.RuptureCycle = {};
+		}
+
+		ApplyRuptureCycleObservationTimestamp(snapshot.RuptureCycle);
+		StorePersistentRuptureCycleSnapshot(snapshot.RuptureCycle);
+		outSnapshot = std::move(snapshot);
+		return true;
+	}
+#endif
+
+	const char* ConsumeRequestedCargoRefreshReason()
+	{
+		if (!g_cargoRefreshRequested.exchange(false))
+		{
+			return nullptr;
+		}
+
+		return "RequestedRefresh";
+	}
+
+	TrackedChimeraWorldState CopyTrackedChimeraWorldState()
+	{
+		std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+		TrackedChimeraWorldState state;
+		state.World = g_lastChimeraWorld;
+		state.WorldName = g_lastWorldName;
+		state.Ready = g_chimeraWorldReady;
+		return state;
+	}
+
+	bool HasPackageTransportReplicatorSnapshot()
+	{
+		std::lock_guard<std::mutex> lock(g_snapshotMutex);
+		return g_snapshot.HasPackageTransportReplicator;
+	}
+
+	struct RuptureCycleLocalState final
+	{
+		SDK::EEnviroWave Wave = SDK::EEnviroWave::None;
+		SDK::EEnviroWaveStage Stage = SDK::EEnviroWaveStage::None;
+		SDK::EEnviroWavePreWaveSubstage PreWaveSubstage = SDK::EEnviroWavePreWaveSubstage::None;
+		SDK::EEnviroWaveFadeoutSubstage FadeoutSubstage = SDK::EEnviroWaveFadeoutSubstage::None;
+		SDK::EEnviroWaveGrowbackSubstage GrowbackSubstage = SDK::EEnviroWaveGrowbackSubstage::None;
+		double ElapsedSeconds = 0.0;
+		bool HasElapsed = false;
+	};
+
+	bool TryReadLocalRuptureCycleState(
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem,
+		RuptureCycleLocalState& outState)
+	{
+		if (!waveSubsystem)
+		{
+			return false;
+		}
+
+		__try
+		{
+			outState.Wave = waveSubsystem->GetCurrentType();
+			outState.Stage = waveSubsystem->GetCurrentStage();
+			outState.PreWaveSubstage = waveSubsystem->CurrentPreWaveSubstage;
+			outState.FadeoutSubstage = waveSubsystem->CurrentFadeoutSubstage;
+			outState.GrowbackSubstage = waveSubsystem->CurrentGrowbackSubstage;
+			outState.ElapsedSeconds = waveSubsystem->GetTimeSinceLastWaveStarted();
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	struct BuildingCustomNameLookup final
+	{
+		SDK::UCrBuildingCustomNameSubsystem* Subsystem = nullptr;
+		std::unordered_map<uint32_t, std::string> ByEntityId;
+	};
+
+	bool TryValidateTrackedWorldPointerByName(SDK::UWorld* world, const std::string& expectedName)
+	{
+		if (!world || expectedName.empty())
+		{
+			return false;
+		}
+		if (!TryProbeWorldNameRaw(world))
+		{
+			return false;
+		}
+
+		try
+		{
+			std::string currentName = world->GetName();
+			return currentName == expectedName;
+		}
+		catch (...)
+		{
+			return false;
+		}
+	}
+
+	bool TryIsActorObject(SDK::UObject* obj, SDK::UClass* actorClass)
+	{
+		return TryIsObjectOfClass(obj, actorClass);
+	}
+
+	bool TryCopyValidatedTrackedChimeraWorldState(
+		TrackedChimeraWorldState& outState,
+		const char* reason,
+		bool requireReady,
+		bool& outInvalidPointer)
+	{
+		outInvalidPointer = false;
+		outState = CopyTrackedChimeraWorldState();
+		if (!outState.World)
+		{
+			return false;
+		}
+		if (requireReady && !outState.Ready)
+		{
+			return false;
+		}
+
+		// Validate the tracked world pointer using name-based probing.
+		// This is more robust than IsA(UWorld::StaticClass()) in this runtime
+		// because UWorld::StaticClass() can return nullptr or stale pointers.
+		if (!outState.WorldName.empty())
+		{
+			if (!TryValidateTrackedWorldPointerByName(outState.World, outState.WorldName))
+			{
+				LOG_WARN(
+					"Detected invalid tracked ChimeraMain world pointer via name probe (%s)",
+					reason ? reason : "unknown");
+				outState = {};
+				outInvalidPointer = true;
+				return false;
+			}
+		}
+		else
+		{
+			// Fallback: if no world name is stored, use the legacy IsA check
+			SDK::UClass* worldClass = TryGetStaticClass<SDK::UWorld>();
+			if (!TryIsObjectOfClass(static_cast<SDK::UObject*>(outState.World), worldClass))
+			{
+				LOG_WARN(
+					"Detected invalid tracked ChimeraMain world pointer (%s)",
+					reason ? reason : "unknown");
+				outState = {};
+				outInvalidPointer = true;
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	bool TryObjectHasOuterInChain(SDK::UObject* obj, SDK::UObject* targetOuter, int maxDepth = 12)
+	{
+		if (!obj || !targetOuter || maxDepth <= 0)
+		{
+			return false;
+		}
+
+		__try
+		{
+			SDK::UObject* current = obj;
+			for (int depth = 0; current && depth < maxDepth; ++depth)
+			{
+				if (current == targetOuter)
+				{
+					return true;
+				}
+				current = current->Outer;
+			}
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+
+		return false;
+	}
+
+	SDK::UCrEnviroWaveSubsystem* TryFindWaveSubsystemWithObjectWalker(
+		SDK::UWorld* world,
+		SDK::UClass* subsystemClass)
+	{
+#if defined(PLUGIN_INTERFACE_VERSION_MAX) && PLUGIN_INTERFACE_VERSION_MAX >= 47
+		if (!world || !subsystemClass)
+		{
+			return nullptr;
+		}
+
+		IPluginHooks* hooks = GetHooks();
+		if (!hooks || !hooks->ObjectWalker ||
+			!hooks->ObjectWalker->IsReady ||
+			!hooks->ObjectWalker->FindObjectsByClassNameInto ||
+			!hooks->ObjectWalker->IsReady())
+		{
+			return nullptr;
+		}
+
+		constexpr int kInitialCapacity = 8;
+		std::vector<PluginObjectInfo> objects(kInitialCapacity);
+		int total = hooks->ObjectWalker->FindObjectsByClassNameInto(
+			"CrEnviroWaveSubsystem",
+			PluginObjectLookup_InstanceOnly,
+			objects.data(),
+			static_cast<int>(objects.size()));
+		if (total <= 0)
+		{
+			return nullptr;
+		}
+
+		if (total > static_cast<int>(objects.size()))
+		{
+			objects.resize(static_cast<size_t>(total));
+			total = hooks->ObjectWalker->FindObjectsByClassNameInto(
+				"CrEnviroWaveSubsystem",
+				PluginObjectLookup_InstanceOnly,
+				objects.data(),
+				static_cast<int>(objects.size()));
+			if (total <= 0)
+			{
+				return nullptr;
+			}
+		}
+
+		const int count = std::min(total, static_cast<int>(objects.size()));
+		for (int index = 0; index < count; ++index)
+		{
+			auto* object = reinterpret_cast<SDK::UObject*>(objects[static_cast<size_t>(index)].object);
+			if (!TryIsObjectOfClass(object, subsystemClass))
+			{
+				continue;
+			}
+			if (!TryObjectHasOuterInChain(object, static_cast<SDK::UObject*>(world)))
+			{
+				continue;
+			}
+			return static_cast<SDK::UCrEnviroWaveSubsystem*>(object);
+		}
+
+		return nullptr;
+#else
+		(void)world;
+		(void)subsystemClass;
+		return nullptr;
+#endif
+	}
+
+	void ResetWaveSubsystemCache()
+	{
+		std::lock_guard<std::mutex> lock(g_waveSubsystemCacheMutex);
+		g_waveSubsystemCache = WaveSubsystemCacheState{};
+	}
+
+	// Single resolution point for the wave subsystem. Caches the resolved pointer
+	// for the lifetime of the world and throttles both the ProcessEvent lookup and
+	// the (expensive) ObjectWalker fallback when resolution keeps failing.
+	SDK::UCrEnviroWaveSubsystem* ResolveWaveSubsystem(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return nullptr;
+		}
+
+		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
+		bool mayAttemptObjectWalker = false;
+		{
+			std::lock_guard<std::mutex> lock(g_waveSubsystemCacheMutex);
+			if (g_waveSubsystemCache.World != world)
+			{
+				g_waveSubsystemCache = WaveSubsystemCacheState{};
+				g_waveSubsystemCache.World = world;
+			}
+			else if (g_waveSubsystemCache.Subsystem)
+			{
+				return g_waveSubsystemCache.Subsystem;
+			}
+			else if (nowUnixMs < g_waveSubsystemCache.NextResolveAttemptAtUnixMs)
+			{
+				return nullptr;
+			}
+
+			g_waveSubsystemCache.NextResolveAttemptAtUnixMs =
+				nowUnixMs + kWaveSubsystemResolveRetryIntervalMs;
+			if (nowUnixMs >= g_waveSubsystemCache.NextObjectWalkerAttemptAtUnixMs)
+			{
+				g_waveSubsystemCache.NextObjectWalkerAttemptAtUnixMs =
+					nowUnixMs + kWaveSubsystemObjectWalkerRetryIntervalMs;
+				mayAttemptObjectWalker = true;
+			}
+		}
+
+		SDK::UClass* subsystemClass = TryGetStaticClass<SDK::UCrEnviroWaveSubsystem>();
+		if (!subsystemClass)
+		{
+			return nullptr;
+		}
+
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem =
+			TryGetWorldSubsystem<SDK::UCrEnviroWaveSubsystem>(world, subsystemClass);
+		bool usedObjectWalkerFallback = false;
+		if (!waveSubsystem && mayAttemptObjectWalker)
+		{
+			waveSubsystem = TryFindWaveSubsystemWithObjectWalker(world, subsystemClass);
+			usedObjectWalkerFallback = waveSubsystem != nullptr;
+		}
+
+		if (!waveSubsystem)
+		{
+			return nullptr;
+		}
+
+		{
+			std::lock_guard<std::mutex> lock(g_waveSubsystemCacheMutex);
+			if (g_waveSubsystemCache.World == world)
+			{
+				g_waveSubsystemCache.Subsystem = waveSubsystem;
+			}
+		}
+
+		if (usedObjectWalkerFallback && ShouldLogRuptureDiagnostics() && !g_objectWalkerWaveFallbackLogged)
+		{
+			LOG_INFO("Resolved CrEnviroWaveSubsystem via ObjectWalker fallback after GetWorldSubsystem failed");
+			g_objectWalkerWaveFallbackLogged = true;
+		}
+
+		return waveSubsystem;
+	}
+
+	SDK::ACrGameStateBase* TryGetGameState(SDK::UWorld* world);
+	SDK::ACrPlayerControllerBase* TryGetLocalCrPlayerController(SDK::UWorld* world);
+
+	bool CaptureLocalRuptureCycleState(SDK::UWorld* world, RuptureCycleLocalState& outState)
+	{
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem = ResolveWaveSubsystem(world);
+		if (!waveSubsystem)
+		{
+			return false;
+		}
+
+		if (!TryReadLocalRuptureCycleState(waveSubsystem, outState))
+		{
+			// The cached pointer no longer reads back; force a fresh resolution.
+			ResetWaveSubsystemCache();
+			return false;
+		}
+
+		outState.HasElapsed = std::isfinite(outState.ElapsedSeconds);
+		return true;
+	}
+
+	MapStateRuntime::Detail::RuptureCycleSnapshot ToRuptureCycleSnapshot(const RuptureCycleLocalState& state)
+	{
+		MapStateRuntime::Detail::RuptureCycleSnapshot snapshot{};
+		snapshot.Available = true;
+		snapshot.Wave = EnviroWaveToString(state.Wave);
+		snapshot.Stage = EnviroWaveStageToString(state.Stage);
+		snapshot.Step = EnviroWaveStepToString(
+			state.Stage,
+			state.PreWaveSubstage,
+			state.FadeoutSubstage,
+			state.GrowbackSubstage);
+		snapshot.ElapsedSeconds = state.ElapsedSeconds;
+		snapshot.HasElapsed = state.HasElapsed;
+		return snapshot;
+	}
+
+	MapStateRuntime::Detail::RuptureCycleSnapshot CapturePreferredRuptureCycleSnapshot(
+		SDK::UWorld* world)
+	{
+		RuptureCycleLocalState localState{};
+		if (CaptureLocalRuptureCycleState(world, localState))
+		{
+			return ToRuptureCycleSnapshot(localState);
+		}
+
+#if !defined(MODLOADER_SERVER_BUILD)
+		// Local subsystem unavailable (typical on a dedicated-server client).
+		// Fall back to the remote cache populated by the network sync layer.
+		MapStateRuntime::Detail::RuptureCycleSnapshot remoteSnapshot{};
+		if (MapExtensionClient::Sync::TryCopyRemoteRuptureCycleSnapshot(remoteSnapshot))
+		{
+			return remoteSnapshot;
+		}
+#endif
+
+		return {};
+	}
+
+#if defined(PLUGIN_INTERFACE_VERSION_MAX) && PLUGIN_INTERFACE_VERSION_MAX >= 47
+	void OnRuptureCycleDelegateBroadcast(void* userContext)
+	{
+		(void)userContext;
+		// Delegate ordering is not an initialization barrier for resource actors.
+		// Read their state on the next tick, once the game has finished its work.
+		MapStateRuntime::Detail::RequestCargoSnapshotRefresh("RuptureCycleDelegate");
+	}
+
+	void UnhookRuptureCycleDelegateLocked(
+		IPluginDelegateHook* delegateHook,
+		DelegateHookHandle& handle)
+	{
+		if (!handle)
+		{
+			return;
+		}
+
+		if (delegateHook && delegateHook->Unhook)
+		{
+			delegateHook->Unhook(handle);
+		}
+		handle = 0;
+	}
+
+	void UnhookRuptureCycleDelegateHooks()
+	{
+		IPluginHooks* hooks = GetHooks();
+		IPluginDelegateHook* delegateHook = hooks ? hooks->Delegate : nullptr;
+		std::lock_guard<std::mutex> lock(g_ruptureCycleDelegateHooksMutex);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.WaveStarted);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.FadeoutSubstageChanged);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.GrowbackSubstageChanged);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.PreWaveSubstageChanged);
+		g_ruptureCycleDelegateHooks.World = nullptr;
+		g_ruptureCycleDelegateHooks.WaveSubsystem = nullptr;
+		g_ruptureCycleDelegateHooks.Installed = false;
+		g_ruptureCycleDelegateHooks.NextAttemptAtUnixMs = 0;
+		g_ruptureCycleDelegateHookFailureLogged = false;
+	}
+
+	DelegateHookHandle HookRuptureCycleDelegate(
+		IPluginDelegateHook* delegateHook,
+		void* delegatePtr,
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem)
+	{
+		if (!delegateHook || !delegateHook->Hook || !delegatePtr || !waveSubsystem)
+		{
+			return 0;
+		}
+
+		return delegateHook->Hook(
+			delegatePtr,
+			static_cast<void*>(waveSubsystem),
+			nullptr,
+			nullptr,
+			OnRuptureCycleDelegateBroadcast,
+			nullptr);
+	}
+
+	void HookRuptureCycleDelegateHooks(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return;
+		}
+
+		IPluginHooks* hooks = GetHooks();
+		IPluginDelegateHook* delegateHook = hooks ? hooks->Delegate : nullptr;
+		if (!delegateHook || !delegateHook->Hook)
+		{
+			if (!g_ruptureCycleDelegateUnavailableLogged && ShouldLogLifecycle())
+			{
+				g_ruptureCycleDelegateUnavailableLogged = true;
+				LOG_INFO("Rupture cycle delegate hooks unavailable; continuing with Engine/World/Actor/Player hooks.");
+			}
+			return;
+		}
+
+		// Cheap early-out before resolving the subsystem: this runs on every engine
+		// tick, and resolving the subsystem goes through ProcessEvent.
+		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
+		{
+			std::lock_guard<std::mutex> lock(g_ruptureCycleDelegateHooksMutex);
+			if (g_ruptureCycleDelegateHooks.Installed && g_ruptureCycleDelegateHooks.World == world)
+			{
+				return;
+			}
+			if (nowUnixMs < g_ruptureCycleDelegateHooks.NextAttemptAtUnixMs)
+			{
+				return;
+			}
+		}
+
+		SDK::UCrEnviroWaveSubsystem* waveSubsystem = ResolveWaveSubsystem(world);
+		if (!waveSubsystem)
+		{
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(g_ruptureCycleDelegateHooksMutex);
+		if (g_ruptureCycleDelegateHooks.Installed
+			&& g_ruptureCycleDelegateHooks.World == world
+			&& g_ruptureCycleDelegateHooks.WaveSubsystem == waveSubsystem)
+		{
+			return;
+		}
+
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.WaveStarted);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.FadeoutSubstageChanged);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.GrowbackSubstageChanged);
+		UnhookRuptureCycleDelegateLocked(delegateHook, g_ruptureCycleDelegateHooks.PreWaveSubstageChanged);
+
+		g_ruptureCycleDelegateHooks.World = world;
+		g_ruptureCycleDelegateHooks.WaveSubsystem = waveSubsystem;
+		g_ruptureCycleDelegateHooks.WaveStarted = HookRuptureCycleDelegate(
+			delegateHook,
+			static_cast<void*>(&waveSubsystem->OnWaveStartedDynamic),
+			waveSubsystem);
+		g_ruptureCycleDelegateHooks.FadeoutSubstageChanged = HookRuptureCycleDelegate(
+			delegateHook,
+			static_cast<void*>(&waveSubsystem->OnWaveFadeoutSubstageChanged),
+			waveSubsystem);
+		g_ruptureCycleDelegateHooks.GrowbackSubstageChanged = HookRuptureCycleDelegate(
+			delegateHook,
+			static_cast<void*>(&waveSubsystem->OnWaveGrowbackSubstageChanged),
+			waveSubsystem);
+		g_ruptureCycleDelegateHooks.PreWaveSubstageChanged = HookRuptureCycleDelegate(
+			delegateHook,
+			static_cast<void*>(&waveSubsystem->OnWavePreWaveSubstageChanged),
+			waveSubsystem);
+
+		g_ruptureCycleDelegateHooks.Installed =
+			g_ruptureCycleDelegateHooks.WaveStarted
+			|| g_ruptureCycleDelegateHooks.FadeoutSubstageChanged
+			|| g_ruptureCycleDelegateHooks.GrowbackSubstageChanged
+			|| g_ruptureCycleDelegateHooks.PreWaveSubstageChanged;
+
+		if (g_ruptureCycleDelegateHooks.Installed)
+		{
+			g_ruptureCycleDelegateHooks.NextAttemptAtUnixMs = 0;
+			g_ruptureCycleDelegateHookFailureLogged = false;
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO("Hooked CrEnviroWaveSubsystem multicast delegates for rupture-cycle refresh.");
+			}
+			return;
+		}
+
+		// Every Hook() failed: retry later instead of silently degrading to polling
+		// for the rest of the session.
+		g_ruptureCycleDelegateHooks.World = nullptr;
+		g_ruptureCycleDelegateHooks.WaveSubsystem = nullptr;
+		g_ruptureCycleDelegateHooks.NextAttemptAtUnixMs =
+			nowUnixMs + kRuptureCycleDelegateHookRetryIntervalMs;
+		if (!g_ruptureCycleDelegateHookFailureLogged)
+		{
+			g_ruptureCycleDelegateHookFailureLogged = true;
+			LOG_WARN(
+				"Failed to hook any CrEnviroWaveSubsystem multicast delegate; "
+				"rupture-cycle stays on polling and will retry in %lld ms",
+				static_cast<long long>(kRuptureCycleDelegateHookRetryIntervalMs));
+		}
+	}
+#else
+	void UnhookRuptureCycleDelegateHooks()
+	{
+	}
+
+	void HookRuptureCycleDelegateHooks(SDK::UWorld* world)
+	{
+		(void)world;
+	}
+#endif
+
+	// Key covering only the discrete state fields (wave/stage/step). Used to suppress
+	// repeated log entries when only ElapsedSeconds advances (e.g. local solo runtime).
+	std::string BuildRuptureCycleStateChangeKey(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		std::ostringstream oss;
+		oss
+			<< snapshot.Available << '|'
+			<< snapshot.Wave << '|'
+			<< snapshot.Stage << '|'
+			<< snapshot.Step;
+		return oss.str();
+	}
+
+	std::string BuildRuptureCycleObservationSignature(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		std::ostringstream oss;
+		oss
+			<< snapshot.Available << '|'
+			<< snapshot.Wave << '|'
+			<< snapshot.Stage << '|'
+			<< snapshot.Step << '|'
+			<< snapshot.HasElapsed;
+		if (snapshot.HasElapsed)
+		{
+			oss.setf(std::ios::fixed);
+			oss.precision(3);
+			oss << '|' << snapshot.ElapsedSeconds;
+		}
+		return oss.str();
+	}
+
+	void ApplyRuptureCycleObservationTimestamp(MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		snapshot.HasObservedAtUnixMs = false;
+		snapshot.ObservedAtUnixMs = 0;
+
+		if (!snapshot.Available || !snapshot.HasElapsed)
+		{
+			return;
+		}
+
+		const std::string signature = BuildRuptureCycleObservationSignature(snapshot);
+		if (!g_lastRuptureCycleObservedSignatureValid || signature != g_lastRuptureCycleObservedSignature)
+		{
+			g_lastRuptureCycleObservedSignature = signature;
+			g_lastRuptureCycleObservedSignatureValid = true;
+			g_lastRuptureCycleObservedAtUnixMs = GetCurrentUnixTimeMilliseconds();
+		}
+
+		snapshot.HasObservedAtUnixMs = g_lastRuptureCycleObservedAtUnixMs > 0;
+		snapshot.ObservedAtUnixMs = g_lastRuptureCycleObservedAtUnixMs;
+	}
+
+	void StorePersistentRuptureCycleSnapshot(const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot)
+	{
+		if (!snapshot.Available)
+		{
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(g_snapshotMutex);
+		g_lastPersistentRuptureCycleSnapshot = snapshot;
+		g_lastPersistentRuptureCycleSnapshotValid = true;
+	}
+
+	bool TryGetPersistentRuptureCycleSnapshot(MapStateRuntime::Detail::RuptureCycleSnapshot& outSnapshot)
+	{
+		std::lock_guard<std::mutex> lock(g_snapshotMutex);
+		if (!g_lastPersistentRuptureCycleSnapshotValid)
+		{
+			return false;
+		}
+
+		outSnapshot = g_lastPersistentRuptureCycleSnapshot;
+		return outSnapshot.Available;
+	}
+
+	void ResetRuptureCycleState()
+	{
+		g_lastRuptureCycleStateChangeKey.clear();
+		g_lastRuptureCycleStateChangeKeyValid = false;
+		g_lastPersistentRuptureCycleSnapshot = {};
+		g_lastPersistentRuptureCycleSnapshotValid = false;
+		g_lastRuptureCycleObservedSignature.clear();
+		g_lastRuptureCycleObservedSignatureValid = false;
+		g_lastRuptureCycleObservedAtUnixMs = 0;
+	}
+
+	void LogRuptureCycleIfNeeded(
+		const MapStateRuntime::Detail::RuptureCycleSnapshot& snapshot,
+		uint64_t generation,
+		const char* reason)
+	{
+		if (!ShouldLogRuptureDiagnostics() || !snapshot.Available)
+		{
+			return;
+		}
+
+		// Suppress repeated log entries when only ElapsedSeconds changes (solo runtime).
+		const std::string stateKey = BuildRuptureCycleStateChangeKey(snapshot);
+		if (g_lastRuptureCycleStateChangeKeyValid && stateKey == g_lastRuptureCycleStateChangeKey)
+		{
+			return;
+		}
+
+		g_lastRuptureCycleStateChangeKey = stateKey;
+		g_lastRuptureCycleStateChangeKeyValid = true;
+
+		const std::string elapsedText = snapshot.HasElapsed ? std::to_string(snapshot.ElapsedSeconds) : "--";
+
+		LOG_INFO(
+			"RuptureCycle #%llu from '%s': wave=%s stage=%s step=%s elapsed=%s",
+			static_cast<unsigned long long>(generation),
+			reason ? reason : "unknown",
+			snapshot.Wave.c_str(),
+			snapshot.Stage.c_str(),
+			snapshot.Step.c_str(),
+			elapsedText.c_str());
+	}
+
+	void MarkChimeraWorldReady(const char* reason)
+	{
+		bool markedReady = false;
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (g_chimeraWorldReady)
+			{
+				return;
+			}
+
+			g_chimeraWorldReady = true;
+			markedReady = true;
+		}
+
+		if (!markedReady)
+		{
+			return;
+		}
+
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"ChimeraMain world marked ready by %s",
+				reason ? reason : "unknown");
+		}
+
+		TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
+		HookRuptureCycleDelegateHooks(trackedState.World);
+	}
+
+	void ClearChimeraWorldState(const char* reason)
+	{
+		bool hadState = false;
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			hadState = g_lastChimeraWorld || !g_lastWorldName.empty() || g_chimeraWorldReady;
+			if (hadState)
+			{
+				g_lastChimeraWorld = nullptr;
+				g_lastWorldName.clear();
+				g_chimeraWorldReady = false;
+				g_lastCargoActorRefreshAtUnixMs = 0;
+				g_chimeraWorldDetectedAtUnixMs = 0;
+				g_requestedCustomNameEntityIds.clear();
+			}
+			ResetPoiScanState();
+		}
+
+		ResetObservedPlantCatalog();
+
+		if (!hadState)
+		{
+			return;
+		}
+
+		ClearPublishedSnapshot(reason);
+		g_engineTickAccumulatorSeconds = 0.0f;
+		g_engineTickSeen = false;
+		UnhookRuptureCycleDelegateHooks();
+		ResetWaveSubsystemCache();
+		ResetRuptureCycleState();
+
+#if !defined(MODLOADER_SERVER_BUILD)
+		MapExtensionClient::Sync::ResetRuntimeState();
+#endif
+
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"Cleared ChimeraMain world state due to %s",
+				reason ? reason : "unknown");
+		}
+	}
+
+
+	bool IsCargoRealtimeActor(SDK::AActor* actor)
+	{
+		return actor
+			&& (
+				actor->IsA(SDK::ABP_PackageReceiver_C::StaticClass())
+				|| actor->IsA(SDK::ABP_PackageSender_C::StaticClass())
+				|| actor->IsA(SDK::ACrItemReceiverBuilding::StaticClass())
+				|| actor->IsA(SDK::ACrItemSenderBuilding::StaticClass()));
+	}
+
+	bool IsAuxiliaryRealtimeActor(SDK::AActor* actor)
+	{
+		return actor
+			&& (
+				actor->IsA(SDK::ACrTeleporter::StaticClass())
+				|| actor->IsA(SDK::ABP_Teleporter_C::StaticClass())
+				|| actor->IsA(SDK::ACrMegamachineTeleporterDevice::StaticClass())
+				|| actor->IsA(SDK::ACrCharacterPlayerBase::StaticClass()));
+	}
+
+	std::string NormalizeCargoBuildingName(CargoKind kind, const std::string& value)
+	{
+		if (value.empty())
+		{
+			return {};
+		}
+
+		if (kind == CargoKind::Sender)
+		{
+			if (value == "Package Sender" || value == "Cargo Sender")
+			{
+				return "Cargo Dispatcher";
+			}
+
+			return value;
+		}
+
+		if (value == "Package Receiver")
+		{
+			return "Cargo Receiver";
+		}
+
+		return value;
+	}
+
+	std::string GetConfiguredCargoBuildingName(CargoKind kind)
+	{
+		if (SDK::UCrBuilidngsDeveloperSettings* settings = SDK::UCrBuilidngsDeveloperSettings::GetDefaultObj())
+		{
+			const std::string configuredName = kind == CargoKind::Sender
+				? settings->SenderDefaultName.ToString()
+				: settings->ReceiverDefaultName.ToString();
+			if (!configuredName.empty())
+			{
+				return NormalizeCargoBuildingName(kind, configuredName);
+			}
+		}
+
+		return kind == CargoKind::Sender ? "Cargo Dispatcher" : "Cargo Receiver";
+	}
+
+	std::string GetItemDisplayName(const SDK::UAuItemDataBase* item)
+	{
+		if (!item)
+		{
+			return {};
+		}
+
+		const std::string itemName = item->ItemName.ToString();
+		if (!itemName.empty())
+		{
+			return itemName;
+		}
+
+		if (!item->UniqueItemName.IsNone())
+		{
+			const std::string uniqueName = item->UniqueItemName.ToString();
+			if (!uniqueName.empty())
+			{
+				return uniqueName;
+			}
+		}
+
+		return item->GetName();
+	}
+
+	void AppendResourceName(CargoMarker& marker, const std::string& resourceName)
+	{
+		if (resourceName.empty())
+		{
+			return;
+		}
+
+		if (marker.ResourceSummary.empty())
+		{
+			marker.ResourceSummary = resourceName;
+			return;
+		}
+
+		if (marker.ResourceSummary.find(resourceName) != std::string::npos)
+		{
+			return;
+		}
+
+		marker.ResourceSummary += ", ";
+		marker.ResourceSummary += resourceName;
+	}
+
+	std::string FormatVector(const SDK::FVector& value)
+	{
+		std::ostringstream oss;
+		oss.setf(std::ios::fixed);
+		oss.precision(1);
+		oss << "(X=" << value.X << " Y=" << value.Y << " Z=" << value.Z << ")";
+		return oss.str();
+	}
+
+	std::string FormatVector2f(const SDK::FVector2f& value)
+	{
+		std::ostringstream oss;
+		oss.setf(std::ios::fixed);
+		oss.precision(1);
+		oss << "(X=" << value.X << " Y=" << value.Y << ")";
+		return oss.str();
+	}
+
+	std::string BuildReplicationHelperKey(const SDK::FCrMassEntityReplicationHelper& helper)
+	{
+		std::ostringstream oss;
+		oss << helper.NetID.Value << ':' << helper.Entity.ID;
+		return oss.str();
+	}
+
+	std::string BuildLocationKey(CargoKind kind, const SDK::FVector& location)
+	{
+		std::ostringstream oss;
+		oss << static_cast<int>(kind) << ':'
+			<< static_cast<int>(std::lround(location.X)) << ':'
+			<< static_cast<int>(std::lround(location.Y)) << ':'
+			<< static_cast<int>(std::lround(location.Z));
+		return oss.str();
+	}
+
+	std::string BuildLocationKey(const char* prefix, const SDK::FVector& location)
+	{
+		std::ostringstream oss;
+		oss << (prefix ? prefix : "marker") << ':'
+			<< static_cast<int>(std::lround(location.X)) << ':'
+			<< static_cast<int>(std::lround(location.Y)) << ':'
+			<< static_cast<int>(std::lround(location.Z));
+		return oss.str();
+	}
+
+	SDK::FVector MakeVector(double x, double y, double z)
+	{
+		SDK::FVector value{};
+		value.X = static_cast<float>(x);
+		value.Y = static_cast<float>(y);
+		value.Z = static_cast<float>(z);
+		return value;
+	}
+
+	SDK::ACrGameStateBase* TryGetGameState(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return nullptr;
+		}
+		if (!TryIsObjectOfClass(
+				static_cast<SDK::UObject*>(world),
+				TryGetStaticClass<SDK::UWorld>()))
+		{
+			return nullptr;
+		}
+
+		SDK::AGameStateBase* gameStateBase = SDK::UGameplayStatics::GetGameState(world);
+		if (!gameStateBase || !gameStateBase->IsA(SDK::ACrGameStateBase::StaticClass()))
+		{
+			return nullptr;
+		}
+
+		return static_cast<SDK::ACrGameStateBase*>(gameStateBase);
+	}
+
+	std::string HexEncode(const std::string& value)
+	{
+		static const char* kHex = "0123456789abcdef";
+		std::string out;
+		out.reserve(value.size() * 2);
+		for (unsigned char ch : value)
+		{
+			out.push_back(kHex[(ch >> 4) & 0xF]);
+			out.push_back(kHex[ch & 0xF]);
+		}
+		return out;
+	}
+
+	std::string SanitizePrintableKey(const std::string& value)
+	{
+		std::string out;
+		out.reserve(value.size());
+		for (unsigned char ch : value)
+		{
+			if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))
+			{
+				out.push_back(static_cast<char>(ch));
+			}
+			else if (ch == '_' || ch == '-' || ch == '.')
+			{
+				out.push_back(static_cast<char>(ch));
+			}
+			else
+			{
+				out.push_back('_');
+			}
+		}
+		return out;
+	}
+
+	uint64_t Fnv1aHash64(const std::string& value)
+	{
+		uint64_t hash = 1469598103934665603ull;
+		for (unsigned char ch : value)
+		{
+			hash ^= ch;
+			hash *= 1099511628211ull;
+		}
+		return hash;
+	}
+
+	// Public keys travel through fixed-size sync packet fields
+	// (MapSyncProtocol::kKeyCapacity). Keys longer than that capacity would be
+	// silently truncated on the wire and could collide; replace the overflowing
+	// tail with a hash of the full key to keep keys unique and wire-safe.
+	std::string FitPublicKey(std::string key)
+	{
+		constexpr size_t kMaxLength = MapSyncProtocol::kKeyCapacity - 1;
+		if (key.size() <= kMaxLength)
+		{
+			return key;
+		}
+
+		std::ostringstream suffix;
+		suffix << std::hex << Fnv1aHash64(key);
+		const std::string hash = suffix.str();
+		key.resize(kMaxLength - hash.size() - 1);
+		key.push_back('~');
+		key.append(hash);
+		return key;
+	}
+
+	std::string MakePublicKey(CargoKind kind, const std::string& internalKey)
+	{
+		bool isMostlyPrintable = !internalKey.empty();
+		for (unsigned char ch : internalKey)
+		{
+			if (ch < 32 || ch > 126)
+			{
+				isMostlyPrintable = false;
+				break;
+			}
+		}
+
+		const std::string prefix = kind == CargoKind::Sender ? "sender_" : "receiver_";
+		if (isMostlyPrintable)
+		{
+			return FitPublicKey(prefix + SanitizePrintableKey(internalKey));
+		}
+
+		return FitPublicKey(prefix + HexEncode(internalKey));
+	}
+
+	std::string MakeTaggedPublicKey(const char* prefix, const std::string& internalKey)
+	{
+		const std::string safePrefix = prefix ? prefix : "marker";
+		bool isMostlyPrintable = !internalKey.empty();
+		for (unsigned char ch : internalKey)
+		{
+			if (ch < 32 || ch > 126)
+			{
+				isMostlyPrintable = false;
+				break;
+			}
+		}
+
+		if (isMostlyPrintable)
+		{
+			return FitPublicKey(safePrefix + "_" + SanitizePrintableKey(internalKey));
+		}
+
+		return FitPublicKey(safePrefix + "_" + HexEncode(internalKey));
+	}
+
+	void LogSnapshotSummary(const CargoSnapshot& snapshot)
+	{
+		if (!MapExtensionPluginConfig::Config::LogCargoSnapshots())
+		{
+			return;
+		}
+
+		LOG_INFO(
+			"Cargo snapshot #%llu from '%s': markers=%zu, senders=%d, receivers=%d, connections=%zu, teleporters=%zu, players=%zu, replicator=%s, teleporter_replicator=%s, actor_fallback=%s",
+			static_cast<unsigned long long>(snapshot.Generation),
+			snapshot.Reason.c_str(),
+			snapshot.Markers.size(),
+			snapshot.SenderCount,
+			snapshot.ReceiverCount,
+			snapshot.Connections.size(),
+			snapshot.Teleporters.size(),
+			snapshot.Players.size(),
+			snapshot.HasPackageTransportReplicator ? "yes" : "no",
+			snapshot.HasTeleportReplicator ? "yes" : "no",
+			snapshot.UsedActorFallback ? "yes" : "no");
+
+		const size_t maxLog = std::min(snapshot.Markers.size(), static_cast<size_t>(kMaxLoggedMarkersPerSnapshot));
+		for (size_t index = 0; index < maxLog; ++index)
+		{
+			const CargoMarker& marker = snapshot.Markers[index];
+			LOG_INFO(
+				"  Cargo %s #%zu key=%s label='%s' resource='%s' source=%s world=%s map=%s",
+				CargoKindToString(marker.Kind).c_str(),
+				index + 1,
+				marker.PublicKey.c_str(),
+				ComposeMarkerDisplayName(marker).c_str(),
+				marker.ResourceSummary.c_str(),
+				marker.Source.c_str(),
+				FormatVector(marker.WorldLocation).c_str(),
+				FormatVector2f(marker.MapLocation).c_str());
+		}
+	}
+
+	bool IsRealtimeRefreshReason(const char* reason)
+	{
+		return reason != nullptr
+			&& (
+				std::strcmp(reason, "EngineTick") == 0
+				|| std::strncmp(reason, "ActorBeginPlay", std::strlen("ActorBeginPlay")) == 0);
+	}
+
+	bool IsRelevantRuptureActor(SDK::AActor* actor)
+	{
+		return actor
+			&& (
+				actor->IsA(SDK::ACrWaveTimerActor::StaticClass())
+				|| actor->IsA(SDK::ACrGatherableSpawnersRepActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWaveVisualsReplicationActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWaveVisualsActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWavePlayerFXActor::StaticClass())
+				|| actor->IsA(SDK::ACrEnviroWaveRegion::StaticClass()));
+	}
+
+	CargoMarker* AddOrUpdateMarker(
+		CargoSnapshot& snapshot,
+		std::unordered_map<std::string, size_t>& markerIndexes,
+		CargoKind kind,
+		const SDK::FVector& worldLocation,
+		std::string internalKey,
+		const char* source,
+		std::string displayName,
+		std::string resourceName)
+	{
+		const auto existing = markerIndexes.find(internalKey);
+		if (existing != markerIndexes.end())
+		{
+			CargoMarker& marker = snapshot.Markers[existing->second];
+			if (marker.DisplayName.empty() && !displayName.empty())
+			{
+				marker.DisplayName = NormalizeCargoBuildingName(kind, displayName);
+			}
+			AppendResourceName(marker, resourceName);
+			return &marker;
+		}
+
+		CargoMarker marker{};
+		marker.Kind = kind;
+		marker.WorldLocation = worldLocation;
+		marker.MapLocation = MapStateRuntime::Detail::WorldToMap(worldLocation);
+		marker.DisplayName = !displayName.empty()
+			? NormalizeCargoBuildingName(kind, displayName)
+			: GetConfiguredCargoBuildingName(kind);
+		AppendResourceName(marker, resourceName);
+		marker.Source = source ? source : "unknown";
+		marker.InternalKey = std::move(internalKey);
+		marker.PublicKey = MakePublicKey(kind, marker.InternalKey);
+		snapshot.Markers.push_back(std::move(marker));
+		markerIndexes.emplace(snapshot.Markers.back().InternalKey, snapshot.Markers.size() - 1);
+		return &snapshot.Markers.back();
+	}
+
+	TeleporterMarker* AddOrUpdateTeleporter(
+		CargoSnapshot& snapshot,
+		std::unordered_map<std::string, size_t>& teleporterIndexes,
+		const SDK::FVector& worldLocation,
+		std::string internalKey,
+		const char* source,
+		std::string displayName)
+	{
+		const auto existing = teleporterIndexes.find(internalKey);
+		if (existing != teleporterIndexes.end())
+		{
+			TeleporterMarker& marker = snapshot.Teleporters[existing->second];
+			if (marker.DisplayName.empty() && !displayName.empty())
+			{
+				marker.DisplayName = std::move(displayName);
+			}
+			if (marker.Source.empty() && source)
+			{
+				marker.Source = source;
+			}
+			return &marker;
+		}
+
+		TeleporterMarker marker{};
+		marker.WorldLocation = worldLocation;
+		marker.MapLocation = MapStateRuntime::Detail::WorldToMap(worldLocation);
+		marker.DisplayName = !displayName.empty() ? std::move(displayName) : "Teleporter";
+		marker.Source = source ? source : "unknown";
+		marker.InternalKey = std::move(internalKey);
+		marker.PublicKey = MakeTaggedPublicKey("teleporter", marker.InternalKey);
+		snapshot.Teleporters.push_back(std::move(marker));
+		teleporterIndexes.emplace(snapshot.Teleporters.back().InternalKey, snapshot.Teleporters.size() - 1);
+		return &snapshot.Teleporters.back();
+	}
+
+	PlayerMarker* AddOrUpdatePlayer(
+		CargoSnapshot& snapshot,
+		std::unordered_map<std::string, size_t>& playerIndexes,
+		const SDK::FVector& worldLocation,
+		std::string internalKey,
+		const char* source,
+		std::string displayName)
+	{
+		const auto existing = playerIndexes.find(internalKey);
+		if (existing != playerIndexes.end())
+		{
+			PlayerMarker& marker = snapshot.Players[existing->second];
+			if (marker.DisplayName.empty() && !displayName.empty())
+			{
+				marker.DisplayName = std::move(displayName);
+			}
+			if (marker.Source.empty() && source)
+			{
+				marker.Source = source;
+			}
+			return &marker;
+		}
+
+		PlayerMarker marker{};
+		marker.WorldLocation = worldLocation;
+		marker.MapLocation = MapStateRuntime::Detail::WorldToMap(worldLocation);
+		marker.DisplayName = !displayName.empty() ? std::move(displayName) : "Player";
+		marker.Source = source ? source : "unknown";
+		marker.InternalKey = std::move(internalKey);
+		marker.PublicKey = MakeTaggedPublicKey("player", marker.InternalKey);
+		snapshot.Players.push_back(std::move(marker));
+		playerIndexes.emplace(snapshot.Players.back().InternalKey, snapshot.Players.size() - 1);
+		return &snapshot.Players.back();
+	}
+
+	std::string GetInteractionDisplayName(SDK::AActor* actor)
+	{
+		if (!actor)
+		{
+			return {};
+		}
+
+		const SDK::TArray<SDK::UActorComponent*> components =
+			actor->K2_GetComponentsByClass(SDK::UCrInteractionComponent::StaticClass());
+		for (int index = 0; index < components.Num(); ++index)
+		{
+			SDK::UCrInteractionComponent* interactionComponent =
+				static_cast<SDK::UCrInteractionComponent*>(components[index]);
+			if (!interactionComponent)
+			{
+				continue;
+			}
+
+			const std::string displayName = interactionComponent->GetInteractionDisplayName().ToString();
+			if (!displayName.empty())
+			{
+				return displayName;
+			}
+		}
+
+		return {};
+	}
+
+	SDK::UCrBuildingCustomNameSubsystem* TryGetBuildingCustomNameSubsystem(SDK::UWorld* world)
+	{
+		return TryGetWorldSubsystem<SDK::UCrBuildingCustomNameSubsystem>(
+			world,
+			SDK::UCrBuildingCustomNameSubsystem::StaticClass());
+	}
+
+	uint32_t GetPersistentEntityIdValue(const SDK::FCrMassPersistentEntityID& entityId);
+	uint32_t GetReplicationHelperEntityIdValue(const SDK::FCrMassEntityReplicationHelper& helper);
+
+	BuildingCustomNameLookup BuildBuildingCustomNameLookup(SDK::UWorld* world)
+	{
+		BuildingCustomNameLookup lookup{};
+		lookup.Subsystem = TryGetBuildingCustomNameSubsystem(world);
+		if (!lookup.Subsystem)
+		{
+			return lookup;
+		}
+
+		for (const auto& entry : lookup.Subsystem->CustomNames)
+		{
+			const uint32_t entityId = GetPersistentEntityIdValue(entry.Key());
+			if (entityId == 0)
+			{
+				continue;
+			}
+
+			std::string displayName = entry.Value().ToString();
+			if (displayName.empty())
+			{
+				continue;
+			}
+
+			lookup.ByEntityId.emplace(entityId, std::move(displayName));
+		}
+
+		return lookup;
+	}
+
+	std::string GetBuildingCustomName(SDK::UWorld* world, SDK::AActor* buildingActor)
+	{
+		if (!world || !buildingActor)
+		{
+			return {};
+		}
+
+		SDK::UCrBuildingCustomNameSubsystem* customNameSubsystem =
+			TryGetBuildingCustomNameSubsystem(world);
+		if (!customNameSubsystem)
+		{
+			return {};
+		}
+
+		return customNameSubsystem->GetBuildingCustomName(buildingActor).ToString();
+	}
+
+	uint32_t GetPersistentEntityIdValue(const SDK::FCrMassPersistentEntityID& entityId)
+	{
+		return entityId.ID;
+	}
+
+	uint32_t GetReplicationHelperEntityIdValue(const SDK::FCrMassEntityReplicationHelper& helper)
+	{
+		return GetPersistentEntityIdValue(helper.Entity);
+	}
+
+	SDK::ACrPlayerControllerBase* TryGetLocalCrPlayerController(SDK::UWorld* world)
+	{
+		if (!world)
+		{
+			return nullptr;
+		}
+		if (!TryIsObjectOfClass(
+				static_cast<SDK::UObject*>(world),
+				TryGetStaticClass<SDK::UWorld>()))
+		{
+			return nullptr;
+		}
+
+		SDK::APlayerController* playerController = SDK::UGameplayStatics::GetPlayerController(world, 0);
+		if (!playerController || !playerController->IsA(SDK::ACrPlayerControllerBase::StaticClass()))
+		{
+			return nullptr;
+		}
+
+		return static_cast<SDK::ACrPlayerControllerBase*>(playerController);
+	}
+
+	std::string FindCachedBuildingCustomName(
+		const BuildingCustomNameLookup& customNameLookup,
+		const SDK::FCrMassEntityReplicationHelper& helper)
+	{
+		const uint32_t targetId = GetReplicationHelperEntityIdValue(helper);
+		if (targetId == 0)
+		{
+			return {};
+		}
+
+		const auto entry = customNameLookup.ByEntityId.find(targetId);
+		if (entry == customNameLookup.ByEntityId.end())
+		{
+			return {};
+		}
+
+		return entry->second;
+	}
+
+	void RequestBuildingCustomNameIfNeeded(
+		SDK::UWorld* world,
+		const SDK::FCrMassEntityReplicationHelper& helper)
+	{
+		const uint32_t entityId = GetReplicationHelperEntityIdValue(helper);
+		if (!world || entityId == 0)
+		{
+			return;
+		}
+
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (!g_requestedCustomNameEntityIds.insert(entityId).second)
+			{
+				return;
+			}
+		}
+
+		SDK::ACrPlayerControllerBase* playerController = TryGetLocalCrPlayerController(world);
+		if (!playerController)
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			g_requestedCustomNameEntityIds.erase(entityId);
+			return;
+		}
+
+		playerController->ServerGetBuildingCustomName(helper);
+	}
+
+	std::string GetBuildingCustomName(
+		SDK::UWorld* world,
+		const SDK::FCrMassEntityReplicationHelper& helper,
+		const BuildingCustomNameLookup& customNameLookup)
+	{
+		if (!world)
+		{
+			return {};
+		}
+
+		const std::string cachedName = FindCachedBuildingCustomName(customNameLookup, helper);
+		if (!cachedName.empty())
+		{
+			return cachedName;
+		}
+
+		RequestBuildingCustomNameIfNeeded(world, helper);
+		return {};
+	}
+
+	std::string GetCargoActorDisplayName(
+		SDK::UWorld* world,
+		SDK::AActor* actor,
+		CargoKind kind)
+	{
+		const std::string customName = GetBuildingCustomName(world, actor);
+		if (!customName.empty())
+		{
+			return customName;
+		}
+
+		const std::string interactionName = GetInteractionDisplayName(actor);
+		if (!interactionName.empty())
+		{
+			return interactionName;
+		}
+
+		return GetConfiguredCargoBuildingName(kind);
+	}
+
+	CargoMarker* FindMarkerByLocation(
+		CargoSnapshot& snapshot,
+		CargoKind kind,
+		const SDK::FVector& worldLocation)
+	{
+		const std::string locationKey = BuildLocationKey(kind, worldLocation);
+		for (CargoMarker& marker : snapshot.Markers)
+		{
+			if (marker.Kind != kind)
+			{
+				continue;
+			}
+
+			if (BuildLocationKey(kind, marker.WorldLocation) == locationKey)
+			{
+				return &marker;
+			}
+		}
+
+		return nullptr;
+	}
+
+	const CargoMarker* FindMarkerByInternalKey(
+		const CargoSnapshot& snapshot,
+		CargoKind kind,
+		const std::string& internalKey)
+	{
+		for (const CargoMarker& marker : snapshot.Markers)
+		{
+			if (marker.Kind == kind && marker.InternalKey == internalKey)
+			{
+				return &marker;
+			}
+		}
+
+		return nullptr;
+	}
+
+	const CargoConnection* FindConnectionByPublicKeys(
+		const CargoSnapshot& snapshot,
+		const std::string& senderKey,
+		const std::string& receiverKey,
+		const std::string& itemDisplayName)
+	{
+		for (const CargoConnection& connection : snapshot.Connections)
+		{
+			if (connection.SenderKey == senderKey
+				&& connection.ReceiverKey == receiverKey
+				&& connection.ItemDisplayName == itemDisplayName)
+			{
+				return &connection;
+			}
+		}
+
+		return nullptr;
+	}
+
+	std::string BuildConnectionSignature(const CargoConnection& connection)
+	{
+		std::string signature = connection.SenderKey;
+		signature.push_back('\x1F');
+		signature += connection.ReceiverKey;
+		signature.push_back('\x1F');
+		signature += connection.ItemDisplayName;
+		return signature;
+	}
+
+	void MergeRetainedConnections(
+		CargoSnapshot& snapshot,
+		const CargoSnapshot& previousSnapshot,
+		int64_t nowUnixMs)
+	{
+		if (!snapshot.HasPackageTransportReplicator || !previousSnapshot.HasPackageTransportReplicator)
+		{
+			return;
+		}
+
+		std::unordered_set<std::string> signatures;
+		signatures.reserve(snapshot.Connections.size());
+		for (const CargoConnection& connection : snapshot.Connections)
+		{
+			signatures.insert(BuildConnectionSignature(connection));
+		}
+
+		size_t retainedCount = 0;
+		for (const CargoConnection& previousConnection : previousSnapshot.Connections)
+		{
+			const std::string signature = BuildConnectionSignature(previousConnection);
+			if (signatures.find(signature) != signatures.end())
+			{
+				continue;
+			}
+			if (previousConnection.LastObservedAtUnixMs <= 0
+				|| nowUnixMs - previousConnection.LastObservedAtUnixMs > kConnectionRetentionMs)
+			{
+				continue;
+			}
+
+			snapshot.Connections.push_back(previousConnection);
+			signatures.insert(signature);
+			++retainedCount;
+		}
+
+		if (retainedCount > 0 && ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"Cargo refresh '%s': retained %zu recent connection(s) missing from current replicator snapshot",
+				snapshot.Reason.c_str(),
+				retainedCount);
+		}
+	}
+
+	std::string GetTeleporterDisplayName(SDK::ACrTeleporter* teleporter)
+	{
+		if (!teleporter)
+		{
+			return {};
+		}
+
+		const std::string interactionName = GetInteractionDisplayName(teleporter);
+		if (!interactionName.empty())
+		{
+			return interactionName;
+		}
+
+		return teleporter->GetName();
+	}
+
+	std::string GetTeleporterDisplayName(SDK::ACrMegamachineTeleporterDevice* teleporter)
+	{
+		if (!teleporter)
+		{
+			return {};
+		}
+
+		const std::string interactionText = teleporter->InteractionText.ToString();
+		if (!interactionText.empty())
+		{
+			return interactionText;
+		}
+
+		const std::string interactionName = GetInteractionDisplayName(teleporter);
+		if (!interactionName.empty())
+		{
+			return interactionName;
+		}
+
+		return teleporter->GetName();
+	}
+
+	std::string GetPlayerDisplayName(SDK::APawn* playerPawn)
+	{
+		if (!playerPawn)
+		{
+			return {};
+		}
+
+		if (SDK::AController* controller = playerPawn->GetController())
+		{
+			if (SDK::APlayerState* playerState = controller->PlayerState)
+			{
+				const std::string playerName = playerState->GetPlayerName().ToString();
+				if (!playerName.empty())
+				{
+					return playerName;
+				}
+			}
+		}
+
+		return playerPawn->GetName();
+	}
+
+	std::string GetControllerInternalKey(SDK::AController* controller)
+	{
+		if (!controller)
+		{
+			return {};
+		}
+
+		if (SDK::APlayerState* playerState = controller->PlayerState)
+		{
+			const std::string playerStateName = playerState->GetName();
+			if (!playerStateName.empty())
+			{
+				return "player_state:" + playerStateName;
+			}
+		}
+
+		const std::string controllerName = controller->GetName();
+		if (!controllerName.empty())
+		{
+			return "controller:" + controllerName;
+		}
+
+		return {};
+	}
+
+	std::string GetPlayerInternalKey(SDK::APawn* playerPawn)
+	{
+		if (!playerPawn)
+		{
+			return {};
+		}
+
+		const std::string controllerKey = GetControllerInternalKey(playerPawn->GetController());
+		if (!controllerKey.empty())
+		{
+			return controllerKey;
+		}
+
+		const std::string pawnName = playerPawn->GetName();
+		if (!pawnName.empty())
+		{
+			return "pawn:" + pawnName;
+		}
+
+		return {};
+	}
+
+	void CapturePlayerPawn(
+		CargoSnapshot& snapshot,
+		std::unordered_map<std::string, size_t>& playerIndexes,
+		SDK::APawn* playerPawn,
+		const char* source,
+		bool isSelf = false)
+	{
+		if (!playerPawn)
+		{
+			return;
+		}
+
+		const SDK::FVector worldLocation = playerPawn->K2_GetActorLocation();
+		std::string internalKey = GetPlayerInternalKey(playerPawn);
+		if (internalKey.empty())
+		{
+			internalKey = BuildLocationKey("player", worldLocation);
+		}
+
+		PlayerMarker* marker = AddOrUpdatePlayer(
+			snapshot,
+			playerIndexes,
+			worldLocation,
+			internalKey,
+			source,
+			GetPlayerDisplayName(playerPawn));
+		if (marker && isSelf)
+		{
+			marker->IsSelf = true;
+		}
+	}
+
+	void CaptureFromReplicator(
+		SDK::UWorld* world,
+		CargoSnapshot& snapshot,
+		SDK::ACrGameStateBase* gameState,
+		const CargoSnapshot* previousSnapshot,
+		int64_t observedAtUnixMs,
+		const BuildingCustomNameLookup& customNameLookup,
+		std::unordered_map<std::string, size_t>& markerIndexes)
+	{
+		if (!gameState)
+		{
+			return;
+		}
+
+		SDK::ACrPackageTransportReplicator* replicator = gameState->PackageTransportReplicator;
+		snapshot.HasPackageTransportReplicator = replicator != nullptr;
+		if (!replicator)
+		{
+			return;
+		}
+
+		snapshot.UsedReplicator = true;
+		std::unordered_map<std::string, ReceiverLinkInfo> receiverLookup;
+		struct SenderReplicationInfo
+		{
+			SDK::FVector WorldLocation{};
+			std::string DisplayName;
+		};
+		std::unordered_map<std::string, SenderReplicationInfo> senderLookup;
+		std::unordered_set<std::string> connectionKeys;
+
+		const SDK::FCrSenderReceiversContainer& senderReceivers = replicator->SenderReceiversContainer;
+		for (int index = 0; index < senderReceivers.AllSenderReceiversData.Num(); ++index)
+		{
+			const SDK::FCrSenderReceiverData& senderReceiver = senderReceivers.AllSenderReceiversData[index];
+			const std::string entityKey = BuildReplicationHelperKey(senderReceiver.Entity);
+			const SDK::FVector worldLocation = MakeVector(
+				senderReceiver.Location.X,
+				senderReceiver.Location.Y,
+				senderReceiver.Location.Z);
+			const std::string displayName = GetBuildingCustomName(world, senderReceiver.Entity, customNameLookup);
+
+			if (senderReceiver.bIsSender)
+			{
+				senderLookup.emplace(
+					entityKey,
+					SenderReplicationInfo{
+						worldLocation,
+						displayName
+					});
+				continue;
+			}
+
+			CargoMarker* marker = AddOrUpdateMarker(
+				snapshot,
+				markerIndexes,
+				CargoKind::Receiver,
+				worldLocation,
+				entityKey,
+				"package_transport_replicator.receiver",
+				displayName,
+				{});
+			if (!marker)
+			{
+				continue;
+			}
+
+			const auto markerIndex = markerIndexes.find(marker->InternalKey);
+			if (markerIndex == markerIndexes.end())
+			{
+				continue;
+			}
+
+				receiverLookup.emplace(
+					marker->InternalKey,
+					ReceiverLinkInfo{
+						markerIndex->second,
+						marker->WorldLocation,
+						marker->MapLocation,
+						marker->PublicKey
+					});
+		}
+
+		const SDK::FCrPackageTransportConnectionsContainer& connections = replicator->ConnectionsContainer;
+		snapshot.ConnectionCount = connections.ConnectionsData.Num();
+		for (int index = 0; index < connections.ConnectionsData.Num(); ++index)
+		{
+			const SDK::FCrPackageTransportConnectionData& connection = connections.ConnectionsData[index];
+			const std::string senderKey = BuildReplicationHelperKey(connection.Sender);
+			const std::string receiverKey = BuildReplicationHelperKey(connection.Receiver);
+			const std::string resourceName = GetItemDisplayName(connection.Item);
+			const std::string senderPublicKey = MakePublicKey(CargoKind::Sender, senderKey);
+			const std::string receiverPublicKey = MakePublicKey(CargoKind::Receiver, receiverKey);
+			const std::string previousReceiverKey = BuildReplicationHelperKey(connection.PrevReceiver);
+			const std::string previousReceiverPublicKey = previousReceiverKey.empty()
+				? std::string{}
+				: MakePublicKey(CargoKind::Receiver, previousReceiverKey);
+			const auto senderIt = senderLookup.find(senderKey);
+			const CargoMarker* previousSenderMarker = nullptr;
+			if (senderIt == senderLookup.end() && previousSnapshot)
+			{
+				previousSenderMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Sender, senderKey);
+			}
+
+			CargoMarker* senderMarker = nullptr;
+			if (senderIt != senderLookup.end() || previousSenderMarker)
+			{
+				const SDK::FVector senderLocation = senderIt != senderLookup.end()
+					? senderIt->second.WorldLocation
+					: previousSenderMarker->WorldLocation;
+				std::string senderDisplayName = senderIt != senderLookup.end()
+					? senderIt->second.DisplayName
+					: previousSenderMarker->DisplayName;
+				if (senderDisplayName.empty())
+				{
+					senderDisplayName = GetBuildingCustomName(world, connection.Sender, customNameLookup);
+				}
+				senderMarker = AddOrUpdateMarker(
+					snapshot,
+					markerIndexes,
+					CargoKind::Sender,
+					senderLocation,
+					senderKey,
+					"package_transport_replicator.connection",
+					senderDisplayName,
+					resourceName);
+			}
+
+			auto receiverIt = receiverLookup.find(receiverKey);
+			const CargoMarker* previousReceiverMarker = nullptr;
+			if (receiverIt == receiverLookup.end() && previousSnapshot)
+			{
+				previousReceiverMarker = FindMarkerByInternalKey(*previousSnapshot, CargoKind::Receiver, receiverKey);
+			}
+
+			const CargoConnection* previousConnection = nullptr;
+			if (previousSnapshot)
+			{
+				previousConnection = FindConnectionByPublicKeys(
+					*previousSnapshot,
+					senderPublicKey,
+					receiverPublicKey,
+					resourceName);
+				if (!previousConnection && !previousReceiverPublicKey.empty())
+				{
+					previousConnection = FindConnectionByPublicKeys(
+						*previousSnapshot,
+						senderPublicKey,
+						previousReceiverPublicKey,
+						resourceName);
+				}
+			}
+
+			std::string resolvedSenderPublicKey = senderPublicKey;
+			std::string resolvedSenderLabel;
+			SDK::FVector resolvedSenderWorldLocation{};
+			SDK::FVector2f resolvedSenderMapLocation{};
+			bool hasResolvedSender = false;
+			if (senderMarker)
+			{
+				resolvedSenderPublicKey = senderMarker->PublicKey;
+				resolvedSenderLabel = ComposeMarkerDisplayName(*senderMarker);
+				resolvedSenderWorldLocation = senderMarker->WorldLocation;
+				resolvedSenderMapLocation = senderMarker->MapLocation;
+				hasResolvedSender = true;
+			}
+			else if (previousConnection)
+			{
+				resolvedSenderPublicKey = previousConnection->SenderKey;
+				resolvedSenderLabel = previousConnection->SenderLabel;
+				resolvedSenderWorldLocation = previousConnection->SenderWorldLocation;
+				resolvedSenderMapLocation = previousConnection->SenderMapLocation;
+				hasResolvedSender = true;
+			}
+
+			if (!hasResolvedSender)
+			{
+				continue;
+			}
+
+			std::string resolvedReceiverPublicKey = receiverPublicKey;
+			std::string resolvedReceiverLabel;
+			SDK::FVector resolvedReceiverWorldLocation{};
+			SDK::FVector2f resolvedReceiverMapLocation{};
+			bool hasResolvedReceiver = false;
+			if (receiverIt != receiverLookup.end())
+			{
+				CargoMarker& receiverMarker = snapshot.Markers[receiverIt->second.MarkerIndex];
+				AppendResourceName(receiverMarker, resourceName);
+				resolvedReceiverPublicKey = receiverIt->second.PublicKey;
+				resolvedReceiverLabel = receiverMarker.DisplayName;
+				resolvedReceiverWorldLocation = receiverMarker.WorldLocation;
+				resolvedReceiverMapLocation = receiverMarker.MapLocation;
+				hasResolvedReceiver = true;
+			}
+			else if (previousReceiverMarker)
+			{
+				resolvedReceiverPublicKey = previousReceiverMarker->PublicKey;
+				resolvedReceiverLabel = previousReceiverMarker->DisplayName;
+				resolvedReceiverWorldLocation = previousReceiverMarker->WorldLocation;
+				resolvedReceiverMapLocation = previousReceiverMarker->MapLocation;
+				hasResolvedReceiver = true;
+			}
+			else if (previousConnection)
+			{
+				resolvedReceiverPublicKey = previousConnection->ReceiverKey;
+				resolvedReceiverLabel = previousConnection->ReceiverLabel;
+				resolvedReceiverWorldLocation = previousConnection->ReceiverWorldLocation;
+				resolvedReceiverMapLocation = previousConnection->ReceiverMapLocation;
+				hasResolvedReceiver = true;
+			}
+
+			if (!hasResolvedReceiver)
+			{
+				continue;
+			}
+
+			std::string dedupeKey = resolvedSenderPublicKey;
+			dedupeKey.push_back('\x1F');
+			dedupeKey += resolvedReceiverPublicKey;
+			dedupeKey.push_back('\x1F');
+			dedupeKey += resourceName;
+			if (!connectionKeys.insert(dedupeKey).second)
+			{
+				continue;
+			}
+
+			CargoConnection route{};
+			route.SenderKey = resolvedSenderPublicKey;
+			route.ReceiverKey = resolvedReceiverPublicKey;
+			route.SenderLabel = resolvedSenderLabel;
+			route.ReceiverLabel = resolvedReceiverLabel;
+			route.ItemDisplayName = resourceName;
+			route.RequestedAmount = connection.RequestedAmount;
+			route.SenderWorldLocation = resolvedSenderWorldLocation;
+			route.ReceiverWorldLocation = resolvedReceiverWorldLocation;
+			route.SenderMapLocation = resolvedSenderMapLocation;
+			route.ReceiverMapLocation = resolvedReceiverMapLocation;
+			route.LastObservedAtUnixMs = observedAtUnixMs;
+			snapshot.Connections.push_back(std::move(route));
+		}
+	}
+
+	template <typename TActorClass>
+	int CaptureActorsOfClass(
+		SDK::UWorld* world,
+		CargoSnapshot& snapshot,
+		std::unordered_map<std::string, size_t>& markerIndexes,
+		CargoKind kind,
+		const char* source,
+		bool allowCreateIfMissing = true)
+	{
+		if (!world)
+		{
+			return 0;
+		}
+
+		SDK::TArray<SDK::AActor*> actors;
+		SDK::UGameplayStatics::GetAllActorsOfClass(world, TActorClass::StaticClass(), &actors);
+
+		const int count = actors.Num();
+		const int maxLog = MapExtensionPluginConfig::Config::LogActorScanFallback() ? std::min(count, kMaxLoggedActorsPerKind) : 0;
+		std::string actorClassName = "(unknown)";
+		if (SDK::UClass* actorClass = TActorClass::StaticClass())
+		{
+			actorClassName = actorClass->GetName();
+		}
+
+		for (int index = 0; index < count; ++index)
+		{
+			SDK::AActor* actor = actors[index];
+			if (!actor)
+			{
+				continue;
+			}
+
+			const SDK::FVector worldLocation = actor->K2_GetActorLocation();
+			const std::string displayName = GetCargoActorDisplayName(world, actor, kind);
+			CargoMarker* existingMarker = FindMarkerByLocation(snapshot, kind, worldLocation);
+			if (existingMarker)
+			{
+				if (!displayName.empty())
+				{
+					existingMarker->DisplayName = displayName;
+				}
+			}
+			else if (allowCreateIfMissing)
+			{
+				AddOrUpdateMarker(
+					snapshot,
+					markerIndexes,
+					kind,
+					worldLocation,
+					BuildLocationKey(kind, worldLocation),
+					source,
+					displayName,
+					{});
+			}
+
+			if (index < maxLog)
+			{
+				LOG_INFO(
+					"  Actor fallback %s #%d class=%s actor=%s custom_name='%s' world=%s",
+					CargoKindToString(kind).c_str(),
+					index + 1,
+					actorClassName.c_str(),
+					actor->GetName().c_str(),
+					displayName.c_str(),
+					FormatVector(worldLocation).c_str());
+			}
+		}
+
+		return count;
+	}
+
+	void CaptureActorFallback(SDK::UWorld* world, CargoSnapshot& snapshot, std::unordered_map<std::string, size_t>& markerIndexes)
+	{
+		const size_t before = snapshot.Markers.size();
+		snapshot.ActorReceiverCount = CaptureActorsOfClass<SDK::ABP_PackageReceiver_C>(
+			world,
+			snapshot,
+			markerIndexes,
+			CargoKind::Receiver,
+			"actor_scan.receiver");
+		if (snapshot.ActorReceiverCount == 0)
+		{
+			snapshot.ActorReceiverCount = CaptureActorsOfClass<SDK::ACrItemReceiverBuilding>(
+				world,
+				snapshot,
+				markerIndexes,
+				CargoKind::Receiver,
+				"actor_scan.receiver_base",
+				false);
+		}
+		snapshot.ActorSenderCount = CaptureActorsOfClass<SDK::ABP_PackageSender_C>(
+			world,
+			snapshot,
+			markerIndexes,
+			CargoKind::Sender,
+			"actor_scan.sender");
+		if (snapshot.ActorSenderCount == 0)
+		{
+			snapshot.ActorSenderCount = CaptureActorsOfClass<SDK::ACrItemSenderBuilding>(
+				world,
+				snapshot,
+				markerIndexes,
+				CargoKind::Sender,
+				"actor_scan.sender_base",
+				false);
+		}
+
+		if (snapshot.Markers.size() > before)
+		{
+			snapshot.UsedActorFallback = true;
+		}
+	}
+
+	void CaptureTeleporters(
+		SDK::UWorld* world,
+		CargoSnapshot& snapshot,
+		SDK::ACrGameStateBase* gameState,
+		const BuildingCustomNameLookup& customNameLookup)
+	{
+		std::unordered_map<std::string, size_t> teleporterIndexes;
+		std::unordered_map<std::string, size_t> teleporterIndexesByLocation;
+
+		if (gameState && gameState->TeleportReplicator)
+		{
+			snapshot.HasTeleportReplicator = true;
+			snapshot.UsedTeleporterReplicator = true;
+
+			const SDK::FCrTeleportersContainer& teleporters = gameState->TeleportReplicator->TeleportersContainer;
+			for (int index = 0; index < teleporters.TeleportersData.Num(); ++index)
+			{
+				const SDK::FCrTeleporterData& teleporter = teleporters.TeleportersData[index];
+				const SDK::FVector worldLocation =
+					MakeVector(teleporter.Location.X, teleporter.Location.Y, teleporter.Location.Z);
+				const std::string internalKey = BuildReplicationHelperKey(teleporter.Teleporter);
+
+				AddOrUpdateTeleporter(
+					snapshot,
+					teleporterIndexes,
+					worldLocation,
+					internalKey,
+					"teleport_replicator",
+					GetBuildingCustomName(world, teleporter.Teleporter, customNameLookup));
+				teleporterIndexesByLocation.emplace(
+					BuildLocationKey("teleporter", worldLocation),
+					snapshot.Teleporters.size() - 1);
+			}
+		}
+
+		if (!world)
+		{
+			snapshot.TeleporterCount = static_cast<int>(snapshot.Teleporters.size());
+			return;
+		}
+
+		// When the replicator already produced data, skip the three actor-class
+		// scans. GetAllActorsOfClass iterates the full world actor list and is
+		// called on the main thread; running it three times every tick during
+		// heavy replication phases (Mass/Logistics/Building) is a measurable
+		// source of main-thread stalls that leads to missed ACKs and
+		// ConnectionTimeout. The replicator data is authoritative, so the scans
+		// only add noise when it is present.
+		const bool replicatorHasData =
+			snapshot.HasTeleportReplicator && !snapshot.Teleporters.empty();
+		if (replicatorHasData)
+		{
+			snapshot.TeleporterCount = static_cast<int>(snapshot.Teleporters.size());
+			return;
+		}
+
+		SDK::TArray<SDK::AActor*> actors;
+		SDK::UGameplayStatics::GetAllActorsOfClass(world, SDK::ACrTeleporter::StaticClass(), &actors);
+		for (int index = 0; index < actors.Num(); ++index)
+		{
+			SDK::ACrTeleporter* teleporter = static_cast<SDK::ACrTeleporter*>(actors[index]);
+			if (!teleporter)
+			{
+				continue;
+			}
+
+			const SDK::FVector worldLocation = teleporter->K2_GetActorLocation();
+			std::string displayName = GetBuildingCustomName(world, teleporter);
+			if (displayName.empty())
+			{
+				displayName = GetTeleporterDisplayName(teleporter);
+			}
+			const std::string locationKey = BuildLocationKey("teleporter", worldLocation);
+			const auto existingByLocation = teleporterIndexesByLocation.find(locationKey);
+			if (existingByLocation != teleporterIndexesByLocation.end())
+			{
+				TeleporterMarker& marker = snapshot.Teleporters[existingByLocation->second];
+				if (!displayName.empty())
+				{
+					marker.DisplayName = displayName;
+				}
+				marker.Source = "teleport_replicator+actor";
+				continue;
+			}
+
+			AddOrUpdateTeleporter(
+				snapshot,
+				teleporterIndexes,
+				worldLocation,
+				locationKey,
+				"actor_scan.teleporter",
+				displayName);
+		}
+
+		actors.Clear();
+		SDK::UGameplayStatics::GetAllActorsOfClass(world, SDK::ABP_Teleporter_C::StaticClass(), &actors);
+		for (int index = 0; index < actors.Num(); ++index)
+		{
+			SDK::ABP_Teleporter_C* teleporter = static_cast<SDK::ABP_Teleporter_C*>(actors[index]);
+			if (!teleporter)
+			{
+				continue;
+			}
+
+			const SDK::FVector worldLocation = teleporter->K2_GetActorLocation();
+			std::string displayName = GetBuildingCustomName(world, teleporter);
+			if (displayName.empty())
+			{
+				displayName = GetTeleporterDisplayName(static_cast<SDK::ACrTeleporter*>(teleporter));
+			}
+			const std::string locationKey = BuildLocationKey("teleporter", worldLocation);
+			const auto existingByLocation = teleporterIndexesByLocation.find(locationKey);
+			if (existingByLocation != teleporterIndexesByLocation.end())
+			{
+				TeleporterMarker& marker = snapshot.Teleporters[existingByLocation->second];
+				if (!displayName.empty())
+				{
+					marker.DisplayName = displayName;
+				}
+				if (marker.Source == "teleport_replicator")
+				{
+					marker.Source = "teleport_replicator+bp_actor";
+				}
+				else if (marker.Source.empty())
+				{
+					marker.Source = "bp_actor_scan.teleporter";
+				}
+				continue;
+			}
+
+			AddOrUpdateTeleporter(
+				snapshot,
+				teleporterIndexes,
+				worldLocation,
+				locationKey,
+				"bp_actor_scan.teleporter",
+				displayName);
+			teleporterIndexesByLocation.emplace(locationKey, snapshot.Teleporters.size() - 1);
+		}
+
+		actors.Clear();
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world,
+			SDK::ACrMegamachineTeleporterDevice::StaticClass(),
+			&actors);
+		for (int index = 0; index < actors.Num(); ++index)
+		{
+			SDK::ACrMegamachineTeleporterDevice* teleporter =
+				static_cast<SDK::ACrMegamachineTeleporterDevice*>(actors[index]);
+			if (!teleporter)
+			{
+				continue;
+			}
+
+			const SDK::FVector worldLocation = teleporter->K2_GetActorLocation();
+			std::string displayName = GetBuildingCustomName(world, teleporter);
+			if (displayName.empty())
+			{
+				displayName = GetTeleporterDisplayName(teleporter);
+			}
+			const std::string locationKey = BuildLocationKey("teleporter", worldLocation);
+			const auto existingByLocation = teleporterIndexesByLocation.find(locationKey);
+			if (existingByLocation != teleporterIndexesByLocation.end())
+			{
+				TeleporterMarker& marker = snapshot.Teleporters[existingByLocation->second];
+				if (!displayName.empty())
+				{
+					marker.DisplayName = displayName;
+				}
+				if (marker.Source == "teleport_replicator")
+				{
+					marker.Source = "teleport_replicator+device_actor";
+				}
+				else if (marker.Source.empty())
+				{
+					marker.Source = "actor_scan.teleporter_device";
+				}
+				continue;
+			}
+
+			AddOrUpdateTeleporter(
+				snapshot,
+				teleporterIndexes,
+				worldLocation,
+				locationKey,
+				"actor_scan.teleporter_device",
+				displayName);
+			teleporterIndexesByLocation.emplace(locationKey, snapshot.Teleporters.size() - 1);
+		}
+
+		snapshot.TeleporterCount = static_cast<int>(snapshot.Teleporters.size());
+	}
+
+	void CapturePlayers(SDK::UWorld* world, CargoSnapshot& snapshot)
+	{
+		if (!world)
+		{
+			snapshot.PlayerCount = 0;
+			return;
+		}
+
+		std::unordered_map<std::string, size_t> playerIndexes;
+		SDK::TArray<SDK::AActor*> actors;
+		SDK::UGameplayStatics::GetAllActorsOfClass(world, SDK::ACrCharacterPlayerBase::StaticClass(), &actors);
+		for (int index = 0; index < actors.Num(); ++index)
+		{
+			SDK::ACrCharacterPlayerBase* player = static_cast<SDK::ACrCharacterPlayerBase*>(actors[index]);
+			if (!player)
+			{
+				continue;
+			}
+
+			CapturePlayerPawn(
+				snapshot,
+				playerIndexes,
+				static_cast<SDK::APawn*>(player),
+				"actor_scan.player");
+		}
+
+		const int localPlayerCount = std::max(
+			1,
+			SDK::UGameplayStatics::GetNumLocalPlayerControllers(world));
+		for (int playerIndex = 0; playerIndex < localPlayerCount; ++playerIndex)
+		{
+			// The primary local player controller is "me" for the local player.
+			const bool isSelf = playerIndex == 0;
+			SDK::APawn* playerPawn = SDK::UGameplayStatics::GetPlayerPawn(world, playerIndex);
+			if (playerPawn)
+			{
+				CapturePlayerPawn(
+					snapshot,
+					playerIndexes,
+					playerPawn,
+					"local_player_pawn",
+					isSelf);
+				continue;
+			}
+
+			SDK::APlayerController* controller =
+				SDK::UGameplayStatics::GetPlayerController(world, playerIndex);
+			if (!controller)
+			{
+				continue;
+			}
+
+			CapturePlayerPawn(
+				snapshot,
+				playerIndexes,
+				controller->K2_GetPawn(),
+				"local_player_controller",
+				isSelf);
+		}
+
+		snapshot.PlayerCount = static_cast<int>(snapshot.Players.size());
+	}
+
+	struct TrackedPlantDefinition final
+	{
+		const char* RewardClassName;
+		const char* DisplayName;
+	};
+
+	constexpr TrackedPlantDefinition kTrackedPlantDefinitions[] =
+	{
+		{ "I_Hydrobulb_C", "Hydrobulb" },
+		{ "I_Polifruit_C", "Polifruit" },
+		{ "I_Oxallop_C", "Oxallop" },
+		{ "I_Purplant_C", "Purplant" },
+		{ "I_SerpentRoot_C", "Serpent Root" },
+		{ "I_Prickler_C", "Prickler" },
+		{ "I_PrismHerb_C", "Prism Herb" },
+		{ "I_Sulheart_C", "Sulheart" }
+	};
+
+	constexpr TrackedPlantDefinition kTrackedPlantActorDefinitions[] =
+	{
+		{ "BP_Gatherable_GoldFruitTree_Large_A_C", "Grubbler" },
+		{ "BP_Gatherable_GoldFruitTree_Large_F_C", "Grubbler" },
+		{ "BP_SikkimRhubarb_Fruit_C", "Glowcap" },
+		{ "BP_Gatherable_Thornfruit_Fruit_C", "Prickler" },
+		{ "BP_Gatherable_NootkaLupine_Fruit_C", "Prism Herb" },
+		{ "BP_Gatherable_Plant_h_C", "Plant" }
+	};
+
+	bool TryGetTrackedPlantName(SDK::ACrGatherableBaseActor* actor, std::string& outName)
+	{
+		outName.clear();
+		if (!actor)
+		{
+			return false;
+		}
+
+		SDK::UClass* rewardClass = actor->InteractionRewardResource.Get();
+		if (rewardClass)
+		{
+			const std::string rewardClassName = rewardClass->GetName();
+			for (const TrackedPlantDefinition& definition : kTrackedPlantDefinitions)
+			{
+				if (rewardClassName == definition.RewardClassName)
+				{
+					outName = definition.DisplayName;
+					return true;
+				}
+			}
+		}
+
+		const std::string actorClassName = actor->Class
+			? actor->Class->GetName()
+			: std::string{};
+		for (const TrackedPlantDefinition& definition : kTrackedPlantActorDefinitions)
+		{
+			if (actorClassName == definition.RewardClassName)
+			{
+				outName = definition.DisplayName;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool TryGetTrackedStarTearsName(
+		SDK::ACrGatherableBaseActor* actor,
+		std::string& outName)
+	{
+		outName.clear();
+		if (!actor)
+		{
+			return false;
+		}
+
+		SDK::UClass* rewardClass = actor->InteractionRewardResource.Get();
+		if (!rewardClass)
+		{
+			return false;
+		}
+
+		if (rewardClass == SDK::UI_StarTears_C::StaticClass()
+			|| rewardClass->GetName() == "I_StarTears_C")
+		{
+			outName = "Star Tears";
+			return true;
+		}
+		return false;
+	}
+
+	bool TryGetTrackedGatherableResource(
+		SDK::ACrGatherableBaseActor* actor,
+		PoiKind& outKind,
+		std::string& outName)
+	{
+		outKind = PoiKind::PlantResource;
+		if (TryGetTrackedStarTearsName(actor, outName))
+		{
+			outKind = PoiKind::StarTears;
+			return true;
+		}
+		return TryGetTrackedPlantName(actor, outName);
+	}
+
+	bool TryGetTrackedIgnitiumName(
+		SDK::ACrOreActor* actor,
+		std::string& outName)
+	{
+		outName.clear();
+		if (!actor)
+		{
+			return false;
+		}
+
+		SDK::UClass* resourceClass = actor->Resource.Get();
+		if (resourceClass
+			&& (resourceClass == SDK::UI_FireWaveOre_C::StaticClass()
+				|| resourceClass->GetName() == "I_FireWaveOre_C"))
+		{
+			outName = "Ignitium";
+			return true;
+		}
+		return false;
+	}
+
+	bool IsTrackedPlantName(const std::string& resourceName)
+	{
+		for (const TrackedPlantDefinition& definition : kTrackedPlantDefinitions)
+		{
+			if (resourceName == definition.DisplayName)
+			{
+				return true;
+			}
+		}
+		for (const TrackedPlantDefinition& definition : kTrackedPlantActorDefinitions)
+		{
+			if (resourceName == definition.DisplayName)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool IsTrackedResourceName(const std::string& resourceName)
+	{
+		return IsTrackedPlantName(resourceName)
+			|| resourceName == "Ignitium"
+			|| resourceName == "Star Tears";
+	}
+
+	using PoiCatalog = std::unordered_map<std::string, PoiMarker>;
+
+	bool IsRuptureResource(PoiKind kind)
+	{
+		return kind == PoiKind::Ignitium || kind == PoiKind::StarTears;
+	}
+
+	struct ObservedResourceActor
+	{
+		SDK::AActor* Pointer = nullptr;
+		int32_t Index = -1;
+		SDK::FName Name{};
+		PoiKind Kind = PoiKind::PlantResource;
+		bool Retired = false;
+		bool Sampled = false;
+	};
+
+	struct ObservedPlantCatalogState final
+	{
+		SDK::UWorld* World = nullptr;
+		MapResources::GenerationTracker Generation;
+		std::unordered_map<int32_t, ObservedResourceActor> Actors;
+		PoiCatalog Resources;
+		size_t LastAmbiguousDepletionCount = 0;
+	};
+	std::mutex g_observedPlantCatalogMutex;
+	ObservedPlantCatalogState g_observedPlantCatalog{};
+
+	void ResetObservedPlantCatalog()
+	{
+		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+		g_observedPlantCatalog = ObservedPlantCatalogState{};
+	}
+
+	bool PoiMarkersHaveSameObservedState(const PoiMarker& left, const PoiMarker& right)
+	{
+		return left.Kind == right.Kind
+			&& left.Depleted == right.Depleted
+			&& left.Harvestability == right.Harvestability
+			&& left.WorldLocation.X == right.WorldLocation.X
+			&& left.WorldLocation.Y == right.WorldLocation.Y
+			&& left.WorldLocation.Z == right.WorldLocation.Z
+			&& left.DisplayName == right.DisplayName
+			&& left.ResourceName == right.ResourceName
+			&& left.PublicKey == right.PublicKey;
+	}
+
+	PoiMarker BuildPoiMarker(
+		PoiKind kind,
+		const SDK::FVector& worldLocation,
+		const char* keyPrefix,
+		const char* source,
+		std::string displayName,
+		std::string resourceName)
+	{
+		PoiMarker marker{};
+		marker.Kind = kind;
+		marker.Depleted = false;
+		marker.WorldLocation = worldLocation;
+		marker.MapLocation = MapStateRuntime::Detail::WorldToMap(worldLocation);
+		marker.DisplayName = std::move(displayName);
+		marker.ResourceName = std::move(resourceName);
+		marker.Source = source ? source : "unknown";
+		marker.InternalKey = BuildLocationKey(keyPrefix, worldLocation);
+		marker.PublicKey = MakeTaggedPublicKey("poi", marker.InternalKey);
+		return marker;
+	}
+
+	void StorePoiMarker(PoiCatalog& catalog, PoiMarker marker)
+	{
+		// Ignitium and Star Tears can legitimately overlap near the end of the
+		// regeneration cycle. Their actor scans are independent, so neither kind
+		// may infer that the other is depleted merely from proximity or scan order.
+		std::string publicKey = marker.PublicKey;
+		catalog.insert_or_assign(std::move(publicKey), std::move(marker));
+	}
+
+	bool RefreshObservedRuptureResourceGeneration(SDK::UWorld* world, const RuptureCycleSnapshot& cycle)
+	{
+		if (!world)
+		{
+			return false;
+		}
+
+		SDK::TArray<SDK::AActor*> replicationActors;
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world,
+			SDK::ACrGatherableSpawnersRepActor::StaticClass(),
+			&replicationActors);
+
+		SDK::ACrGatherableSpawnersRepActor* replicationActor = nullptr;
+		for (int index = 0; index < replicationActors.Num(); ++index)
+		{
+			auto* candidate = static_cast<SDK::ACrGatherableSpawnersRepActor*>(
+				replicationActors[index]);
+			if (candidate)
+			{
+				replicationActor = candidate;
+				break;
+			}
+		}
+		const std::optional<int32_t> seed = replicationActor
+			? std::optional<int32_t>(replicationActor->RepGlobalGatherablePCGSeed) : std::nullopt;
+		const std::optional<bool> heatMoving = cycle.Available
+			? std::optional<bool>(cycle.Wave == "Heat" && cycle.Stage == "Moving") : std::nullopt;
+		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+		if (g_observedPlantCatalog.World != world)
+		{
+			g_observedPlantCatalog = ObservedPlantCatalogState{};
+			g_observedPlantCatalog.World = world;
+		}
+
+		if (!g_observedPlantCatalog.Generation.Observe(seed, heatMoving))
+		{
+			return false;
+		}
+
+		// Mass retires representations asynchronously. Never let an actor already
+		// observed in the old generation repopulate the freshly cleared catalog.
+		for (auto& [index, actor] : g_observedPlantCatalog.Actors)
+		{
+			if (IsRuptureResource(actor.Kind) && actor.Sampled) actor.Retired = true;
+		}
+		for (auto it = g_observedPlantCatalog.Resources.begin();
+			it != g_observedPlantCatalog.Resources.end();)
+		{
+			const PoiKind kind = it->second.Kind;
+			if (kind == PoiKind::Ignitium || kind == PoiKind::StarTears)
+			{
+				it = g_observedPlantCatalog.Resources.erase(it);
+			}
+			else
+			{
+				++it;
+			}
+		}
+		if (MapExtensionPluginConfig::Config::LogResourceObservations())
+		{
+			LOG_INFO("ResourceGeneration: epoch=%llu source=%s seed=%d wave=%s stage=%s",
+				static_cast<unsigned long long>(g_observedPlantCatalog.Generation.Generation),
+				seed ? "replicated_seed" : "heat_moving", seed.value_or(0), cycle.Wave.c_str(), cycle.Stage.c_str());
+		}
+		return true;
+	}
+
+	bool StoreObservedPoiMarker(SDK::UWorld* world, PoiMarker marker)
+	{
+		if (!world || (marker.Kind != PoiKind::PlantResource
+			&& marker.Kind != PoiKind::Ignitium
+			&& marker.Kind != PoiKind::StarTears))
+		{
+			return false;
+		}
+
+		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+		if (g_observedPlantCatalog.World != world)
+		{
+			g_observedPlantCatalog = ObservedPlantCatalogState{};
+			g_observedPlantCatalog.World = world;
+		}
+
+		const auto existing = g_observedPlantCatalog.Resources.find(marker.PublicKey);
+		if (existing != g_observedPlantCatalog.Resources.end()
+			&& PoiMarkersHaveSameObservedState(existing->second, marker))
+		{
+			return false;
+		}
+		if (MapExtensionPluginConfig::Config::LogResourceObservations())
+		{
+			LOG_INFO("ResourceObservation: epoch=%llu observed_at=%lld resource=%s state=%s source=%s world=(%.1f,%.1f,%.1f)",
+				static_cast<unsigned long long>(g_observedPlantCatalog.Generation.Generation),
+				static_cast<long long>(GetCurrentUnixTimeMilliseconds()), marker.ResourceName.c_str(),
+				MapResources::StateName(marker.Depleted, marker.Harvestability), marker.Source.c_str(),
+				marker.WorldLocation.X, marker.WorldLocation.Y, marker.WorldLocation.Z);
+		}
+
+		StorePoiMarker(g_observedPlantCatalog.Resources, std::move(marker));
+		return true;
+	}
+
+	bool RememberResourceActor(SDK::UWorld* world, SDK::AActor* actor, PoiKind kind, bool beginPlay = false)
+	{
+		if (!world || !actor || actor->bActorIsBeingDestroyed) return false;
+		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+		if (g_observedPlantCatalog.World != world)
+		{
+			g_observedPlantCatalog = {};
+			g_observedPlantCatalog.World = world;
+		}
+		auto& remembered = g_observedPlantCatalog.Actors[actor->Index];
+		if (!beginPlay && remembered.Pointer == actor && remembered.Name == actor->Name)
+		{
+			remembered.Sampled = true;
+			return !remembered.Retired;
+		}
+		// BeginPlay records identity only. Read runtime properties on the next
+		// capture, after initialization and generation invalidation have finished.
+		remembered = { actor, actor->Index, actor->Name, kind, false, !beginPlay };
+		return true;
+	}
+
+	bool IsObservedActorStillLoaded(const ObservedResourceActor& actor)
+	{
+		// The generated FWeakObjectPtr::Get only checks the index. Also validate
+		// the address and name before dereferencing a remembered actor.
+		__try
+		{
+			auto* object = SDK::UObject::GObjects->GetByIndex(actor.Index);
+			return object == actor.Pointer && object && object->Name == actor.Name
+				&& !actor.Pointer->bActorIsBeingDestroyed;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			return false;
+		}
+	}
+
+	struct ResourceReadContext
+	{
+		SDK::UCrGatherableSpawnersSubsystem* Spawners = nullptr;
+		SDK::UCrGatherableActorInteractivityData* Interactivity = nullptr;
+		RuptureCycleLocalState Cycle;
+		bool HasCycle = false;
+		float StageProgress = 0.0f;
+		std::unordered_set<std::string> LoadedResourceKeys;
+	};
+
+	ResourceReadContext BuildResourceReadContext(SDK::UWorld* world)
+	{
+		ResourceReadContext context;
+		context.Spawners = TryGetWorldSubsystem<SDK::UCrGatherableSpawnersSubsystem>(
+			world, TryGetStaticClass<SDK::UCrGatherableSpawnersSubsystem>());
+		if (auto* wave = ResolveWaveSubsystem(world))
+		{
+			context.HasCycle = TryReadLocalRuptureCycleState(wave, context.Cycle);
+			if (context.HasCycle)
+			{
+				context.StageProgress = wave->GetCurrentStageProgress();
+				context.HasCycle = std::isfinite(context.StageProgress);
+			}
+		}
+		if (auto* settings = SDK::UGatherableCropSettings::GetDefaultObj())
+		{
+			// Let the engine resolve the soft reference; the generated Get() ignores
+			// weak-object serial numbers. This conversion does not load the asset.
+			SDK::TSoftObjectPtr<SDK::UObject> soft{};
+			soft.WeakPtr = settings->GatherableInteractivityData.WeakPtr;
+			soft.ObjectID = settings->GatherableInteractivityData.ObjectID;
+			auto* data = SDK::UKismetSystemLibrary::Conv_SoftObjectReferenceToObject(soft);
+			if (TryIsObjectOfClass(data, TryGetStaticClass<SDK::UCrGatherableActorInteractivityData>()))
+				context.Interactivity = static_cast<SDK::UCrGatherableActorInteractivityData*>(data);
+		}
+		return context;
+	}
+
+	Harvestability ReadStarTearsHarvestability(SDK::UClass* actorClass, const ResourceReadContext& context)
+	{
+		if (!context.HasCycle || !context.Interactivity) return Harvestability::Unknown;
+		for (const auto& pair : context.Interactivity->Data)
+		{
+			auto configuredClass = pair.Key(); // Generated Get() is not const.
+			if (configuredClass.Get() != actorClass) continue;
+			for (const auto& rule : pair.Value().InteractivityForWaveStages)
+			{
+				if (rule.WaveStage != context.Cycle.Stage) continue;
+				// CanInteract evaluates the first rule for the current stage.
+				if (context.StageProgress < rule.EnableInteractionEnviroWaveStageProgressThresholdStart
+					|| context.StageProgress >= rule.EnableInteractionEnviroWaveStageProgressThresholdEnd) return Harvestability::Unavailable;
+				if (rule.WaveStage == SDK::EEnviroWaveStage::Fadeout
+					&& !rule.FadeoutSubstages.Contains(context.Cycle.FadeoutSubstage)) return Harvestability::Unavailable;
+				if (rule.WaveStage == SDK::EEnviroWaveStage::Growback
+					&& !rule.GrowbackSubstages.Contains(context.Cycle.GrowbackSubstage)) return Harvestability::Unavailable;
+				return Harvestability::Available;
+			}
+			return Harvestability::Unavailable;
+		}
+		return Harvestability::Unknown;
+	}
+
+	bool ObserveTrackedGatherableActor(
+		SDK::UWorld* world,
+		SDK::ACrGatherableBaseActor* actor,
+		ResourceReadContext& context)
+	{
+		PoiKind kind = PoiKind::PlantResource;
+		std::string resourceName;
+		if (!world || !TryGetTrackedGatherableResource(actor, kind, resourceName)
+			|| !RememberResourceActor(world, actor, kind))
+		{
+			return false;
+		}
+
+		const char* keyPrefix = kind == PoiKind::StarTears
+			? "poi.star_tears"
+			: "poi.plant";
+		PoiMarker marker = BuildPoiMarker(
+			kind,
+			actor->K2_GetActorLocation(),
+			keyPrefix,
+			"actor_observation.gatherable",
+			resourceName,
+			resourceName);
+		// bIsPermanentlyGathered configures persistence after gathering; it is
+		// not evidence that this live actor has already been gathered.
+		marker.Depleted = actor->bIsDepleted;
+		if (kind == PoiKind::StarTears)
+		{
+			marker.Harvestability = ReadStarTearsHarvestability(actor->Class, context);
+			if (!marker.Depleted && context.Spawners && context.Spawners->BP_IsGatherableDepleted(actor))
+			{
+				marker.Depleted = true;
+				marker.Source = "subsystem.depleted";
+			}
+		}
+		context.LoadedResourceKeys.insert(marker.PublicKey);
+		StoreObservedPoiMarker(world, std::move(marker));
+		return true;
+	}
+
+	bool ObserveTrackedOreActor(
+		SDK::UWorld* world,
+		SDK::ACrOreActor* actor,
+		ResourceReadContext& context)
+	{
+		std::string resourceName;
+		if (!world || !TryGetTrackedIgnitiumName(actor, resourceName)
+			|| !RememberResourceActor(world, actor, PoiKind::Ignitium))
+		{
+			return false;
+		}
+
+		PoiMarker marker = BuildPoiMarker(
+			PoiKind::Ignitium,
+			actor->K2_GetActorLocation(),
+			"poi.ignitium",
+			"actor_observation.ore",
+			resourceName,
+			resourceName);
+		marker.Depleted = actor->OreData.bIsDepleted;
+		marker.Harvestability = Harvestability::Unknown;
+		if (actor->IsA(SDK::ACrStandaloneMeteOreChunk::StaticClass()))
+		{
+			marker.Harvestability = static_cast<SDK::ACrStandaloneMeteOreChunk*>(actor)->IsMineableChunk()
+				? Harvestability::Available : Harvestability::Unavailable;
+		}
+		if (!marker.Depleted && context.Spawners && context.Spawners->BP_IsGatherableDepleted(actor))
+		{
+			marker.Depleted = true;
+			marker.Source = "subsystem.depleted";
+		}
+		context.LoadedResourceKeys.insert(marker.PublicKey);
+		StoreObservedPoiMarker(world, std::move(marker));
+		return true;
+	}
+
+	void RefreshLoadedResourceActors(SDK::UWorld* world, ResourceReadContext& context)
+	{
+		std::vector<ObservedResourceActor> actors;
+		{
+			std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+			for (const auto& [index, actor] : g_observedPlantCatalog.Actors) actors.push_back(actor);
+		}
+		for (const auto& actor : actors)
+		{
+			if (!IsObservedActorStillLoaded(actor))
+			{
+				std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+				g_observedPlantCatalog.Actors.erase(actor.Index);
+				continue; // Unloading alone does not prove depletion.
+			}
+			if (actor.Retired) continue;
+			if (actor.Kind == PoiKind::Ignitium)
+				ObserveTrackedOreActor(world, static_cast<SDK::ACrOreActor*>(actor.Pointer), context);
+			else
+				ObserveTrackedGatherableActor(world, static_cast<SDK::ACrGatherableBaseActor*>(actor.Pointer), context);
+		}
+	}
+
+	void MergeObservedPoiMarkers(SDK::UWorld* world, PoiCatalog& catalog)
+	{
+		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+		if (!world || g_observedPlantCatalog.World != world)
+		{
+			return;
+		}
+		for (const auto& entry : g_observedPlantCatalog.Resources)
+		{
+			StorePoiMarker(catalog, entry.second);
+		}
+	}
+
+	template <typename TDepletedEntry>
+	size_t MarkDepletedResourceEntries(
+		SDK::UWorld* world,
+		PoiCatalog& catalog,
+		const SDK::TArray<TDepletedEntry>& entries,
+		const std::unordered_set<std::string>& loadedResourceKeys)
+	{
+		size_t ambiguous = 0;
+		for (const auto& entry : entries)
+		{
+			// A replicated entry has no resource identity. Include already depleted
+			// candidates too: skipping one could incorrectly select its neighbour.
+			MapResources::UniqueMatch match;
+			PoiMarker* candidate = nullptr;
+			for (auto& [key, marker] : catalog)
+			{
+				if (marker.Kind != PoiKind::PlantResource && !IsRuptureResource(marker.Kind)) continue;
+				const auto isNearLocation = [&](const SDK::FVector& location)
+				{
+					const auto delta = marker.WorldLocation - location;
+					return delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z
+						<= kDepletedPlantMatchRadius * kDepletedPlantMatchRadius;
+				};
+				if (isNearLocation(entry.Location) || isNearLocation(entry.Bounds.Origin))
+				{
+					match.Add();
+					candidate = &marker;
+				}
+			}
+			if (match.Count > 1) ++ambiguous;
+			if (!match.IsUnique() || !candidate || candidate->Depleted) continue;
+			// The untyped record may belong to another phase/resource at this
+			// position. Fresh actor + subsystem reads outrank spatial inference.
+			if (loadedResourceKeys.contains(candidate->PublicKey)) continue;
+			candidate->Depleted = true;
+			candidate->Source = "replicated.depleted";
+			StoreObservedPoiMarker(world, *candidate);
+		}
+		return ambiguous;
+	}
+
+	void MarkReplicatedDepletedResources(SDK::UWorld* world, PoiCatalog& catalog,
+		const std::unordered_set<std::string>& loadedResourceKeys)
+	{
+		size_t ambiguous = 0;
+		SDK::TArray<SDK::AActor*> replicationActors;
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world, SDK::ACrGatherableSpawnersRepActor::StaticClass(), &replicationActors);
+		for (auto* actor : replicationActors)
+		{
+			auto* replicationActor = static_cast<SDK::ACrGatherableSpawnersRepActor*>(actor);
+			if (!replicationActor) continue;
+			ambiguous += MarkDepletedResourceEntries(world, catalog,
+				replicationActor->RepDepletedGatherables.RepDepletedGatherables, loadedResourceKeys);
+			ambiguous += MarkDepletedResourceEntries(world, catalog,
+				replicationActor->RepPermanentDepletedGatherables.RepPermanentDepletedGatherables, loadedResourceKeys);
+		}
+		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
+		if (ambiguous != g_observedPlantCatalog.LastAmbiguousDepletionCount)
+		{
+			g_observedPlantCatalog.LastAmbiguousDepletionCount = ambiguous;
+			if (MapExtensionPluginConfig::Config::LogResourceObservations())
+				LOG_INFO("ResourceDepletion: ambiguous_entries=%zu (left unchanged)", ambiguous);
+		}
+	}
+
+	bool PoiMarkerSortsBefore(const PoiMarker& left, const PoiMarker& right)
+	{
+		return left.PublicKey < right.PublicKey;
+	}
+
+
+
+
+	void HashPoiRevisionByte(uint64_t& hash, uint8_t value)
+	{
+		hash ^= value;
+		hash *= 1099511628211ull;
+	}
+
+	void HashPoiRevisionUint64(uint64_t& hash, uint64_t value)
+	{
+		for (int shift = 0; shift < 64; shift += 8)
+		{
+			HashPoiRevisionByte(hash, static_cast<uint8_t>((value >> shift) & 0xffu));
+		}
+	}
+
+	void HashPoiRevisionString(uint64_t& hash, const std::string& value)
+	{
+		HashPoiRevisionUint64(hash, static_cast<uint64_t>(value.size()));
+		for (const unsigned char character : value)
+		{
+			HashPoiRevisionByte(hash, character);
+		}
+	}
+
+	void HashPoiRevisionFloat(uint64_t& hash, float value)
+	{
+		uint32_t bits = 0;
+		static_assert(sizeof(bits) == sizeof(value));
+		std::memcpy(&bits, &value, sizeof(bits));
+		HashPoiRevisionUint64(hash, bits);
+	}
+
+	uint64_t ComputePoiRevision(const std::vector<PoiMarker>& markers)
+	{
+		uint64_t hash = 14695981039346656037ull;
+		HashPoiRevisionUint64(hash, static_cast<uint64_t>(markers.size()));
+		for (const PoiMarker& marker : markers)
+		{
+			HashPoiRevisionByte(hash, static_cast<uint8_t>(marker.Kind));
+			HashPoiRevisionByte(hash, marker.Depleted ? 1u : 0u);
+			HashPoiRevisionByte(hash, static_cast<uint8_t>(marker.Harvestability));
+			HashPoiRevisionFloat(hash, static_cast<float>(marker.WorldLocation.X));
+			HashPoiRevisionFloat(hash, static_cast<float>(marker.WorldLocation.Y));
+			HashPoiRevisionFloat(hash, static_cast<float>(marker.WorldLocation.Z));
+			HashPoiRevisionString(hash, marker.DisplayName);
+			HashPoiRevisionString(hash, marker.ResourceName);
+			HashPoiRevisionString(hash, marker.Source);
+			HashPoiRevisionString(hash, marker.PublicKey);
+		}
+		return hash != 0 ? hash : 1;
+	}
+
+	void FinalizePoiCatalog(CargoSnapshot& snapshot, PoiCatalog& catalog)
+	{
+		snapshot.Pois.clear();
+		snapshot.Pois.reserve(catalog.size());
+		for (auto& entry : catalog)
+		{
+			snapshot.Pois.push_back(std::move(entry.second));
+		}
+		std::sort(snapshot.Pois.begin(), snapshot.Pois.end(), PoiMarkerSortsBefore);
+		snapshot.PoiRevision = ComputePoiRevision(snapshot.Pois);
+	}
+
+	void UpdatePoiCounts(CargoSnapshot& snapshot)
+	{
+		snapshot.AbandonedBaseCount = 0;
+		snapshot.PlantResourceCount = 0;
+		snapshot.IgnitiumCount = 0;
+		snapshot.StarTearsCount = 0;
+		for (const PoiMarker& marker : snapshot.Pois)
+		{
+			switch (marker.Kind)
+			{
+			case PoiKind::AbandonedBase:
+				++snapshot.AbandonedBaseCount;
+				break;
+			case PoiKind::PlantResource:
+				++snapshot.PlantResourceCount;
+				break;
+			case PoiKind::Ignitium:
+				++snapshot.IgnitiumCount;
+				break;
+			case PoiKind::StarTears:
+				++snapshot.StarTearsCount;
+				break;
+			}
+		}
+	}
+
+	bool HasStarTearsObservationNear(
+		const std::vector<PoiMarker>& markers,
+		const SDK::FVector& worldLocation)
+	{
+		const double radiusSquared =
+			kRuptureResourceSiteMatchRadius * kRuptureResourceSiteMatchRadius;
+		for (const PoiMarker& marker : markers)
+		{
+			if (marker.Kind != PoiKind::StarTears)
+			{
+				continue;
+			}
+
+			const double deltaX =
+				static_cast<double>(marker.WorldLocation.X)
+				- static_cast<double>(worldLocation.X);
+			const double deltaY =
+				static_cast<double>(marker.WorldLocation.Y)
+				- static_cast<double>(worldLocation.Y);
+			if (deltaX * deltaX + deltaY * deltaY <= radiusSquared)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	enum class RuptureResourcePhase
+	{
+		Unknown,
+		Ignitium,
+		Transition,
+		StarTears
+	};
+
+	RuptureResourcePhase ResolveRuptureResourcePhase(
+		const RuptureCycleSnapshot& ruptureCycle)
+	{
+		if (!ruptureCycle.Available)
+		{
+			return RuptureResourcePhase::Unknown;
+		}
+
+		if (ruptureCycle.HasElapsed && std::isfinite(ruptureCycle.ElapsedSeconds))
+		{
+			double cyclePosition = std::fmod(
+				ruptureCycle.ElapsedSeconds,
+				kRuptureCycleSeconds);
+			if (cyclePosition < 0.0)
+			{
+				cyclePosition += kRuptureCycleSeconds;
+			}
+
+			const double coolingEnd =
+				kRuptureBurningSeconds + kRuptureCoolingSeconds;
+			const double stabilizingEnd =
+				coolingEnd + kRuptureStabilizingSeconds;
+			if (cyclePosition < coolingEnd)
+			{
+				return RuptureResourcePhase::Ignitium;
+			}
+			if (cyclePosition < stabilizingEnd)
+			{
+				return RuptureResourcePhase::Transition;
+			}
+			return RuptureResourcePhase::StarTears;
+		}
+
+		if (ruptureCycle.Stage == "Moving"
+			|| ruptureCycle.Stage == "Fadeout")
+		{
+			return RuptureResourcePhase::Ignitium;
+		}
+		if (ruptureCycle.Stage == "Growback")
+		{
+			return RuptureResourcePhase::Transition;
+		}
+		if (ruptureCycle.Stage == "PreWave")
+		{
+			return RuptureResourcePhase::StarTears;
+		}
+		return RuptureResourcePhase::Unknown;
+	}
+
+	void ApplyRuptureResourcePhase(CargoSnapshot& snapshot)
+	{
+		const RuptureResourcePhase phase =
+			ResolveRuptureResourcePhase(snapshot.RuptureCycle);
+		const bool arcadiaStable = phase == RuptureResourcePhase::StarTears;
+		const bool ignitiumPhase = phase == RuptureResourcePhase::Ignitium;
+		if (!arcadiaStable && !ignitiumPhase)
+		{
+			// During the transition, both resources can legitimately be present.
+			return;
+		}
+
+		std::vector<PoiMarker> phaseMarkers;
+		phaseMarkers.reserve(snapshot.Pois.size());
+		for (const PoiMarker& marker : snapshot.Pois)
+		{
+			if (ignitiumPhase && marker.Kind == PoiKind::StarTears)
+			{
+				continue;
+			}
+			if (!arcadiaStable || marker.Kind != PoiKind::Ignitium)
+			{
+				phaseMarkers.push_back(marker);
+				continue;
+			}
+
+			// A harvested Ignitium site cannot grow Star Tears. If the site was
+			// left intact, expose it as Star Tears while Arcadia is stable. An
+			// actual Star Tears actor observation always wins over this projection.
+			if (marker.Depleted
+				|| HasStarTearsObservationNear(snapshot.Pois, marker.WorldLocation))
+			{
+				continue;
+			}
+
+			PoiMarker projected = marker;
+			projected.Kind = PoiKind::StarTears;
+			projected.Harvestability = Harvestability::Available;
+			projected.DisplayName = "Star Tears";
+			projected.ResourceName = "Star Tears";
+			projected.Source = "rupture_phase.ignitium_to_star_tears";
+			projected.InternalKey = BuildLocationKey(
+				"poi.star_tears.phase",
+				projected.WorldLocation);
+			projected.PublicKey = MakeTaggedPublicKey(
+				"poi",
+				projected.InternalKey);
+			phaseMarkers.push_back(std::move(projected));
+		}
+
+		snapshot.Pois = std::move(phaseMarkers);
+		std::sort(snapshot.Pois.begin(), snapshot.Pois.end(), PoiMarkerSortsBefore);
+		snapshot.PoiRevision = ComputePoiRevision(snapshot.Pois);
+		UpdatePoiCounts(snapshot);
+	}
+
+	bool CapturePois(
+		SDK::UWorld* world,
+		CargoSnapshot& snapshot,
+		const CargoSnapshot& previousSnapshot,
+		int64_t observedAtUnixMs)
+	{
+		if (!world)
+		{
+			return false;
+		}
+
+		const std::string worldName = !snapshot.WorldName.empty()
+			? snapshot.WorldName
+			: world->GetName();
+		const bool ruptureResourceGenerationChanged =
+			RefreshObservedRuptureResourceGeneration(world, snapshot.RuptureCycle);
+		auto resourceContext = BuildResourceReadContext(world);
+		RefreshLoadedResourceActors(world, resourceContext);
+
+		bool reusePreviousScan = false;
+		{
+			std::lock_guard<std::mutex> lock(g_poiScanMutex);
+			reusePreviousScan = !ruptureResourceGenerationChanged
+				&& (g_poiScanInProgress
+					|| (g_lastPoiScanAtUnixMs != 0
+						&& observedAtUnixMs >= g_lastPoiScanAtUnixMs
+					&& observedAtUnixMs - g_lastPoiScanAtUnixMs < kPoiScanMinIntervalMs
+					&& g_lastPoiScanWorldName == worldName));
+			if (!reusePreviousScan)
+			{
+				g_poiScanInProgress = true;
+			}
+		}
+
+		PoiCatalog catalog;
+		if (previousSnapshot.WorldName == worldName)
+		{
+			catalog.reserve(previousSnapshot.Pois.size());
+			for (const PoiMarker& marker : previousSnapshot.Pois)
+			{
+				// Phase projections are presentation data, never observations. The
+				// raw Ignitium sites are merged below, including on throttled scans,
+				// so the phase can be derived again without retaining a stale,
+				// available Star Tears marker beside an observed depleted actor.
+				if (marker.Source.starts_with("rupture_phase."))
+				{
+					continue;
+				}
+				const bool retainMarker = marker.Kind == PoiKind::AbandonedBase
+					|| (marker.Kind != PoiKind::AbandonedBase
+						&& IsTrackedResourceName(marker.ResourceName)
+						&& !(ruptureResourceGenerationChanged
+							&& (marker.Kind == PoiKind::Ignitium
+								|| marker.Kind == PoiKind::StarTears)));
+				if (retainMarker)
+				{
+					catalog.insert_or_assign(marker.PublicKey, marker);
+				}
+			}
+		}
+
+
+		// ActorBeginPlay observations are merged even while the expensive actor
+		// scan is throttled. Actors removed before capture can still be missed.
+		MergeObservedPoiMarkers(world, catalog);
+		// Depletion arrays are authoritative and cheap to locate compared with a
+		// full gatherable scan, so apply them on both fresh and throttled paths.
+		if (reusePreviousScan)
+		{
+			MarkReplicatedDepletedResources(world, catalog, resourceContext.LoadedResourceKeys);
+			FinalizePoiCatalog(snapshot, catalog);
+			UpdatePoiCounts(snapshot);
+
+			return false;
+		}
+
+		SDK::TArray<SDK::AActor*> abandonedBases;
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world,
+			SDK::ABP_Sulphur_Logic_Large_AbandonedBase_C::StaticClass(),
+			&abandonedBases);
+		for (int index = 0; index < abandonedBases.Num(); ++index)
+		{
+			SDK::AActor* actor = abandonedBases[index];
+			if (!actor)
+			{
+				continue;
+			}
+
+			StorePoiMarker(
+				catalog,
+				BuildPoiMarker(
+					PoiKind::AbandonedBase,
+					actor->K2_GetActorLocation(),
+					"poi.base",
+					"actor_scan.abandoned_base",
+					"Abandoned Base",
+					{}));
+		}
+
+		SDK::TArray<SDK::AActor*> gatherables;
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world,
+			SDK::ACrGatherableBaseActor::StaticClass(),
+			&gatherables);
+
+		for (auto* actor : gatherables)
+		{
+			ObserveTrackedGatherableActor(world,
+				static_cast<SDK::ACrGatherableBaseActor*>(actor), resourceContext);
+		}
+
+		SDK::TArray<SDK::AActor*> ores;
+		SDK::UGameplayStatics::GetAllActorsOfClass(
+			world,
+			SDK::ACrOreActor::StaticClass(),
+			&ores);
+
+		for (auto* actor : ores)
+		{
+			ObserveTrackedOreActor(world, static_cast<SDK::ACrOreActor*>(actor), resourceContext);
+		}
+		MergeObservedPoiMarkers(world, catalog);
+
+		// A gathered actor may already have been removed by PCG before this scan.
+		// Keep its known position and publish the depleted state instead of
+		// deleting the only positional record.
+		MarkReplicatedDepletedResources(world, catalog, resourceContext.LoadedResourceKeys);
+		FinalizePoiCatalog(snapshot, catalog);
+		UpdatePoiCounts(snapshot);
+
+		{
+			// Commit the throttle window only after a completed scan so an
+			// interrupted scan can be retried immediately.
+			std::lock_guard<std::mutex> lock(g_poiScanMutex);
+			g_poiScanInProgress = false;
+			g_lastPoiScanAtUnixMs = observedAtUnixMs;
+			g_lastPoiScanWorldName = worldName;
+		}
+		return true;
+	}
+
+}
+
+namespace MapStateRuntime
+{
+namespace Detail
+{
+	CargoSnapshot CopySnapshot()
+	{
+		std::lock_guard<std::mutex> lock(g_snapshotMutex);
+		return g_snapshot;
+	}
+
+	bool RefreshCargoSnapshot(SDK::UWorld* world, const char* reason)
+	{
+		const bool isRealtimeRefresh = IsRealtimeRefreshReason(reason);
+		const TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
+		CargoSnapshot nextSnapshot{};
+		CargoSnapshot previousSnapshot{};
+		RefreshTimingLog timing(reason);
+		const int64_t observedAtUnixMs = GetCurrentUnixTimeMilliseconds();
+		{
+			std::lock_guard<std::mutex> lock(g_snapshotMutex);
+			nextSnapshot.Generation = g_snapshot.Generation + 1;
+			previousSnapshot = g_snapshot;
+		}
+		nextSnapshot.Reason = reason ? reason : "unknown";
+		nextSnapshot.WorldName = trackedState.WorldName;
+
+		std::unordered_map<std::string, size_t> markerIndexes;
+		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
+
+#if !defined(MODLOADER_SERVER_BUILD)
+		if (TryUseDedicatedRemoteSnapshot(
+			gameState,
+			previousSnapshot,
+			reason,
+			trackedState.WorldName,
+			nextSnapshot.Generation,
+			nextSnapshot))
+		{
+			timing.Phase("dedicated_remote");
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO(
+					"Using dedicated server snapshot only: markers=%zu, connections=%zu, teleporters=%zu, players=%zu",
+					nextSnapshot.Markers.size(),
+					nextSnapshot.Connections.size(),
+					nextSnapshot.Teleporters.size(),
+					nextSnapshot.Players.size());
+			}
+
+			{
+				std::lock_guard<std::mutex> lock(g_snapshotMutex);
+				g_snapshot = nextSnapshot;
+			}
+
+			LogRuptureCycleIfNeeded(
+				nextSnapshot.RuptureCycle,
+				nextSnapshot.Generation,
+				nextSnapshot.Reason.c_str());
+
+			if (!isRealtimeRefresh)
+			{
+				LogSnapshotSummary(nextSnapshot);
+			}
+			else if (
+				nextSnapshot.Markers.size() != previousSnapshot.Markers.size()
+				|| nextSnapshot.Connections.size() != previousSnapshot.Connections.size()
+				|| nextSnapshot.Teleporters.size() != previousSnapshot.Teleporters.size()
+				|| nextSnapshot.Players.size() != previousSnapshot.Players.size())
+			{
+				LOG_INFO(
+					"Realtime cargo snapshot #%llu changed: markers=%zu, connections=%zu, teleporters=%zu, players=%zu",
+					static_cast<unsigned long long>(nextSnapshot.Generation),
+					nextSnapshot.Markers.size(),
+					nextSnapshot.Connections.size(),
+					nextSnapshot.Teleporters.size(),
+					nextSnapshot.Players.size());
+			}
+
+			timing.Finish(nextSnapshot);
+			return !nextSnapshot.Markers.empty()
+				|| !nextSnapshot.Teleporters.empty()
+				|| !nextSnapshot.Players.empty()
+				|| !nextSnapshot.Pois.empty();
+		}
+#endif
+
+		const bool needsCustomNameLookup =
+			gameState
+			&& (gameState->PackageTransportReplicator != nullptr || gameState->TeleportReplicator != nullptr);
+		const BuildingCustomNameLookup customNameLookup =
+			needsCustomNameLookup ? BuildBuildingCustomNameLookup(world) : BuildingCustomNameLookup{};
+		CaptureFromReplicator(
+			world,
+			nextSnapshot,
+			gameState,
+			&previousSnapshot,
+			observedAtUnixMs,
+			customNameLookup,
+			markerIndexes);
+		timing.Phase("replicator");
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("Cargo refresh '%s': replicator stage completed", nextSnapshot.Reason.c_str());
+		}
+		if (!isRealtimeRefresh || !nextSnapshot.HasPackageTransportReplicator)
+		{
+			CaptureActorFallback(world, nextSnapshot, markerIndexes);
+			timing.Phase("actor_fallback");
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO("Cargo refresh '%s': actor fallback stage completed", nextSnapshot.Reason.c_str());
+			}
+		}
+		CaptureTeleporters(world, nextSnapshot, gameState, customNameLookup);
+		timing.Phase("teleporters");
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("Cargo refresh '%s': teleporter stage completed", nextSnapshot.Reason.c_str());
+		}
+		CapturePlayers(world, nextSnapshot);
+		timing.Phase("players");
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("Cargo refresh '%s': player stage completed", nextSnapshot.Reason.c_str());
+		}
+		nextSnapshot.RuptureCycle = CapturePreferredRuptureCycleSnapshot(world);
+		ApplyRuptureCycleObservationTimestamp(nextSnapshot.RuptureCycle);
+		StorePersistentRuptureCycleSnapshot(nextSnapshot.RuptureCycle);
+		const bool didCapturePois = CapturePois(world, nextSnapshot, previousSnapshot, observedAtUnixMs);
+		timing.Phase(didCapturePois ? "poi_capture" : "poi_snapshot_reuse");
+		MergeRetainedConnections(nextSnapshot, previousSnapshot, observedAtUnixMs);
+		timing.Phase("merge_retained_connections");
+
+		ApplyRuptureResourcePhase(nextSnapshot);
+		timing.Phase("rupture");
+
+		nextSnapshot.SenderCount = 0;
+		nextSnapshot.ReceiverCount = 0;
+		for (const CargoMarker& marker : nextSnapshot.Markers)
+		{
+			if (marker.Kind == CargoKind::Sender)
+			{
+				++nextSnapshot.SenderCount;
+			}
+			else
+			{
+				++nextSnapshot.ReceiverCount;
+			}
+		}
+
+		if (nextSnapshot.WorldName.empty() && world)
+		{
+			nextSnapshot.WorldName = world->GetName();
+		}
+
+		if (nextSnapshot.Markers.empty() && MapExtensionPluginConfig::Config::LogCargoSnapshots())
+		{
+			LOG_WARN(
+				"Cargo snapshot #%llu from '%s' found no cargo markers (replicator=%s, actor_receivers=%d, actor_senders=%d)",
+				static_cast<unsigned long long>(nextSnapshot.Generation),
+				nextSnapshot.Reason.c_str(),
+				nextSnapshot.HasPackageTransportReplicator ? "yes" : "no",
+				nextSnapshot.ActorReceiverCount,
+				nextSnapshot.ActorSenderCount);
+		}
+
+		{
+			std::lock_guard<std::mutex> lock(g_snapshotMutex);
+			g_snapshot = nextSnapshot;
+		}
+
+		LogRuptureCycleIfNeeded(
+			nextSnapshot.RuptureCycle,
+			nextSnapshot.Generation,
+			nextSnapshot.Reason.c_str());
+
+		if (!isRealtimeRefresh)
+		{
+			LogSnapshotSummary(nextSnapshot);
+		}
+		else if (
+			nextSnapshot.Markers.size() != previousSnapshot.Markers.size()
+			|| nextSnapshot.Connections.size() != previousSnapshot.Connections.size()
+			|| nextSnapshot.Teleporters.size() != previousSnapshot.Teleporters.size()
+			|| nextSnapshot.Players.size() != previousSnapshot.Players.size())
+		{
+			LOG_INFO(
+				"Realtime cargo snapshot #%llu changed: markers=%zu, connections=%zu, teleporters=%zu, players=%zu",
+				static_cast<unsigned long long>(nextSnapshot.Generation),
+				nextSnapshot.Markers.size(),
+				nextSnapshot.Connections.size(),
+				nextSnapshot.Teleporters.size(),
+				nextSnapshot.Players.size());
+		}
+		timing.Finish(nextSnapshot);
+		return !nextSnapshot.Markers.empty()
+			|| !nextSnapshot.Teleporters.empty()
+			|| !nextSnapshot.Players.empty()
+			|| !nextSnapshot.Pois.empty();
+	}
+
+	void TryRefreshCurrentWorld(const char* reason)
+	{
+		TrackedChimeraWorldState trackedState{};
+		bool invalidPointer = false;
+		if (!TryCopyValidatedTrackedChimeraWorldState(trackedState, reason, true, invalidPointer))
+		{
+			if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+				return;
+			}
+
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO(
+					"Skipping snapshot refresh '%s': ChimeraMain world is not loaded yet",
+					reason ? reason : "unknown");
+			}
+			return;
+		}
+
+		RefreshCargoSnapshot(trackedState.World, reason);
+	}
+
+	void LogRuntimePlanIfNeeded()
+	{
+		if (g_runtimePlanLogged || !MapExtensionPluginConfig::Config::LogRuntimePlanOnce())
+		{
+			return;
+		}
+
+		g_runtimePlanLogged = true;
+		LOG_INFO("Runtime plan: capture cargo dispatcher/receiver network data from runtime sources, then publish snapshots to the in-game map.");
+		LOG_INFO("Runtime plan: use package transport replication first, actor scans as fallback, and keep the web UI separate from Unreal widgets.");
+		LOG_INFO(
+			"Runtime plan: refresh the cached snapshot every %d ms while ChimeraMain is running.",
+			MapExtensionPluginConfig::Config::RefreshIntervalMs());
+		LOG_INFO("Runtime plan: also refresh immediately when relevant actors begin play in ChimeraMain.");
+	}
+
+	std::string BuildPlayerPublicKeyForController(void* playerController)
+	{
+		SDK::AController* controller = static_cast<SDK::AController*>(playerController);
+		if (!controller)
+		{
+			return {};
+		}
+
+		std::string internalKey = GetControllerInternalKey(controller);
+		if (internalKey.empty())
+		{
+			if (SDK::APawn* pawn = controller->K2_GetPawn())
+			{
+				const std::string pawnName = pawn->GetName();
+				if (!pawnName.empty())
+				{
+					internalKey = "pawn:" + pawnName;
+				}
+			}
+		}
+
+		if (internalKey.empty())
+		{
+			return {};
+		}
+
+		return MakeTaggedPublicKey("player", internalKey);
+	}
+
+	bool IsRelevantRealtimeActor(SDK::AActor* actor)
+	{
+		return IsCargoRealtimeActor(actor) || IsAuxiliaryRealtimeActor(actor);
+	}
+
+	void RequestCargoSnapshotRefresh(const char* reason)
+	{
+		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
+		const int64_t lastRequestAtUnixMs = g_lastCargoRefreshRequestAtUnixMs.load();
+		if (lastRequestAtUnixMs > 0 && nowUnixMs - lastRequestAtUnixMs < 250)
+		{
+			return;
+		}
+
+		g_lastCargoRefreshRequestAtUnixMs.store(nowUnixMs);
+		g_cargoRefreshRequested.store(true);
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO(
+				"Scheduled cargo snapshot refresh from %s",
+				reason ? reason : "unknown");
+		}
+	}
+
+	// The delegate splices live in the engine's InvocationList, so they must be
+	// removed before the DLL is unloaded, otherwise a broadcast lands in freed
+	// plugin memory. Must run while hooks->Delegate is still reachable.
+	void ShutdownRuptureCycleDelegateHooks()
+	{
+		UnhookRuptureCycleDelegateHooks();
+		ResetWaveSubsystemCache();
+	}
+
+}
+}
+
+namespace MapStateRuntime
+{
+	void OnEngineInit()
+	{
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("Engine init received");
+		}
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnEngineInit();
+#endif
+		Detail::LogRuntimePlanIfNeeded();
+		Detail::TryRefreshCurrentWorld("EngineInit");
+	}
+
+	void OnEngineShutdown()
+	{
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("Engine shutdown received");
+		}
+		g_engineTickAccumulatorSeconds = 0.0f;
+		g_engineTickSeen = false;
+
+		UnhookRuptureCycleDelegateHooks();
+		ResetWaveSubsystemCache();
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			g_lastChimeraWorld = nullptr;
+			g_lastWorldName.clear();
+			g_chimeraWorldReady = false;
+			g_lastCargoActorRefreshAtUnixMs = 0;
+			g_chimeraWorldDetectedAtUnixMs = 0;
+			g_requestedCustomNameEntityIds.clear();
+			ResetPoiScanState();
+		}
+		ResetObservedPlantCatalog();
+		ClearPublishedSnapshot("EngineShutdown");
+		ResetRuptureCycleState();
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnEngineShutdown();
+#endif
+	}
+
+	void OnEngineTick(float deltaSeconds)
+	{
+		TrackedChimeraWorldState trackedState{};
+		bool invalidPointer = false;
+		if (!TryCopyValidatedTrackedChimeraWorldState(
+			trackedState,
+			"EngineTick",
+			false,
+			invalidPointer))
+		{
+			if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+			}
+			return;
+		}
+
+		if (!trackedState.Ready)
+		{
+			MarkChimeraWorldReady("EngineTick fallback");
+			trackedState.Ready = true;
+		}
+		HookRuptureCycleDelegateHooks(trackedState.World);
+
+
+		if (!g_engineTickSeen)
+		{
+			g_engineTickSeen = true;
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO(
+					"EngineTick callback is alive; realtime cargo refresh interval=%d ms",
+					MapExtensionPluginConfig::Config::RefreshIntervalMs());
+			}
+		}
+
+#if !defined(MODLOADER_SERVER_BUILD)
+		// On a dedicated-server client, periodically request an authoritative
+		// snapshot from the server plugin. The sync client handles rate-limiting
+		// and dedicated-session detection internally.
+		MapExtensionClient::Sync::RequestSnapshotIfNeeded(trackedState.World, "EngineTick");
+#endif
+
+		const float refreshIntervalSeconds = GetRefreshIntervalSeconds();
+
+		// Suppress realtime refreshes during the post-WorldBeginPlay grace period.
+		// The Mass/Logistics/Building replication phase that immediately follows
+		// ChimeraMain begin-play is extremely heavy on the main thread. Running
+		// full actor scans and replicator reads during that window contributes to
+		// the stalls observed in StarRupture.log (DeltaTime 11.96 s) that lead to
+		// missed ACKs and ConnectionTimeout. Honor requested refreshes after
+		// the grace period only.
+		{
+			const int64_t nowMs = GetCurrentUnixTimeMilliseconds();
+			const int64_t detectedAt = g_chimeraWorldDetectedAtUnixMs;
+			if (detectedAt > 0 && nowMs - detectedAt < kPostWorldBeginPlayGraceMs)
+			{
+				// Reset accumulator so that the first real refresh fires promptly
+				// once the grace period expires, rather than immediately.
+				g_engineTickAccumulatorSeconds = 0.0f;
+				return;
+			}
+		}
+
+		if (const char* requestedReason = ConsumeRequestedCargoRefreshReason())
+		{
+			Detail::RefreshCargoSnapshot(trackedState.World, requestedReason);
+			g_engineTickAccumulatorSeconds = 0.0f;
+			return;
+		}
+
+		if (deltaSeconds <= 0.0f || deltaSeconds > 5.0f)
+		{
+			g_engineTickAccumulatorSeconds = refreshIntervalSeconds;
+		}
+		else
+		{
+			g_engineTickAccumulatorSeconds += deltaSeconds;
+		}
+
+		if (g_engineTickAccumulatorSeconds < refreshIntervalSeconds)
+		{
+			return;
+		}
+
+		g_engineTickAccumulatorSeconds = 0.0f;
+		Detail::RefreshCargoSnapshot(trackedState.World, "EngineTick");
+	}
+
+	void OnActorBeginPlay(void* actor)
+	{
+		TrackedChimeraWorldState trackedState{};
+		bool invalidPointer = false;
+		if (!actor
+			|| !TryCopyValidatedTrackedChimeraWorldState(
+				trackedState,
+				"ActorBeginPlay",
+				false,
+				invalidPointer))
+		{
+			if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+			}
+			return;
+		}
+
+		SDK::AActor* beginPlayActor = static_cast<SDK::AActor*>(actor);
+		if (!TryObjectHasOuterInChain(
+			static_cast<SDK::UObject*>(beginPlayActor),
+			static_cast<SDK::UObject*>(trackedState.World)))
+		{
+			return;
+		}
+
+		PoiKind resourceKind = PoiKind::PlantResource;
+		std::string resourceName;
+		bool trackedResource = false;
+		if (beginPlayActor->IsA(SDK::ACrGatherableBaseActor::StaticClass()))
+		{
+			trackedResource = TryGetTrackedGatherableResource(
+				static_cast<SDK::ACrGatherableBaseActor*>(beginPlayActor), resourceKind, resourceName);
+		}
+		else if (beginPlayActor->IsA(SDK::ACrOreActor::StaticClass()))
+		{
+			resourceKind = PoiKind::Ignitium;
+			trackedResource = TryGetTrackedIgnitiumName(
+				static_cast<SDK::ACrOreActor*>(beginPlayActor), resourceName);
+		}
+		if (trackedResource && RememberResourceActor(trackedState.World, beginPlayActor, resourceKind, true))
+		{
+			Detail::RequestCargoSnapshotRefresh("ActorBeginPlay(Resource)");
+		}
+
+
+		if (!trackedState.Ready)
+		{
+			return;
+		}
+		const bool cargoActor = IsCargoRealtimeActor(beginPlayActor);
+		const bool auxiliaryActor = IsAuxiliaryRealtimeActor(beginPlayActor);
+		const bool ruptureActor = IsRelevantRuptureActor(beginPlayActor);
+		if (!cargoActor && !auxiliaryActor && !ruptureActor)
+		{
+			return;
+		}
+
+		if (!cargoActor && !auxiliaryActor)
+		{
+			if (ruptureActor && ShouldLogRuptureDiagnostics())
+			{
+				LOG_INFO(
+					"Rupture ActorBeginPlay observed: class=%s actor=%s",
+					beginPlayActor->Class ? beginPlayActor->Class->GetName().c_str() : "(null)",
+					beginPlayActor->GetName().c_str());
+			}
+
+			// Rupture visuals can spawn in bursts while the player moves. Avoid a full cargo scan here.
+			return;
+		}
+
+		// Once the transport replicator is active, EngineTick already refreshes the
+		// authoritative cargo snapshot. Refreshing again on every cargo-network actor
+		// callback only adds hitching during spawn bursts. Keep teleporter/player
+		// begin-play refreshes active because they are not covered by that replicator.
+		if (cargoActor && HasPackageTransportReplicatorSnapshot())
+		{
+			return;
+		}
+
+		// When EngineTick is running, auxiliary actor callbacks (teleporters, players)
+		// are already captured by the periodic tick scan. Skip the redundant refresh.
+		if (!cargoActor && auxiliaryActor && g_engineTickSeen)
+		{
+			return;
+		}
+
+#if !defined(MODLOADER_SERVER_BUILD)
+		// In a dedicated-server session the server plugin sends authoritative
+		// snapshots via IPluginNetworkChannel. Once at least one server snapshot
+		// has been received, all local ActorBeginPlay refreshes are redundant:
+		// they trigger expensive actor scans on the main thread while the game is
+		// replicating actors and can cause the main-thread stalls (DeltaTime ~12 s)
+		// that lead to ConnectionTimeout. Skip them and let the next EngineTick
+		// request an updated snapshot from the server instead.
+		if (MapExtensionClient::RemoteCache::HasCargoSnapshot())
+		{
+			return;
+		}
+#endif
+
+		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (g_lastCargoActorRefreshAtUnixMs > 0
+				&& nowUnixMs - g_lastCargoActorRefreshAtUnixMs < kCargoActorRefreshMinIntervalMs)
+			{
+				return;
+			}
+			g_lastCargoActorRefreshAtUnixMs = nowUnixMs;
+		}
+
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("ActorBeginPlay refresh trigger: class=%s actor=%s source=%s",
+				beginPlayActor->Class ? beginPlayActor->Class->GetName().c_str() : "(null)",
+				beginPlayActor->GetName().c_str(),
+				ruptureActor ? "rupture" : (auxiliaryActor ? "auxiliary" : "cargo"));
+		}
+
+		g_engineTickAccumulatorSeconds = 0.0f;
+		Detail::RefreshCargoSnapshot(
+			trackedState.World,
+			ruptureActor ? "ActorBeginPlay(Rupture)" : "ActorBeginPlay");
+	}
+
+	void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName)
+	{
+		++g_anyWorldBeginPlayCount;
+		const char* safeName = worldName ? worldName : "(null)";
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("AnyWorldBeginPlay #%d: world=%p name=%s", g_anyWorldBeginPlayCount, static_cast<void*>(world), safeName);
+		}
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnAnyWorldBeginPlay(world, safeName);
+#endif
+
+		if (std::strstr(safeName, "ChimeraMain") != nullptr)
+		{
+			bool worldChanged = false;
+			{
+				std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+				worldChanged = g_lastChimeraWorld != world;
+				g_lastChimeraWorld = world;
+				g_lastWorldName = safeName;
+				g_chimeraWorldReady = false;
+				g_lastCargoActorRefreshAtUnixMs = 0;
+				g_chimeraWorldDetectedAtUnixMs = GetCurrentUnixTimeMilliseconds();
+				g_requestedCustomNameEntityIds.clear();
+				ResetPoiScanState();
+			}
+			if (worldChanged)
+			{
+				ResetObservedPlantCatalog();
+	#if !defined(MODLOADER_SERVER_BUILD)
+				MapExtensionClient::Sync::ResetRuntimeState();
+#endif
+				ClearPublishedSnapshot("ChimeraMainWorldBeginPlay");
+			}
+			g_engineTickAccumulatorSeconds = 0.0f;
+			ResetRuptureCycleState();
+			HookRuptureCycleDelegateHooks(world);
+			if (ShouldLogLifecycle())
+			{
+				LOG_INFO("ChimeraMain detected: deferring cargo snapshot until the world is ready");
+			}
+		}
+		else
+		{
+			TrackedChimeraWorldState trackedState{};
+			bool invalidPointer = false;
+			if (TryCopyValidatedTrackedChimeraWorldState(
+				trackedState,
+				"Non-Chimera world begin play",
+				false,
+				invalidPointer))
+			{
+				// A new world has begun play while ChimeraMain was tracked.
+				// This is a reliable signal that ChimeraMain is being torn down.
+				// Clear the stale pointer immediately to prevent ExperienceLoadComplete
+				// or EngineTick from calling into a freed UWorld (crash on return to menu).
+				if (ShouldLogLifecycle())
+				{
+					LOG_INFO(
+						"Non-Chimera world supersedes ChimeraMain: clearing tracked state (new world=%p name=%s)",
+						static_cast<void*>(world),
+						safeName);
+				}
+				ClearChimeraWorldState("Non-Chimera world superseded ChimeraMain");
+			}
+			else if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+			}
+			else
+			{
+				ClearChimeraWorldState("Non-Chimera world begin play");
+			}
+		}
+	}
+
+
+	void OnSaveLoaded()
+	{
+		TrackedChimeraWorldState trackedState{};
+		bool invalidPointer = false;
+		++g_saveLoadedCount;
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("SaveLoaded #%d: refreshing cargo snapshot from save state", g_saveLoadedCount);
+		}
+		if (!TryCopyValidatedTrackedChimeraWorldState(
+			trackedState,
+			"SaveLoaded",
+			false,
+			invalidPointer))
+		{
+			if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+			}
+			return;
+		}
+
+		if (trackedState.World)
+		{
+			MarkChimeraWorldReady("SaveLoaded");
+		}
+		Detail::TryRefreshCurrentWorld("SaveLoaded");
+	}
+
+	void OnExperienceLoadComplete()
+	{
+		TrackedChimeraWorldState trackedState{};
+		bool invalidPointer = false;
+		++g_experienceLoadedCount;
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("ExperienceLoadComplete #%d: refreshing cargo snapshot from runtime replication", g_experienceLoadedCount);
+		}
+		if (!TryCopyValidatedTrackedChimeraWorldState(
+			trackedState,
+			"ExperienceLoadComplete",
+			false,
+			invalidPointer))
+		{
+			if (invalidPointer)
+			{
+				ClearChimeraWorldState("Invalid Chimera world pointer");
+			}
+			return;
+		}
+
+		if (trackedState.World)
+		{
+			MarkChimeraWorldReady("ExperienceLoadComplete");
+		}
+		Detail::TryRefreshCurrentWorld("ExperienceLoadComplete");
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnExperienceLoadComplete();
+#endif
+	}
+
+	void OnBeforeWorldEndPlay(SDK::UWorld* world, const char* worldName)
+	{
+		const char* safeName = worldName ? worldName : "(null)";
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("BeforeWorldEndPlay: world=%p name=%s", static_cast<void*>(world), safeName);
+		}
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnBeforeWorldEndPlay(world, safeName);
+#endif
+
+		// If the ending world is our tracked ChimeraMain, mark it as not ready
+		// while the world pointer is still valid.
+		bool wasTracked = false;
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (g_lastChimeraWorld && g_lastChimeraWorld == world)
+			{
+				wasTracked = true;
+				g_chimeraWorldReady = false;
+				ResetPoiScanState();
+			}
+		}
+
+		// Remove the delegate splices here rather than in OnAfterWorldEndPlay:
+		// Unhook has to touch the subsystem's live InvocationList, which is only
+		// guaranteed to be intact while the world is still valid.
+		if (wasTracked)
+		{
+			UnhookRuptureCycleDelegateHooks();
+			ResetWaveSubsystemCache();
+		}
+	}
+
+	void OnAfterWorldEndPlay(SDK::UWorld* world, const char* worldName)
+	{
+		const char* safeName = worldName ? worldName : "(null)";
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("AfterWorldEndPlay: world=%p name=%s", static_cast<void*>(world), safeName);
+		}
+
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnAfterWorldEndPlay(world, safeName);
+#endif
+
+		// If the ended world is our tracked ChimeraMain, clear everything.
+		// The world pointer may be partially torn down at this point.
+		bool wasTracked = false;
+		{
+			std::lock_guard<std::mutex> lock(g_runtimeStateMutex);
+			if (g_lastChimeraWorld && g_lastChimeraWorld == world)
+			{
+				wasTracked = true;
+			}
+		}
+
+		if (wasTracked)
+		{
+			ClearChimeraWorldState("AfterWorldEndPlay");
+		}
+	}
+
+	void OnPlayerJoined(void* playerController)
+	{
+		(void)playerController;
+		if (ShouldLogLifecycle())
+		{
+			LOG_INFO("PlayerJoined: controller=%p", playerController);
+		}
+#if defined(MODLOADER_SERVER_BUILD)
+		MapExtensionServer::Sync::OnPlayerJoined(playerController);
+#endif
+		// On server, this is a good time to try bootstrapping the world
+		// if we haven't yet. On client, it's mostly informational.
+		Detail::TryRefreshCurrentWorld("PlayerJoined");
+	}
+}
