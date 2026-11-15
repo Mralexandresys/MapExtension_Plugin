@@ -53,11 +53,15 @@ namespace MapExtensionClient::InGameMap
 	};
 	struct LiveStructures
 	{
-		// Base cores : marqueurs de batiment de la carte native dont le nom unique contient "core".
+		// Base cores : lecture native des entites (immediate, sans nom), completee par les
+		// marqueurs de batiment de la carte native dont le nom unique contient "core" (nom, plus tardifs).
 		std::vector<LiveBaseCore> BaseCores;
 		int BuildingMarkers = 0;
 		int BaseCoreData = 0;       // entrees du jeu
 		int BaseCoresJoined = 0;    // base cores ayant recu leur niveau
+		int CustomNames = 0;        // noms personnalises connus du jeu (tous batiments)
+		int BaseCoresNamed = 0;     // base cores ayant recu un nom personnalise
+		int BaseCoresNative = -1;   // base cores lus nativement ; -1 si lecture indisponible
 		std::string BuildingNames;  // noms uniques distincts vus (diagnostic, tronque)
 		std::vector<LiveAntenna> Antennas;  // toutes (ACrAntennasOwner, replique)
 		// Obelisques : marqueurs de la carte native (ACrMapMenuDataReplicationHelper,

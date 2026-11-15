@@ -354,6 +354,8 @@ jobs:
             "${{ steps.package.outputs.CLIENT_DLL_PATH }}",
             "${{ steps.package.outputs.CLIENT_MANIFEST_PATH }}",
             '--repo', '${{ github.repository }}',
+            # Tag the commit that was built, not the tip of the default branch.
+            '--target', '${{ github.sha }}',
             '--title', "MapExtension_Plugin $tag",
             '--notes', $notes
           )

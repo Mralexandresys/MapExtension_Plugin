@@ -26,8 +26,8 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local,
 ## D'ou viennent les donnees
 
 - **Cargo, teleporteurs, joueurs, cycle de rupture** : lus dans le jeu en cours (ou envoyes par le build serveur sur serveur dedie), rafraichis tous les `RefreshIntervalMs`.
-- **Base cores, antennes, bases abandonnees, etats de decouverte** : lus dans les donnees que le jeu replique pour sa propre carte.
-- **Monolithes** : leur etat et leur charge n'existent que dans les donnees d'entites internes du jeu. Le build client les lit nativement, en lecture seule, par une fonction retrouvee par signature. C'est valide pour le build du jeu CL-127004. Apres une mise a jour du jeu qui la deplace, le mod loader coupe uniquement cette fonctionnalite ("In-game map: monolith state and charge") et le reste du plugin continue de fonctionner.
+- **Antennes, bases abandonnees, etats de decouverte, nom et niveau des base cores** : lus dans les donnees que le jeu replique pour sa propre carte.
+- **Monolithes et position des base cores** : l'etat et la charge des monolithes n'existent que dans les donnees d'entites internes du jeu, et le jeu publie ses marqueurs de base plusieurs dizaines de secondes apres le chargement d'un monde. Le build client lit les deux nativement, en lecture seule, par une fonction retrouvee par signature. C'est valide pour le build du jeu CL-127004. Apres une mise a jour du jeu qui la deplace, le mod loader coupe uniquement cette fonctionnalite ("In-game map: monolith state and charge") : les monolithes perdent leur etat, les base cores apparaissent avec le retard du jeu, et le reste du plugin continue de fonctionner.
 - **Gisements, plantes, creatures, points d'interet** : un catalogue statique livre avec l'archive client dans `Plugins/MapExtension/map-data/`. Les positions sont pre-generees ; ce ne sont pas des observations en direct.
 - **Ignitium et Star Tears** : observes dans les zones chargees pres des joueurs, puis projetes selon la phase de rupture.
 

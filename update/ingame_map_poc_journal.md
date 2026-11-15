@@ -769,3 +769,57 @@ Log 01:14 (Release, build de 00:41) :
   pour détecter une icône prise avant la fin du streaming.
 
 Build client release vert. Non testé en jeu.
+
+## 2026-11-15 — Validation en jeu du build Release `ea1f2af` (log 01:24)
+
+Utilisateur : tout fonctionne bien.
+
+- Icônes : 20 icônes d'items en 256x256 (une en 512x512), 9 icônes de marqueur en 128x128. Aucune copie en petit
+  mip : l'hypothèse « icône copiée trop tôt » est écartée pour ce test.
+- Aperçu : complet 0,5 s après l'ouverture, 39 à 45 ms par copie.
+- Capture du snapshot : 125 relevés en 161 s, médiane 3 ms, max 18 ms, 363 ms cumulés (0,2 % du temps).
+- Carte ouverte : service 5 ms en moyenne sur la première fenêtre (max 47 ms, chargements initiaux), rendu 0,44 ms
+  par image.
+- Base cores : toujours `building markers: 0` à l'ouverture, 109 / 60 seize secondes plus tard. Retard du jeu,
+  non corrigé.
+
+**Correction d'une affirmation antérieure.** 69 captures sur 125 portent le motif `RequestedRefresh` alors que
+l'API HTTP n'existe plus : elles viennent des demandes internes (apparition d'une ressource, délégué de rupture).
+Avant la suppression, ce même chemin était journalisé `HttpRequest(/cargo)` quel que soit le demandeur. Les 136
+lignes attribuées à « un client HTTP qui interroge encore l'API » étaient donc, au moins en grande partie, ces
+demandes internes. Rien ne prouve qu'un ancien viewer tournait.
+
+## 2026-11-15 — Lecture native des base cores
+
+Décision utilisateur : lire les base cores comme les monolithes, pour supprimer le retard des marqueurs du jeu
+(16 à 56 s mesurés entre l'ouverture de la carte et `building markers: 109`).
+
+- `ScanObelisksGuarded` devient `ScanEntitiesGuarded` : un seul parcours, deux fragments cherchés
+  (`FCrAlienObeliskFragment`, `FCrMassBuildingBaseCoreFragment`), plus `FTransformFragment` pour la position. Un
+  archétype n'est rejeté que s'il n'a aucun des deux. Aucune nouvelle signature, aucun nouvel offset.
+- Fusion : le marqueur du jeu, quand il existe, fournit le nom ; un core vu seulement nativement s'appelle
+  « Base core ». Jointure du niveau par index d'entité (`CachedHandle.Index`), le numéro de série n'étant vérifié
+  que s'il est connu (marqueur).
+- Type du fragment introuvable : seuls les base cores natifs sont perdus, les monolithes restent lus.
+- Log : `building markers: N, base cores=M (native=K), core data=.. joined=..`.
+
+Inconnu : le fragment est-il porté uniquement par les base cores du joueur (60 attendus sur cette sauvegarde) ou
+aussi par d'autres entités ? `native=K` le dira.
+
+Builds client release et debug verts, aucun warning MapExtension. **Non testé en jeu.**
+
+## 2026-11-15 — Base cores natifs validés, noms personnalisés
+
+Log 12:15 : `building markers: 0, base cores=60 (native=60), core data=60` dès l'ouverture, puis 109 marqueurs
+une minute plus tard. Le fragment `FCrMassBuildingBaseCoreFragment` n'est porté que par les 60 base cores du
+joueur. Utilisateur : c'est bon, il manque les noms personnalisés.
+
+Correctif : les noms viennent de `UCrBuildingCustomNameSubsystem::CustomNames` (clé : identifiant persistant
+d'entité), la source déjà utilisée pour les cargos dans `map_state_capture.cpp`. Jointure sur
+`FCrBaseCoreData::BaseCore.Entity.ID`, faite en même temps que celle du niveau. Un nom personnalisé remplace le
+nom du marqueur ; sans nom personnalisé, le core garde le nom du marqueur ou « Base core ».
+
+Inconnu : en solo, la table contient-elle tous les noms dès le chargement ? Log `named=N/M` (cores nommés / noms
+connus du jeu, tous bâtiments).
+
+Builds client release et debug verts. Non testé en jeu.

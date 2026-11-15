@@ -379,7 +379,7 @@ namespace
 					auto live = std::make_shared<LiveStructures>(CaptureLiveStructures());
 					const int signature = static_cast<int>(live->Antennas.size()) * 1000000 + live->ObeliskMarkers * 10000
 						+ live->ObeliskReplicated * 100 + live->ObeliskActors + (live->ObeliskNative + 1) * 100000000
-						+ live->BuildingMarkers * 7 + static_cast<int>(live->BaseCores.size()) * 13 + live->BaseCoresJoined * 17;
+						+ live->BuildingMarkers * 7 + static_cast<int>(live->BaseCores.size()) * 13 + live->BaseCoresJoined * 17 + live->BaseCoresNamed * 19;
 					if (signature != g_liveLogged)
 					{
 						g_liveLogged = signature;
@@ -389,8 +389,9 @@ namespace
 							static_cast<int>(live->Antennas.size()), first.X, first.Y, first.State,
 							live->ObeliskNative, live->EntitiesScanned, live->ObeliskMarkers, live->ObeliskReplicated, live->ObeliskActors,
 							obelisk.X, obelisk.Y, obelisk.State, obelisk.Charge, obelisk.ChargeMax, MillisecondsSince(started));
-						LOG_INFO("[InGameMap] building markers: %d, base cores=%d, core data=%d joined=%d (first level=%d), unique names: %s",
-							live->BuildingMarkers, static_cast<int>(live->BaseCores.size()), live->BaseCoreData, live->BaseCoresJoined,
+						LOG_INFO("[InGameMap] building markers: %d, base cores=%d (native=%d), core data=%d joined=%d named=%d/%d (first level=%d), unique names: %s",
+							live->BuildingMarkers, static_cast<int>(live->BaseCores.size()), live->BaseCoresNative, live->BaseCoreData, live->BaseCoresJoined,
+							live->BaseCoresNamed, live->CustomNames,
 							live->BaseCores.empty() ? -1 : live->BaseCores.front().Level, live->BuildingNames.c_str());
 					}
 					// Le premier passage paie la resolution des classes (62 ms mesures) ; on

@@ -26,8 +26,8 @@ The plugin works in both single-player and multiplayer. For solo/local sessions,
 ## Where the data comes from
 
 - **Cargo, teleporters, players, rupture cycle**: read from the running game (or streamed by the server build on a dedicated server), refreshed every `RefreshIntervalMs`.
-- **Base cores, antennas, abandoned bases, discovery states**: read from the data the game replicates for its own map.
-- **Monoliths**: their state and charge only exist in the game's internal entity data. The client build reads them natively, read-only, through a function located by signature. This is validated for game build CL-127004. After a game update that moves it, the mod loader turns off only that feature ("In-game map: monolith state and charge") and the rest of the plugin keeps working.
+- **Antennas, abandoned bases, discovery states, base core names and levels**: read from the data the game replicates for its own map.
+- **Monoliths and base core positions**: monolith state and charge only exist in the game's internal entity data, and the game publishes its base markers tens of seconds after a world loads. The client build reads both natively, read-only, through a function located by signature. This is validated for game build CL-127004. After a game update that moves it, the mod loader turns off only that feature ("In-game map: monolith state and charge"): monoliths lose their state, base cores appear with the game's own delay, and the rest of the plugin keeps working.
 - **Ore deposits, plants, creatures, points of interest**: a static catalog shipped with the client archive in `Plugins/MapExtension/map-data/`. Positions are pre-generated; they are not live observations.
 - **Ignitium and Star Tears**: observed in areas loaded near players, then projected from the rupture phase.
 

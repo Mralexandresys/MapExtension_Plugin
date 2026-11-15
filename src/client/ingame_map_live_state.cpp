@@ -11,6 +11,7 @@
 #include <cctype>
 #include <chrono>
 #include <iterator>
+#include <map>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -71,6 +72,7 @@ namespace
 	constexpr int kStorageSlotIsValidIndex = 9;        // vtable +0x48
 	constexpr int kMaxEntityIndex = 4 * 1024 * 1024;
 	constexpr int kMaxNativeObelisks = 256;
+	constexpr int kMaxNativeBaseCores = 512;
 	constexpr char kKeyGetFragment[] = "FMassArchetypeData::GetFragmentDataForEntity";
 	constexpr char kKeyEntityManager[] = "UMassEntitySubsystem::EntityManager";
 	// Debut de la fonction, unique dans l'executable CL-127004 (une seule occurrence).
@@ -89,13 +91,27 @@ namespace
 		int State;
 		float Charge;
 	};
+	struct RawBaseCore
+	{
+		double X, Y;
+		int EntityIndex;  // FMassEntityHandle::Index, pour retrouver le niveau
+	};
+	struct NativeScan
+	{
+		RawObelisk Obelisks[kMaxNativeObelisks];
+		RawBaseCore BaseCores[kMaxNativeBaseCores];
+		int ObeliskCount = 0;
+		int BaseCoreCount = 0;
+		int Scanned = 0;
+	};
 
-	// POD uniquement : __try interdit les objets a destructeur. Retourne le nombre
-	// d'obelisques, -1 si le stockage n'a pas la forme attendue, -2 sur exception.
-	// ponytail: parcours complet des entites a chaque appel ; memoriser les handles
-	// d'obelisque si scan_ms monte.
-	int ScanObelisksGuarded(const uint8_t* manager, const void* obeliskType, const void* transformType,
-		RawObelisk* out, int capacity, int* scanned)
+	// POD uniquement : __try interdit les objets a destructeur. Un seul parcours pour
+	// les obelisques et les base cores. Retourne 0, -1 si le stockage n'a pas la
+	// forme attendue, -2 sur exception. `baseCoreType` peut etre nul.
+	// ponytail: parcours complet des entites a chaque appel (2 ms mesures) ; memoriser
+	// les handles trouves si scan_ms monte.
+	int ScanEntitiesGuarded(const uint8_t* manager, const void* obeliskType, const void* baseCoreType,
+		const void* transformType, NativeScan* out)
 	{
 		__try
 		{
@@ -108,9 +124,8 @@ namespace
 			void** vtable = *static_cast<void***>(storage);
 			const auto getArchetype = reinterpret_cast<void* (*)(void*, int32_t)>(vtable[kStorageSlotGetArchetype]);
 			const auto isValidIndex = reinterpret_cast<bool (*)(void*, int32_t)>(vtable[kStorageSlotIsValidIndex]);
-			// Les archetypes sans le fragment sont rejetes sans rappeler le jeu.
+			// Les archetypes sans aucun des deux fragments sont rejetes sans rappeler le jeu.
 			void* rejected[64] = {};
-			int found = 0;
 			int index = 1;  // l'index 0 est l'entite invalide
 			for (; index < kMaxEntityIndex && isValidIndex(storage, index); ++index)
 			{
@@ -124,27 +139,38 @@ namespace
 				{
 					continue;
 				}
-				const auto* fragment = static_cast<const SDK::FCrAlienObeliskFragment*>(g_getFragmentData(archetype, obeliskType, index));
-				if (!fragment)
+				const auto* obelisk = static_cast<const SDK::FCrAlienObeliskFragment*>(g_getFragmentData(archetype, obeliskType, index));
+				const bool isBaseCore = !obelisk && baseCoreType && g_getFragmentData(archetype, baseCoreType, index) != nullptr;
+				if (!obelisk && !isBaseCore)
 				{
 					slot = archetype;
 					continue;
 				}
 				const auto* transform = static_cast<const SDK::FTransformFragment*>(g_getFragmentData(archetype, transformType, index));
-				if (!transform || found >= capacity)
+				if (!transform)
 				{
 					continue;
 				}
-				out[found].X = transform->Transform.Translation.X;
-				out[found].Y = transform->Transform.Translation.Y;
-				out[found].AttackX = fragment->AttackLocation.X;
-				out[found].AttackY = fragment->AttackLocation.Y;
-				out[found].State = static_cast<int>(fragment->State);
-				out[found].Charge = fragment->ChargeValue;
-				++found;
+				if (obelisk && out->ObeliskCount < kMaxNativeObelisks)
+				{
+					RawObelisk& raw = out->Obelisks[out->ObeliskCount++];
+					raw.X = transform->Transform.Translation.X;
+					raw.Y = transform->Transform.Translation.Y;
+					raw.AttackX = obelisk->AttackLocation.X;
+					raw.AttackY = obelisk->AttackLocation.Y;
+					raw.State = static_cast<int>(obelisk->State);
+					raw.Charge = obelisk->ChargeValue;
+				}
+				else if (isBaseCore && out->BaseCoreCount < kMaxNativeBaseCores)
+				{
+					RawBaseCore& raw = out->BaseCores[out->BaseCoreCount++];
+					raw.X = transform->Transform.Translation.X;
+					raw.Y = transform->Transform.Translation.Y;
+					raw.EntityIndex = index;
+				}
 			}
-			*scanned = index - 1;
-			return found;
+			out->Scanned = index - 1;
+			return 0;
 		}
 		__except (1)  // EXCEPTION_EXECUTE_HANDLER
 		{
@@ -190,40 +216,49 @@ namespace
 		return cached;
 	}
 
-	// Types des deux fragments lus. Structs natifs enracines : jamais collectes,
-	// donc memorisables pour la session. La premiere resolution parcourt GObjects.
-	bool ResolveFragmentTypes(SDK::UObject*& obeliskType, SDK::UObject*& transformType)
+	// Types des fragments lus. Structs natifs enracines : jamais collectes, donc
+	// memorisables pour la session. La premiere resolution parcourt GObjects.
+	// `baseCoreType` reste nul s'il est introuvable : seuls les base cores sont alors perdus.
+	bool ResolveFragmentTypes(SDK::UObject*& obeliskType, SDK::UObject*& baseCoreType, SDK::UObject*& transformType)
 	{
 		static SDK::UObject* obelisk = nullptr;
+		static SDK::UObject* baseCore = nullptr;
 		static SDK::UObject* transform = nullptr;
 		if (!obelisk || !transform)
 		{
 			// Recherche par nom court (rapide), nom complet verifie une fois sur le resultat.
 			obelisk = SDK::UObject::FindObjectFast<SDK::UObject>("CrAlienObeliskFragment", SDK::EClassCastFlags::ScriptStruct);
 			transform = SDK::UObject::FindObjectFast<SDK::UObject>("TransformFragment", SDK::EClassCastFlags::ScriptStruct);
+			baseCore = SDK::UObject::FindObjectFast<SDK::UObject>("CrMassBuildingBaseCoreFragment", SDK::EClassCastFlags::ScriptStruct);
+			if (baseCore && baseCore->GetFullName() != "ScriptStruct Chimera.CrMassBuildingBaseCoreFragment")
+			{
+				baseCore = nullptr;
+			}
 			if (!obelisk || !transform
 				|| obelisk->GetFullName() != "ScriptStruct Chimera.CrAlienObeliskFragment"
 				|| transform->GetFullName() != "ScriptStruct MassCommon.TransformFragment")
 			{
-				obelisk = transform = nullptr;
+				obelisk = transform = baseCore = nullptr;
 				return false;
 			}
 		}
 		obeliskType = obelisk;
+		baseCoreType = baseCore;
 		transformType = transform;
 		return true;
 	}
 
 	// Retourne false si la lecture native est indisponible.
-	bool CaptureNativeObelisks(SDK::UWorld* world, std::vector<RawObelisk>& out, int& scanned)
+	bool CaptureNativeEntities(SDK::UWorld* world, NativeScan& out)
 	{
 		if (!g_nativeFeatureOn || g_nativeFaulted || !g_getFragmentData || g_entityManagerOffset < 0)
 		{
 			return false;
 		}
 		SDK::UObject* obeliskType = nullptr;
+		SDK::UObject* baseCoreType = nullptr;
 		SDK::UObject* transformType = nullptr;
-		if (!ResolveFragmentTypes(obeliskType, transformType))
+		if (!ResolveFragmentTypes(obeliskType, baseCoreType, transformType))
 		{
 			return false;
 		}
@@ -238,17 +273,70 @@ namespace
 		{
 			return false;
 		}
-		out.resize(kMaxNativeObelisks);
-		const int found = ScanObelisksGuarded(manager, obeliskType, transformType, out.data(), kMaxNativeObelisks, &scanned);
-		out.resize(found > 0 ? found : 0);
-		if (found < 0)
+		const int result = ScanEntitiesGuarded(manager, obeliskType, baseCoreType, transformType, &out);
+		if (result < 0)
 		{
 			g_nativeFaulted = true;
-			LOG_ERROR("[InGameMap] native obelisk read disabled for this session (%s)",
-				found == -2 ? "access fault" : "unexpected entity storage");
+			LOG_ERROR("[InGameMap] native entity read disabled for this session (%s)",
+				result == -2 ? "access fault" : "unexpected entity storage");
 			return false;
 		}
 		return true;
+	}
+
+	// Niveau et refroidissement : meme entite, retrouvee par le handle que le jeu met en cache.
+	void JoinBaseCoreLevels(SDK::UWorld* world, LiveStructures& live)
+	{
+		SDK::AActor* coreHelper = SDK::UGameplayStatics::GetActorOfClass(world, SDK::ACrBaseCoreReplicationHelper::StaticClass());
+		if (!MapStateSdk::TryIsObjectOfClass(coreHelper, SDK::ACrBaseCoreReplicationHelper::StaticClass()))
+		{
+			return;
+		}
+		// Noms donnes par le joueur, par identifiant persistant d'entite (meme source que
+		// les noms des cargos dans map_state_capture.cpp). Disponibles sans attendre les marqueurs.
+		std::map<uint32_t, std::string> customNames;
+		if (auto* names = MapStateSdk::TryGetWorldSubsystem<SDK::UCrBuildingCustomNameSubsystem>(
+				world, SDK::UCrBuildingCustomNameSubsystem::StaticClass()))
+		{
+			for (const auto& entry : names->CustomNames)
+			{
+				std::string name = entry.Value().ToString();
+				if (entry.Key().ID != 0 && !name.empty())
+				{
+					customNames.emplace(entry.Key().ID, std::move(name));
+				}
+			}
+		}
+		live.CustomNames = static_cast<int>(customNames.size());
+		const auto& data = static_cast<SDK::ACrBaseCoreReplicationHelper*>(coreHelper)->BaseCoreDataContainer.BaseCoreData;
+		live.BaseCoreData = std::clamp(data.Num(), 0, kMaxPoiEntries);
+		for (int index = 0; index < live.BaseCoreData; ++index)
+		{
+			const SDK::FCrBaseCoreData& entry = data[index];
+			const SDK::FMassEntityHandle handle = entry.BaseCore.Entity.CachedHandle;
+			for (LiveBaseCore& core : live.BaseCores)
+			{
+				// Un seul core et une seule entree : jointure evidente meme sans handle en cache.
+				const bool only = live.BaseCoreData == 1 && live.BaseCores.size() == 1;
+				// Un core lu nativement n'a pas de numero de serie : l'index suffit, il est unique.
+				const bool sameEntity = handle.Index != 0 && core.EntityIndex == handle.Index
+					&& (core.EntitySerial == 0 || core.EntitySerial == handle.SerialNumber);
+				if (only || sameEntity)
+				{
+					core.Level = entry.UpgradeLevel + 1;  // le jeu stocke a partir de 0 et affiche a partir de 1
+					core.Cooling = entry.CurrentCoolingCapacity;
+					core.CoolingUsed = entry.CurrentCoolingCapacityUsed;
+					core.Infected = entry.InfectionSphere;
+					if (const auto custom = customNames.find(entry.BaseCore.Entity.ID); custom != customNames.end())
+					{
+						core.Name = custom->second;
+						++live.BaseCoresNamed;
+					}
+					++live.BaseCoresJoined;
+					break;
+				}
+			}
+		}
 	}
 }
 
@@ -356,32 +444,6 @@ namespace
 				core.EntitySerial = building.BuildingHandle.SerialNumber;
 				live.BaseCores.push_back(std::move(core));
 			}
-			// Niveau et refroidissement : meme entite, retrouvee par le handle que le jeu met en cache.
-			SDK::AActor* coreHelper = SDK::UGameplayStatics::GetActorOfClass(world, SDK::ACrBaseCoreReplicationHelper::StaticClass());
-			if (MapStateSdk::TryIsObjectOfClass(coreHelper, SDK::ACrBaseCoreReplicationHelper::StaticClass()))
-			{
-				const auto& data = static_cast<SDK::ACrBaseCoreReplicationHelper*>(coreHelper)->BaseCoreDataContainer.BaseCoreData;
-				live.BaseCoreData = std::clamp(data.Num(), 0, kMaxPoiEntries);
-				for (int index = 0; index < live.BaseCoreData; ++index)
-				{
-					const SDK::FCrBaseCoreData& entry = data[index];
-					const SDK::FMassEntityHandle handle = entry.BaseCore.Entity.CachedHandle;
-					for (LiveBaseCore& core : live.BaseCores)
-					{
-						// Un seul core et une seule entree : jointure evidente meme sans handle en cache.
-						const bool only = live.BaseCoreData == 1 && live.BaseCores.size() == 1;
-						if (only || (handle.Index != 0 && core.EntityIndex == handle.Index && core.EntitySerial == handle.SerialNumber))
-						{
-							core.Level = entry.UpgradeLevel + 1;  // le jeu stocke a partir de 0 et affiche a partir de 1
-							core.Cooling = entry.CurrentCoolingCapacity;
-							core.CoolingUsed = entry.CurrentCoolingCapacityUsed;
-							core.Infected = entry.InfectionSphere;
-							++live.BaseCoresJoined;
-							break;
-						}
-					}
-				}
-			}
 			if (buildingExtent > 0.0f && buildingExtent < 20000.0f)  // metres, meme regle que les antennes
 			{
 				for (LiveBaseCore& core : live.BaseCores)
@@ -469,12 +531,31 @@ namespace
 		}
 
 		// Lecture native : fait autorite sur l'etat et la charge quand elle repond.
-		std::vector<RawObelisk> native;
-		if (CaptureNativeObelisks(world, native, live.EntitiesScanned))
+		// Hors pile : ~20 Ko de tableaux POD, reutilises d'une passe a l'autre (game thread).
+		static NativeScan native;
+		native.ObeliskCount = native.BaseCoreCount = native.Scanned = 0;
+		if (CaptureNativeEntities(world, native))
 		{
-			live.ObeliskNative = static_cast<int>(native.size());
-			for (const RawObelisk& raw : native)
+			live.EntitiesScanned = native.Scanned;
+			live.BaseCoresNative = native.BaseCoreCount;
+			// Base cores : les marqueurs du jeu arrivent en retard (16 a 56 s mesures) ; la
+			// lecture native les donne tout de suite. Le marqueur, quand il existe, garde le nom.
+			for (int index = 0; index < native.BaseCoreCount; ++index)
 			{
+				const RawBaseCore& raw = native.BaseCores[index];
+				const bool known = std::any_of(live.BaseCores.begin(), live.BaseCores.end(),
+					[&](const LiveBaseCore& core) { return core.EntityIndex == raw.EntityIndex; });
+				if (!known)
+				{
+					LiveBaseCore core{ static_cast<float>(raw.X), static_cast<float>(raw.Y), "Base core" };
+					core.EntityIndex = raw.EntityIndex;
+					live.BaseCores.push_back(std::move(core));
+				}
+			}
+			live.ObeliskNative = native.ObeliskCount;
+			for (int obeliskIndex = 0; obeliskIndex < native.ObeliskCount; ++obeliskIndex)
+			{
+				const RawObelisk& raw = native.Obelisks[obeliskIndex];
 				const float x = static_cast<float>(raw.X), y = static_cast<float>(raw.Y);
 				auto known = std::find_if(live.Obelisks.begin(), live.Obelisks.end(), [&](const LiveObelisk& other)
 				{
@@ -495,6 +576,7 @@ namespace
 				}
 			}
 		}
+		JoinBaseCoreLevels(world, live);
 		if (!live.Obelisks.empty())
 		{
 			const float chargeMax = ResolveObeliskChargeMax();
@@ -557,7 +639,8 @@ namespace
 		}
 		SDK::UObject* obeliskType = nullptr;
 		SDK::UObject* transformType = nullptr;
-		const bool fragments = ResolveFragmentTypes(obeliskType, transformType);
+		SDK::UObject* baseCoreType = nullptr;
+		const bool fragments = ResolveFragmentTypes(obeliskType, baseCoreType, transformType);
 		LOG_INFO("[InGameMap] live state warm-up: classes=%d/%d fragments=%d ms=%.1f", resolved, static_cast<int>(std::size(classes)),
 			fragments ? 1 : 0, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count());
 	}

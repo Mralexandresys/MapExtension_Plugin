@@ -43,20 +43,20 @@ Facts measured in game (CL-127004): `MapTerrainSegmentSize` is in metres while t
 | POI discovery state | `ACrMapMenuDataReplicationHelper::PointOfInterestReplicationData` | joined to the catalog by marker GUID (`%08X-%08X-%08X-%08X`, A-B-C-D) |
 | Abandoned base progress | `ACrAbandonBaseInfoReplicator::AbandonBaseDataContainer` | four collected-status arrays per base |
 | Antennas | `ACrAntennasOwner::AntennaContainer` | replaces the catalog "Antenna" group when present |
-| Base cores | `ACrMapMenuDataReplicationHelper::BuildingsMarkerDataContainer`, unique name containing `core` | level, cooling and infection from `ACrBaseCoreReplicationHelper::BaseCoreDataContainer`, joined on `BaseCore.Entity.CachedHandle == BuildingHandle`; displayed level is `UpgradeLevel + 1` |
+| Base cores | native read of entities carrying `FCrMassBuildingBaseCoreFragment` (position, available at once), completed by `ACrMapMenuDataReplicationHelper::BuildingsMarkerDataContainer` entries whose unique name contains `core` (name; these markers arrive 16 to 56 s after the world loads) | level, cooling and infection from `ACrBaseCoreReplicationHelper::BaseCoreDataContainer`, joined on `BaseCore.Entity.CachedHandle` (entity index); displayed level is `UpgradeLevel + 1`. Without the native feature, base cores appear when the markers do |
 | Monoliths | native read of `FCrAlienObeliskFragment` + `FTransformFragment` | see below; the replicated bubble and loaded actors only exist in multiplayer or near the player |
 | Attack threshold | `UCrAlienObeliskTrait::Parameters.ChargeValueToActivateAttack` | 0.5 on CL-127004; percentage = charge / threshold |
 
 POI states are captured every 2 s and live structures every 4 s while the panel is open.
 
-### Native monolith read
+### Native entity read (monoliths and base cores)
 
 No reflected source lists monoliths in solo. `plugin.cpp` exports `OnPluginLoadHooks` (client build only) and calls `ResolveNativeAccess`, which declares the loader feature `ingame-map-monoliths` and resolves two keys:
 
 - `FMassArchetypeData::GetFragmentDataForEntity`: the loader's map first, then the plugin's own 37-byte signature (one match in the CL-127004 executable), checked as a function start.
 - `UMassEntitySubsystem::EntityManager`: native field row for CL-127004 (offset `0x38`), same row as the SDK's `plugin_map.h`.
 
-`ScanObelisksGuarded` walks the entity storage of `FMassEntityManager` (storage at `+0x20`, variant type at `+0x60`, vtable slots `+0x10` archetype and `+0x48` valid index, all verified by disassembling `IsEntityValid` in the installed executable) and asks the game function for the two fragments. It is read-only, installs no hook, and runs under `__try/__except`: a fault or an unexpected storage type disables the read for the session. A key that does not resolve turns off only this feature.
+`ScanEntitiesGuarded` walks the entity storage of `FMassEntityManager` (storage at `+0x20`, variant type at `+0x60`, vtable slots `+0x10` archetype and `+0x48` valid index, all verified by disassembling `IsEntityValid` in the installed executable) and asks the game function for the obelisk fragment, the base-core fragment and the transform, in one pass. It is read-only, installs no hook, and runs under `__try/__except`: a fault or an unexpected storage type disables the read for the session. A key that does not resolve turns off only this feature.
 
 Rules when the game updates:
 
