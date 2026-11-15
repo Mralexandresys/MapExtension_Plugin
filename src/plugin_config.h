@@ -72,13 +72,6 @@ namespace MapExtensionPluginConfig
 		},
 		{
 			"InGameMap",
-			"Enabled",
-			ConfigValueType::Boolean,
-			"1",
-			"In-game logistics map panel (ImGui)"
-		},
-		{
-			"InGameMap",
 			"ToggleKey",
 			ConfigValueType::Keybind,
 			"F8",
@@ -90,6 +83,13 @@ namespace MapExtensionPluginConfig
 			ConfigValueType::Integer,
 			"64",
 			"Approximate video memory budget for full-resolution terrain tiles of the in-game map (0 = preview quality only)"
+		},
+		{
+			"InGameMap",
+			"ShowPopup",
+			ConfigValueType::Boolean,
+			"1",
+			"Show a window, each time a game is loaded, saying the map opens in game with the toggle key and that players coming from a version older than 0.7 must download the mod again from Nexus Mods"
 		}
 	};
 
@@ -156,14 +156,14 @@ namespace MapExtensionPluginConfig
 			return (s_config && s_self) ? s_config->ReadInt(s_self, "Runtime", "RefreshIntervalMs", 2000) : 2000;
 		}
 
-		static bool InGameMapEnabled()
-		{
-			return (s_config && s_self) ? s_config->ReadBool(s_self, "InGameMap", "Enabled", true) : true;
-		}
-
 		static int InGameMapTileBudgetMiB()
 		{
 			return (s_config && s_self) ? s_config->ReadInt(s_self, "InGameMap", "TileBudgetMiB", 64) : 64;
+		}
+
+		static bool InGameMapShowPopup()
+		{
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "InGameMap", "ShowPopup", true) : true;
 		}
 
 		static const char* InGameMapToggleKey()
