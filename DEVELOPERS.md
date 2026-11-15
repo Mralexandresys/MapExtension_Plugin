@@ -23,7 +23,7 @@ Keep the runtime split along these boundaries.
 
 ## In-game map
 
-Client-only, on unless `InGameMap.Enabled=0` (applied live through `RegisterOnConfigChanged`). Original plan: `INGAME_MAP_POC_PLAN.md`; runtime measurements and decisions: `update/ingame_map_poc_journal.md`.
+Client-only and always on. Original plan: `INGAME_MAP_POC_PLAN.md`; runtime measurements and decisions: `update/ingame_map_poc_journal.md`.
 
 - `client/ingame_map_terrain_source.*` (game thread): terrain and textures. Resolves `UCrMapMenuDevSettings` CDO -> `TerrainData` soft reference -> `UCrMapMenuTerrainData` on every call and returns a POD `TerrainDescriptor`. Copies segment textures, item icons and marker textures (`LoadFromUTexture2D`).
 - `client/ingame_map_live_state.*` (game thread): POI states, antennas, base cores and monoliths, including the native read. No UObject pointer is kept across calls, except the two native `UScriptStruct` used by the monolith read (rooted, never collected).

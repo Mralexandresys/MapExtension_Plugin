@@ -72,6 +72,13 @@ Two limits are worth knowing:
 
 Automatic updates can be disabled modloader-wide with `[AutoUpdate] Enabled=0` in `modloader.ini`.
 
+### Upgrading from 0.8
+
+- Replace the client DLL; the `Plugins/MapExtension/` folder does not change.
+- A window now opens in the middle of the screen each time a game is loaded. It says the map opens in game with the toggle key, and asks players coming from a version older than 0.7 to download the mod again from Nexus Mods. Close it with OK; set `[InGameMap] ShowPopup=0` to stop showing it.
+- `[InGameMap] Enabled` is removed: the in-game map is always on, and an old `Enabled=0` is ignored.
+- Dedicated server: sync protocol is still v6 and the server build has no change; the 0.8 server DLL keeps working with the 0.9 client.
+
 ### Upgrading from 0.7
 
 - Replace the client DLL and copy the new `Plugins/MapExtension/` folder next to it.
@@ -121,9 +128,9 @@ LogRefreshTimings=0
 RefreshIntervalMs=2000
 
 [InGameMap]
-Enabled=1
 ToggleKey=F8
 TileBudgetMiB=64
+ShowPopup=1
 ```
 
 - `Enabled`: enables or disables the plugin (`1` or `0`)
@@ -135,9 +142,9 @@ TileBudgetMiB=64
 - `LogActorScanFallback`: logs actor scan fallback (`1` or `0`)
 - `LogRefreshTimings`: logs per-phase refresh timings (`1` or `0`)
 - `RefreshIntervalMs`: sets the runtime refresh interval in milliseconds
-- `InGameMap.Enabled`: enables the in-game map panel, on by default (`1` or `0`). Applies immediately, no restart needed
 - `InGameMap.ToggleKey`: key that opens or closes that panel (default `F8`)
 - `InGameMap.TileBudgetMiB`: approximate video memory allowed for full-resolution terrain tiles (default `64`; `0` keeps the low-resolution preview only)
+- `InGameMap.ShowPopup`: each time a game is loaded, shows a centered window, closed with its OK button, saying the map opens in game with the toggle key and that players coming from a version older than 0.7 must download the mod again from Nexus Mods (default `1`; `0` hides it)
 
 ## Credits
 

@@ -72,6 +72,13 @@ Deux limites a connaitre :
 
 Les mises a jour automatiques peuvent etre desactivees globalement dans le modloader avec `[AutoUpdate] Enabled=0` dans `modloader.ini`.
 
+### Mise a jour depuis la 0.8
+
+- Remplacer la DLL client ; le dossier `Plugins/MapExtension/` ne change pas.
+- Une fenetre s'ouvre maintenant au milieu de l'ecran a chaque partie chargee. Elle indique que la carte s'ouvre en jeu avec la touche configuree, et demande aux joueurs venant d'une version anterieure a la 0.7 de retelecharger le mod sur Nexus Mods. La fermer avec OK ; passer `[InGameMap] ShowPopup=0` pour ne plus l'afficher.
+- `[InGameMap] Enabled` est supprime : la carte en jeu est toujours active, et une ancienne valeur `Enabled=0` est ignoree.
+- Serveur dedie : le protocole de synchronisation reste v6 et le build serveur ne change pas ; la DLL serveur 0.8 continue de fonctionner avec le client 0.9.
+
 ### Mise a jour depuis la 0.7
 
 - Remplacer la DLL client et copier le nouveau dossier `Plugins/MapExtension/` a cote.
@@ -121,9 +128,9 @@ LogRefreshTimings=0
 RefreshIntervalMs=2000
 
 [InGameMap]
-Enabled=1
 ToggleKey=F8
 TileBudgetMiB=64
+ShowPopup=1
 ```
 
 - `Enabled` : active ou desactive le plugin (`1` ou `0`)
@@ -135,9 +142,9 @@ TileBudgetMiB=64
 - `LogActorScanFallback` : loggue le fallback actor scan (`1` ou `0`)
 - `LogRefreshTimings` : loggue les timings par phase de refresh (`1` ou `0`)
 - `RefreshIntervalMs` : definit l'intervalle de refresh runtime en millisecondes
-- `InGameMap.Enabled` : active le panneau de carte en jeu, active par defaut (`1` ou `0`). Applique immediatement, sans redemarrage
 - `InGameMap.ToggleKey` : touche qui ouvre ou ferme ce panneau (defaut `F8`)
 - `InGameMap.TileBudgetMiB` : memoire video approximative autorisee pour les tuiles de terrain en pleine resolution (defaut `64` ; `0` garde uniquement l'apercu basse resolution)
+- `InGameMap.ShowPopup` : a chaque partie chargee, affiche une fenetre centree, fermee par son bouton OK, qui indique que la carte s'ouvre en jeu avec la touche configuree et que les joueurs venant d'une version anterieure a la 0.7 doivent retelecharger le mod sur Nexus Mods (defaut `1` ; `0` la masque)
 
 ## Remerciements
 

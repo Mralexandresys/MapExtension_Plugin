@@ -10,7 +10,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 
 [b]New in 0.8:[/b] the map now lives in the game. The browser page ([b]MapExtensionViewer.html[/b]) is no longer part of the mod.
 
-[img]https://staticdelivery.nexusmods.com/mods/8632/images/91/91-1776075854-1505186280.png[/img]
+[img]https://staticdelivery.nexusmods.com/mods/8632/images/91/91-1794757141-1215732237.png[/img]
 [line]
 
 [size=4][b]Features[/b][/size]
@@ -30,6 +30,28 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [/list]
 
 [line]
+
+[size=4][b]Change Log v0.9[/b][/size]
+
+[b]Welcome window when a game is loaded[/b]
+[list]
+[*]Each time a game is loaded, a window in the middle of the screen reminds you that the map opens in game with [b]F8[/b] (or your configured key) and that the browser page [b]MapExtensionViewer.html[/b] is gone[/*]
+[*]Coming from a version older than 0.7? The window asks you to download the mod again from Nexus Mods and install the whole archive[/*]
+[*]Close it with the [b]OK[/b] button; the game gets no mouse or keyboard input while it is open[/*]
+[*]New option [code][InGameMap] ShowPopup[/code] (default 1): set it to 0 in the mod options or in [b]MapExtension_Plugin.ini[/b] to stop showing it[/*]
+[/list]
+
+[b]In-game map always on[/b]
+[list]
+[*]The [code][InGameMap] Enabled[/code] option is removed: the in-game map is always on. An old [code]Enabled=0[/code] in your config file is ignored[/*]
+[/list]
+
+[b]Update[/b]
+[list]
+[*]Replace the client DLL; the [b]MapExtension[/b] folder does not change[/*]
+[*]Nothing to change in your config file: [code]ShowPopup=1[/code] is added on first launch[/*]
+[*]Dedicated server: sync protocol unchanged (v6) and no server-side change; the 0.8 server DLL keeps working with the 0.9 client[/*]
+[/list]
 
 [size=4][b]Change Log v0.8[/b][/size]
 
@@ -260,17 +282,17 @@ Enabled=1
 RefreshIntervalMs=2000
 
 [InGameMap]
-Enabled=1
 ToggleKey=F8
-TileBudgetMiB=64[/code]
+TileBudgetMiB=64
+ShowPopup=1[/code]
 
 
 [list]
 [*][b]Enabled[/b]: turns the plugin on or off[/*]
 [*][b]RefreshIntervalMs[/b]: how often the runtime data is refreshed[/*]
-[*][b]InGameMap.Enabled[/b]: turns the in-game map on or off[/*]
 [*][b]InGameMap.ToggleKey[/b]: key that opens and closes the map[/*]
 [*][b]InGameMap.TileBudgetMiB[/b]: video memory allowed for full-resolution map terrain (0 keeps the low-resolution preview only)[/*]
+[*][b]InGameMap.ShowPopup[/b]: window shown when a game is loaded, closed with OK: the map opens with F8, and players coming from a version older than 0.7 must download the mod again (0 hides it)[/*]
 [/list]
 
 Most players will not need to change anything. The default settings are enough to use the mod.
@@ -293,7 +315,7 @@ The [b]MapExtension[/b] folder is not next to the DLL. Copy it again from the cl
 
 [b]Nothing happens when I press F8.[/b]
 
-Check that [code][InGameMap] Enabled=1[/code] in [b]MapExtension_Plugin.ini[/b]. A config file created by an older version may still say 0.
+Check that the [b]ToggleKey[/b] in [b]MapExtension_Plugin.ini[/b] is not used by another mod.
 
 [b]Monoliths show no state after a game update.[/b]
 
