@@ -184,8 +184,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="src\map_state_capture.h" />
-    <ClInclude Include="src\map_state_http.h" />
-    <ClInclude Include="src\map_state_json.h" />
     <ClInclude Include="src\map_state_runtime.h" />
     <ClInclude Include="src\map_state_sdk_helpers.h" />
     <ClInclude Include="src\map_state_types.h" />
@@ -229,14 +227,6 @@
     </ClCompile>
     <ClCompile Include="src\map_state_capture.cpp" />
 
-    <ClCompile Include="src\map_state_http.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="src\map_state_json.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
-    </ClCompile>
 
     <ClCompile Include="src\map_state_runtime.cpp" />
     <ClCompile Include="src\dllmain.cpp" />

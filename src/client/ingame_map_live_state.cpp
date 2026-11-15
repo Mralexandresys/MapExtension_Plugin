@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <iterator>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -188,6 +190,30 @@ namespace
 		return cached;
 	}
 
+	// Types des deux fragments lus. Structs natifs enracines : jamais collectes,
+	// donc memorisables pour la session. La premiere resolution parcourt GObjects.
+	bool ResolveFragmentTypes(SDK::UObject*& obeliskType, SDK::UObject*& transformType)
+	{
+		static SDK::UObject* obelisk = nullptr;
+		static SDK::UObject* transform = nullptr;
+		if (!obelisk || !transform)
+		{
+			// Recherche par nom court (rapide), nom complet verifie une fois sur le resultat.
+			obelisk = SDK::UObject::FindObjectFast<SDK::UObject>("CrAlienObeliskFragment", SDK::EClassCastFlags::ScriptStruct);
+			transform = SDK::UObject::FindObjectFast<SDK::UObject>("TransformFragment", SDK::EClassCastFlags::ScriptStruct);
+			if (!obelisk || !transform
+				|| obelisk->GetFullName() != "ScriptStruct Chimera.CrAlienObeliskFragment"
+				|| transform->GetFullName() != "ScriptStruct MassCommon.TransformFragment")
+			{
+				obelisk = transform = nullptr;
+				return false;
+			}
+		}
+		obeliskType = obelisk;
+		transformType = transform;
+		return true;
+	}
+
 	// Retourne false si la lecture native est indisponible.
 	bool CaptureNativeObelisks(SDK::UWorld* world, std::vector<RawObelisk>& out, int& scanned)
 	{
@@ -195,21 +221,11 @@ namespace
 		{
 			return false;
 		}
-		// Structs natifs enracines : jamais collectes, donc memorisables pour la session.
-		static SDK::UObject* obeliskType = nullptr;
-		static SDK::UObject* transformType = nullptr;
-		if (!obeliskType || !transformType)
+		SDK::UObject* obeliskType = nullptr;
+		SDK::UObject* transformType = nullptr;
+		if (!ResolveFragmentTypes(obeliskType, transformType))
 		{
-			// Recherche par nom court (rapide), nom complet verifie une fois sur le resultat.
-			obeliskType = SDK::UObject::FindObjectFast<SDK::UObject>("CrAlienObeliskFragment", SDK::EClassCastFlags::ScriptStruct);
-			transformType = SDK::UObject::FindObjectFast<SDK::UObject>("TransformFragment", SDK::EClassCastFlags::ScriptStruct);
-			if (!obeliskType || !transformType
-				|| obeliskType->GetFullName() != "ScriptStruct Chimera.CrAlienObeliskFragment"
-				|| transformType->GetFullName() != "ScriptStruct MassCommon.TransformFragment")
-			{
-				obeliskType = transformType = nullptr;
-				return false;
-			}
+			return false;
 		}
 		SDK::UObject* subsystem = SDK::USubsystemBlueprintLibrary::GetWorldSubsystem(world, SDK::UMassEntitySubsystem::StaticClass());
 		if (!MapStateSdk::TryIsObjectOfClass(subsystem, SDK::UMassEntitySubsystem::StaticClass()))
@@ -522,6 +538,28 @@ namespace
 			}
 		}
 		return states;
+	}
+
+	void WarmUpLiveState()
+	{
+		const auto started = std::chrono::steady_clock::now();
+		// Chaque StaticClass() parcourt GObjects a son premier appel, puis memorise.
+		const SDK::UClass* classes[] = {
+			SDK::UGameplayStatics::StaticClass(), SDK::USubsystemBlueprintLibrary::StaticClass(),
+			SDK::ACrMapMenuDataReplicationHelper::StaticClass(), SDK::ACrAbandonBaseInfoReplicator::StaticClass(),
+			SDK::ACrAntennasOwner::StaticClass(), SDK::ACrBaseCoreReplicationHelper::StaticClass(),
+			SDK::ACrMassAlienObeliskClientBubbleInfo::StaticClass(), SDK::ACrAlienObelisk::StaticClass(),
+			SDK::UMassEntitySubsystem::StaticClass(), SDK::UCrAlienObeliskTrait::StaticClass() };
+		int resolved = 0;
+		for (const SDK::UClass* cls : classes)
+		{
+			resolved += cls ? 1 : 0;
+		}
+		SDK::UObject* obeliskType = nullptr;
+		SDK::UObject* transformType = nullptr;
+		const bool fragments = ResolveFragmentTypes(obeliskType, transformType);
+		LOG_INFO("[InGameMap] live state warm-up: classes=%d/%d fragments=%d ms=%.1f", resolved, static_cast<int>(std::size(classes)),
+			fragments ? 1 : 0, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count());
 	}
 
 	int ReadRadiationLevel()

@@ -19,7 +19,7 @@ Verification date: 2026-03-08
 - Important upstream note: the asset `base_map.webp` is explicitly stated as copyright
   `Creepy Jar S.A.` and is not covered by the MIT license.
 - Usage in this project: reference for the static map image projection kept in
-  `map_state_types.h` (HTTP `map` coordinates). The map tiles derived from
+  `map_state_types.h` (unused since the HTTP API was removed in 0.8). The map tiles derived from
   `base_map.webp` shipped with the web viewer until 0.7; since 0.8 the viewer is
   removed and no such asset is distributed.
 
@@ -39,8 +39,8 @@ unless a clear license or permission is provided.
 - Upstream license: MIT
 - Verified license file:
   `https://raw.githubusercontent.com/nlohmann/json/develop/LICENSE.MIT`
-- Usage in this project: vendored single-header JSON library for HTTP payload
-  serialization
+- Usage in this project: vendored single-header JSON library used to parse the
+  static world catalog files
 - Vendored files:
   - `third_party/nlohmann/json.hpp`
   - `licenses/nlohmann-json.MIT.txt`

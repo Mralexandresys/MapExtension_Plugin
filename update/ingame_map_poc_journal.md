@@ -655,3 +655,117 @@ Demande utilisateur : optimiser, refactorer, mettre le code dans `src/`.
 
 Builds : client debug, client release, serveur release verts ; `resource_observation_test.py` passe.
 **Rien testé en jeu après la réorganisation.**
+
+## 2026-11-15 — Analyse de performance (log 00:03) et correctifs
+
+Utilisateur : la réorganisation fonctionne en jeu (commit `90b8e18`).
+
+Ce que le log mesure (une session, carte ouverte à 00:01:38) :
+
+| Poste | Mesure | Fréquence |
+| --- | --- | --- |
+| Premier relevé des structures | 168 ms | une fois par session, à la première ouverture |
+| Relevés suivants | 1,7 ms | toutes les 4 s |
+| Copie de l'aperçu (36 tuiles) | 29 à 35 ms | 3 fois par arrivée en monde, carte ouverte |
+| Icônes d'items par nom | 18 ms | une fois |
+
+Ce que le log ne mesure pas : le coût d'une passe de service courante et le coût du rendu par image.
+
+Correctifs (non vérifiés en jeu) :
+
+- `WarmUpLiveState` : résout pendant le chargement du monde les classes et les deux types de fragment dont le
+  relevé a besoin. Hypothèse non prouvée : les 168 ms viennent de ces premières résolutions (chaque `StaticClass`
+  parcourt GObjects). Le log `live state warm-up: ... ms=` et le `scan_ms` du premier relevé trancheront.
+- Aperçu : 12 tuiles par passe au lieu de 36 d'un coup (≈10 ms par passe sur 3 passes). L'aperçu se complète en
+  1,5 s au lieu d'apparaître d'un bloc.
+- Mesure ajoutée : avec `[Diagnostics] LogRefreshTimings=1`, une ligne toutes les 30 s d'ouverture
+  (`timings over 60 passes: service avg/max | render frames/avg/max`). Le rendu est chronométré côté CPU seulement.
+
+Build client debug et release verts, aucun warning MapExtension.
+
+## 2026-11-15 — Log 00:17 avec `LogRefreshTimings=1`
+
+**Biais majeur : la DLL en jeu est le build Debug** (8 807 424 octets, identique à `build/Client Debug/`, contre
+600 064 pour le Release). Toutes les mesures prises depuis le début l'ont donc été sans optimisation et avec la
+bibliothèque standard de débogage. Elles surestiment le coût réel, d'un facteur inconnu.
+
+Mesures (Debug) :
+
+- `live state warm-up: classes=10/10 fragments=1 ms=195.0` au chargement ; premier relevé ensuite à 26 ms (168
+  avant). Hypothèse confirmée : le coût venait des premières résolutions.
+- Carte ouverte, par fenêtre de 30 s : service moyenne 4,0 à 4,3 ms (max 9 à 11 ms) toutes les 0,5 s ; rendu
+  moyenne 1,4 à 1,6 ms par image (max 3 à 7 ms) sur ~2300 images.
+- Aperçu étalé : total 47 à 70 ms sur 3 passes (30 ms d'un bloc avant) — pas un gain en cumul, à rejuger en Release.
+- **Capture principale du snapshot (`map_state_capture.cpp`), toutes les 2 s, carte ouverte ou fermée** : 101
+  relevés, total moyen 30 ms, médiane 27 ms, max 229 ms. Détail : `replicator` 20,5 ms en moyenne (max 62),
+  `poi_capture` 13 ms (32 fois, max 161), `poi_snapshot_reuse` 5 ms. C'est le poste dominant du plugin.
+- 13 rafraîchissements viennent de `HttpRequest(/cargo)` : un client HTTP interroge encore l'API (ancien viewer ?).
+
+Lecture du code de `CaptureFromReplicator` : aucune opération lourde évidente (clés construites par
+`ostringstream`, tables de hachage, noms d'items) ; ce profil est typiquement très pénalisé en Debug. Aucune
+optimisation tentée à l'aveugle. Prochaine étape : mêmes mesures avec la DLL Release.
+
+## 2026-11-15 — Mesures en Release (log 00:32)
+
+DLL en jeu : Release (600 064 octets). Premier test en jeu de ce build ; l'utilisateur ne signale aucun défaut.
+
+| Poste | Release | Debug (log précédent) |
+| --- | --- | --- |
+| Capture du snapshot, toutes les 2 s | médiane 3 ms, max 18 ms (86 relevés) | médiane 27 ms |
+| dont `replicator` | moyenne 2 ms, max 5 | 20,5 ms |
+| Rendu de la carte, par image | 0,29 à 0,56 ms, max 3,8 ms | 1,4 à 1,6 ms |
+| Service, carte ouverte, hors copies | 0,8 à 1,1 ms en moyenne | 4 ms |
+| Échauffement au chargement | 15,9 ms | 195 ms |
+| Premier relevé des structures | 4,7 ms | 26 ms |
+| Icônes d'items par nom (une fois) | 21 ms | 18 ms |
+| Copie de l'aperçu, 36 tuiles | 67 à 91 ms cumulés | 47 à 70 ms |
+
+Conclusion : la capture cargo n'est pas un problème en Release ; l'alerte du log précédent venait du build Debug.
+Seul à-coup restant : la copie de l'aperçu (copie GPU, insensible à l'optimisation), ~2,2 ms par tuile, soit
+25 à 30 ms par passe avec 12 tuiles — visible dans `service max=44 / 36 / 26 ms`.
+
+Correctif : 4 tuiles par passe (~9 ms) et séquence de recopie à 1 / 7 / 20 s (au lieu de 1 / 5 / 15) pour qu'une
+copie se termine avant la suivante. L'aperçu complet arrive en 4,5 s. Non vérifié en jeu.
+
+Non expliqué : la séquence d'aperçu a été rejouée une seconde fois à 00:31:40 (case « Terrain » recochée ou nouveau
+monde, non tranché). 136 lignes de mesure viennent encore de `HttpRequest(/cargo)` : un client HTTP interroge l'API.
+
+Builds client release et debug verts.
+
+## 2026-11-15 — Suppression de l'API HTTP locale
+
+Décision utilisateur, après constat qu'un client interrogeait encore `/cargo` (136 captures déclenchées en 2 min).
+
+- Supprimés : `src/map_state_http.*`, `src/map_state_json.*`, `tools/tests/http_server_smoke.cpp`, le réglage
+  `[Http] Port`, `HandleProcessDetach` (ne servait qu'au serveur HTTP) et le contrat `viewer_contract_version`.
+- Conservé : `RequestCargoSnapshotRefresh`, utilisé en interne (délégué de rupture, apparition d'une ressource) ; son
+  motif de log devient `RequestedRefresh`. `nlohmann/json` reste, pour le chargeur du catalogue.
+- Conservé sans lecteur : les champs `MapLocation` du snapshot et la projection de `map_state_types.h` (trop
+  imbriqués dans la capture et le protocole serveur pour être retirés sans risque).
+- Conséquence : une ancienne copie du viewer ne reçoit plus rien ; le plugin n'ouvre plus aucun port. Le protocole
+  de synchronisation serveur (v6) est inchangé.
+- Docs alignées : README (EN/FR), DEVELOPERS, AGENTS, descriptionbbcode, notices, game-context, changelog local.
+
+Builds : client release, client debug, serveur release verts ; `resource_observation_test.py` passe ; la DLL
+Release ne contient plus les chaînes du serveur HTTP. **Rien testé en jeu.**
+
+## 2026-11-15 — Retour utilisateur : régression après les correctifs de performance
+
+Utilisateur : la carte met plus de temps à charger, les icônes aussi, certaines ne se chargent jamais.
+
+Log 01:14 (Release, build de 00:41) :
+
+- Aperçu complet 5,5 s après l'ouverture (1,5 s au test précédent) : conséquence directe de l'étalement à 4 tuiles
+  par passe. **Étalement retiré**, retour aux 36 tuiles d'un coup à 1 / 5 / 15 s (70 à 90 ms par copie). Décision :
+  l'à-coup est préféré à un aperçu lent.
+- Icônes : le log n'indique **aucun échec** (9 icônes de marqueur chargées en 2 s, `item icons loaded: 20`, aucun
+  `no icon for`). La cause des icônes manquantes n'est donc pas établie.
+- Constat annexe : `building markers: 0, base cores=0` à l'ouverture (01:11:30), et 109 / 60 seulement à 01:12:26.
+  Les marqueurs de bâtiment du jeu arrivent tard ; les base cores sont absents de la carte pendant ce temps. Déjà
+  visible dans les logs précédents (14 s à 00:01), indépendant des correctifs. Piste si c'est ce que l'utilisateur
+  a vu : lire les base cores nativement, comme les monolithes.
+- Conservés : échauffement au chargement (15 ms, invisible) et relevé `timings over 60 passes`.
+- Ajout de diagnostic : taille de chaque icône copiée dans le log (`marker icon ... WxH`, `item icon ...: WxH`),
+  pour détecter une icône prise avant la fin du streaming.
+
+Build client release vert. Non testé en jeu.

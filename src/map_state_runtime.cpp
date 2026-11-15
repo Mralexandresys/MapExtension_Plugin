@@ -4,7 +4,6 @@
 #include "plugin_helpers.h"
 
 #if defined(MODLOADER_CLIENT_BUILD)
-#include "map_state_http.h"
 #endif
 
 #if defined(MODLOADER_CLIENT_BUILD)
@@ -35,14 +34,6 @@ namespace MapStateRuntime
 		{
 			return true;
 		}
-
-#if defined(MODLOADER_CLIENT_BUILD)
-		if (!Detail::StartHttpServer())
-		{
-			return false;
-		}
-
-#endif
 
 		if (hooks->Engine && hooks->Engine->RegisterOnInit)
 		{
@@ -186,18 +177,6 @@ namespace MapStateRuntime
 #endif
 
 		g_registered = false;
-#if defined(MODLOADER_CLIENT_BUILD)
-		Detail::StopHttpServer();
-#endif
 		LOG_INFO("Runtime callbacks unregistered");
-	}
-
-	void HandleProcessDetach(bool processTerminating)
-	{
-#if defined(MODLOADER_CLIENT_BUILD)
-		Detail::HandleHttpProcessDetach(processTerminating);
-#else
-		(void)processTerminating;
-#endif
 	}
 }

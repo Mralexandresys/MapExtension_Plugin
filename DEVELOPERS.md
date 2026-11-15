@@ -6,22 +6,20 @@
 - static world catalog (committed build input): `MapExtension_Plugin/map-data/`
 - static world-catalog generator: `MapExtension_Plugin/tools/build_map_data.py`
 
-The browser viewer (`mapview/`, `MapExtensionViewer.html`, `map-tiles/`) was removed in 0.8. The in-game map is the only UI; the local HTTP API stays for external tools.
+The browser viewer (`mapview/`, `MapExtensionViewer.html`, `map-tiles/`) was removed in 0.8. The local HTTP API (`/health`, `/cargo`, `/rupture-cycle`) and its JSON serialization were removed with it. The in-game map is the only consumer of the snapshot on the client.
 
 ## Runtime module layout
 
 - `plugin.cpp`: plugin metadata, startup, shutdown, and hook registration
 - `map_state_runtime.cpp`: public runtime facade used by the plugin entrypoints
 - `map_state_capture.cpp` / `map_state_capture.h`: runtime capture, snapshot refresh, and gameplay callbacks
-- `map_state_http.cpp` / `map_state_http.h`: local HTTP server and endpoint routing
-- `map_state_json.cpp` / `map_state_json.h`: JSON serialization for `/health`, `/cargo`, and `/rupture-cycle`
 - `map_state_types.h`: shared snapshot types and map projection constants
 - `client/map_sync_client.cpp` / `client/map_sync_client.h`: client-side snapshot requests and plugin-network handling
 - `client/map_state_remote_cache.cpp` / `client/map_state_remote_cache.h`: client cache for remote rupture/cargo snapshots
 - `server/map_sync_server.cpp` / `server/map_sync_server.h`: server-side snapshot capture and response streaming
 - `shared/map_sync_protocol.h`: shared packet definitions for client/server snapshot sync
 
-Keep the runtime split along these boundaries. Do not move HTTP or JSON formatting back into `map_state_runtime.cpp` unless the split is being intentionally reverted.
+Keep the runtime split along these boundaries.
 
 ## In-game map
 
@@ -82,7 +80,7 @@ Terrain tiles: a permanent preview (the resident mip of each of the 36 segments,
 
 ## Third-party code
 
-- JSON serialization uses vendored `nlohmann/json` in `third_party/nlohmann/json.hpp`.
+- The static catalog loader (`client/ingame_map_catalog.cpp`) parses its files with vendored `nlohmann/json` in `third_party/nlohmann/json.hpp`.
 - License and notice files must stay in sync with that vendored header:
   - `licenses/nlohmann-json.MIT.txt`
   - `THIRD_PARTY_NOTICES.md`
@@ -159,25 +157,6 @@ To inspect the latest build logs manually:
 ./summarize_build.sh client
 ./summarize_build.sh server
 ```
-
-## HTTP regression test without the game
-
-`tools/tests/http_server_smoke.cpp` uses the production HTTP implementation with
-capture/JSON stubs and an unused loopback port. It checks that a silent connection
-cannot indefinitely block the next request or shutdown, that a non-reading client
-cannot block shutdown, and that the server can restart. It does not modify the game.
-
-From an x64 Visual Studio Developer Command Prompt with v143 selected, at the repository root:
-
-```bat
-if not exist build\http-smoke mkdir build\http-smoke
-cl /nologo /std:c++20 /EHsc /MD /I. /Isrc /IStarRupture-Plugin-SDK\include /I"StarRupture-Plugin-SDK\StarRupture SDK\Client" /I"StarRupture-Plugin-SDK\StarRupture SDK\Client\SDK" tools\tests\http_server_smoke.cpp src\map_state_http.cpp src\plugin_config.cpp /Fo:build\http-smoke\ /Fe:build\http-smoke\http_server_smoke.exe
-build\http-smoke\http_server_smoke.exe
-```
-
-Successful output ends with `HTTP smoke checks passed`; the test does not replace
-client/server builds or validation in the game. The generated SDK may emit its
-existing enum warning C4369 in this standalone build.
 
 ## Static world catalog
 
@@ -276,82 +255,14 @@ Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker
 
 **Always update the client and dedicated-server builds together when deploying protocol v6.** The client sidecar updates only `MapExtension_Plugin.dll` on player machines; it does not update the dedicated-server DLL. A mismatched pair will ignore each other's packets, so the server DLL must be replaced manually during the same rollout.
 
-## Runtime contract
+## Snapshot semantics
 
-- `GET /health`: status, world, generation, and entity counts
-- `GET /cargo`: current snapshot payload used by the frontend
-- `GET /rupture-cycle`: current rupture-cycle payload used by the frontend timeline
+`CargoSnapshot` (`map_state_types.h`) is the only contract between capture, dedicated-server sync and the in-game map; there is no external payload any more.
 
-`/cargo` remains the compatibility endpoint consumed by the current frontend even though the payload now includes cargo links, teleporters, players, and POIs.
-
-`/rupture-cycle` remains a separate endpoint consumed by the frontend for the timeline view.
-
-The frontend endpoint is editable in the UI, but defaults to `http://127.0.0.1:9000`. Accepted HTTP sockets have a one-second receive/send inactivity timeout. Shutdown signals the worker, waits for bounded I/O to finish, then closes the listener.
-
-`generation` identifies refreshes, not content changes: it can advance while entities or a cached server snapshot stay unchanged. The POI content revision serves the separate purpose of invalidating paginated content. Cargo connections publish requested items and amounts, not measured throughput or items physically in transit.
-
-### `/cargo` POI contract
-
-The payload includes `counts.pois`, `counts.abandoned_bases`, `counts.plant_resources`, `counts.ignitium`, and `counts.star_tears`, plus a top-level `pois` array:
-
-```json
-{
-  "counts": {
-    "pois": 2,
-    "abandoned_bases": 1,
-    "plant_resources": 1,
-    "ignitium": 0,
-    "star_tears": 0
-  },
-  "pois": [
-    {
-      "kind": "abandoned_base",
-      "label": "Abandoned Base",
-      "resource": "",
-      "depleted": false,
-      "state": "available",
-      "source": "actor_scan.abandoned_base",
-      "unique_key": "example-abandoned-base-key",
-      "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
-      "map": { "x": 0.0, "y": 0.0 }
-    },
-    {
-      "kind": "plant_resource",
-      "label": "Hydrobulb",
-      "resource": "Hydrobulb",
-      "depleted": false,
-      "state": "available",
-      "source": "actor_scan.gatherable",
-      "unique_key": "example-plant-key",
-      "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
-      "map": { "x": 0.0, "y": 0.0 }
-    }
-  ]
-}
-```
-
-| Field | Contract |
-| --- | --- |
-| `kind` | `abandoned_base`, `plant_resource`, `ignitium`, or `star_tears`. |
-| `label` | Canonical display label for tracked plants or rupture resources, or the fixed abandoned-base label. |
-| `resource` | Canonical tracked plant or rupture-resource name; empty when no resource applies, including abandoned bases. |
-| `state` | `available`, `unavailable`, `unknown`, or `depleted`. Depletion takes precedence. Carried in protocol v6 flags and included in the POI revision hash. |
-| `depleted` | Boolean state from the live gatherable/ore actor when available; the last known position remains in the catalog after depletion. Abandoned bases emit `false`. |
-| `source` | Capture-path identifier such as `actor_scan.abandoned_base` or `actor_scan.gatherable`. |
-| `unique_key` | Public identity of the POI. |
-| `world` | Unreal coordinates as numeric `x`, `y`, and `z`. |
-| `map` | Projected map coordinates as numeric `x` and `y`. |
-
-`counts.pois` equals the length of `pois`; the four per-kind counters (`abandoned_bases`, `plant_resources`, `ignitium`, and `star_tears`) add up to that total.
-
-Player entries in `/cargo` carry an optional boolean `self`, set to `true` on the marker representing the local player (the primary local player in solo sessions, or the marker flagged by the dedicated server for this client).
-
-## Viewer contract version (legacy)
-
-`/health` still returns `plugin_version`, `viewer_contract_version` (`kViewerContractVersion` in `map_state_json.cpp`) and `viewer_update`, for copies of the pre-0.8 browser viewer still in use. The viewer and its `MapExtension_Plugin-<tag>-viewer.zip` release asset are no longer built, so:
-
-- Do not bump `kViewerContractVersion`: an old viewer would then offer a download that no longer exists.
-- Keep `/cargo`, `/health` and `/rupture-cycle` backward compatible, or remove this legacy contract in the same change.
+- `Generation` identifies refreshes, not content changes: it can advance while entities or a cached server snapshot stay unchanged. The POI content revision serves the separate purpose of invalidating paginated content.
+- Cargo connections carry requested items and amounts, not measured throughput.
+- POI `Kind` is abandoned base, plant resource, Ignitium or Star Tears; resource state is available, unavailable, unknown or depleted, and a depleted resource keeps its last known position.
+- `MapLocation` fields (static map image projection of `map_state_types.h`) are still filled but no longer read by anything in the plugin.
 
 ## Resource observation regression checks
 

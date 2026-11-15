@@ -82,7 +82,7 @@ namespace
 	// marker for the already validated Ignitium site.
 	constexpr double kRuptureResourceSiteMatchRadius = 300.0;
 	// Keep rupture-resource classification synchronized with the timeline sent
-	// by map_state_json.cpp and rendered by useRuptureTimeline.ts.
+	// by the in-game map rupture strip.
 	constexpr double kRuptureBurningSeconds = 30.0;
 	constexpr double kRuptureCoolingSeconds = 60.0;
 	constexpr double kRuptureStabilizingSeconds = 600.0;
@@ -148,8 +148,8 @@ namespace
 	bool g_lastRuptureCycleObservedSignatureValid = false;
 	int64_t g_lastRuptureCycleObservedAtUnixMs = 0;
 	bool g_objectWalkerWaveFallbackLogged = false;
-	std::atomic<bool> g_httpCargoRefreshRequested = false;
-	std::atomic<int64_t> g_lastHttpCargoRefreshRequestAtUnixMs = 0;
+	std::atomic<bool> g_cargoRefreshRequested = false;
+	std::atomic<int64_t> g_lastCargoRefreshRequestAtUnixMs = 0;
 
 	// Resolved CrEnviroWaveSubsystem for the tracked world. Shared by the
 	// rupture-cycle read path and the delegate hook path so neither pays for a
@@ -362,12 +362,12 @@ namespace
 
 	const char* ConsumeRequestedCargoRefreshReason()
 	{
-		if (!g_httpCargoRefreshRequested.exchange(false))
+		if (!g_cargoRefreshRequested.exchange(false))
 		{
 			return nullptr;
 		}
 
-		return "HttpRequest(/cargo)";
+		return "RequestedRefresh";
 	}
 
 	TrackedChimeraWorldState CopyTrackedChimeraWorldState()
@@ -2606,7 +2606,7 @@ namespace
 			SDK::UGameplayStatics::GetNumLocalPlayerControllers(world));
 		for (int playerIndex = 0; playerIndex < localPlayerCount; ++playerIndex)
 		{
-			// The primary local player controller is "me" for the local viewer.
+			// The primary local player controller is "me" for the local player.
 			const bool isSelf = playerIndex == 0;
 			SDK::APawn* playerPawn = SDK::UGameplayStatics::GetPlayerPawn(world, playerIndex);
 			if (playerPawn)
@@ -3859,7 +3859,7 @@ namespace Detail
 		}
 
 		g_runtimePlanLogged = true;
-		LOG_INFO("Runtime plan: capture cargo dispatcher/receiver network data from runtime sources, then publish snapshots over local HTTP.");
+		LOG_INFO("Runtime plan: capture cargo dispatcher/receiver network data from runtime sources, then publish snapshots to the in-game map.");
 		LOG_INFO("Runtime plan: use package transport replication first, actor scans as fallback, and keep the web UI separate from Unreal widgets.");
 		LOG_INFO(
 			"Runtime plan: refresh the cached snapshot every %d ms while ChimeraMain is running.",
@@ -3904,14 +3904,14 @@ namespace Detail
 	void RequestCargoSnapshotRefresh(const char* reason)
 	{
 		const int64_t nowUnixMs = GetCurrentUnixTimeMilliseconds();
-		const int64_t lastRequestAtUnixMs = g_lastHttpCargoRefreshRequestAtUnixMs.load();
+		const int64_t lastRequestAtUnixMs = g_lastCargoRefreshRequestAtUnixMs.load();
 		if (lastRequestAtUnixMs > 0 && nowUnixMs - lastRequestAtUnixMs < 250)
 		{
 			return;
 		}
 
-		g_lastHttpCargoRefreshRequestAtUnixMs.store(nowUnixMs);
-		g_httpCargoRefreshRequested.store(true);
+		g_lastCargoRefreshRequestAtUnixMs.store(nowUnixMs);
+		g_cargoRefreshRequested.store(true);
 		if (ShouldLogLifecycle())
 		{
 			LOG_INFO(
@@ -4028,7 +4028,7 @@ namespace MapStateRuntime
 		// ChimeraMain begin-play is extremely heavy on the main thread. Running
 		// full actor scans and replicator reads during that window contributes to
 		// the stalls observed in StarRupture.log (DeltaTime 11.96 s) that lead to
-		// missed ACKs and ConnectionTimeout. Honor HTTP-triggered refreshes after
+		// missed ACKs and ConnectionTimeout. Honor requested refreshes after
 		// the grace period only.
 		{
 			const int64_t nowMs = GetCurrentUnixTimeMilliseconds();

@@ -146,6 +146,11 @@ namespace MapExtensionClient::InGameMap
 		y1 = std::max(ay, by);
 	}
 
+	// Mesure du rendu (cumul depuis le dernier releve), lue et remise a zero par le service.
+	inline std::atomic<int64_t> g_renderFrames{ 0 };
+	inline std::atomic<int64_t> g_renderSumUs{ 0 };
+	inline std::atomic<int64_t> g_renderMaxUs{ 0 };
+
 	// --- ingame_map_service.cpp (game thread) ---
 	void OnTick(float deltaSeconds);
 	void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName);

@@ -829,7 +829,7 @@ namespace
 	// web (MapRupturePanel.vue, useRuptureTimeline.ts) : phase courante, piste des
 	// cinq phases avec curseur, temps restant. La phase se deduit du temps ecoule
 	// dans le cycle, car wave/stage/step valent "None" en dehors d'une vague.
-	// Durees calibrees par observation, identiques a BuildRuptureCycleJson.
+	// Durees calibrees par observation (cf. ApplyRuptureResourcePhase).
 	void DrawRuptureStrip(Canvas& canvas, const CargoSnapshot& snapshot, const ItemIconMap& icons)
 	{
 		// Resource : ce que la capture publie pendant la phase (ApplyRuptureResourcePhase,
@@ -1168,6 +1168,21 @@ namespace
 
 	void Render(IModLoaderImGui* ui)
 	{
+		// Cout CPU du rendu (construction des listes de dessin), releve par le service.
+		struct Timer
+		{
+			std::chrono::steady_clock::time_point Started = std::chrono::steady_clock::now();
+			~Timer()
+			{
+				const int64_t us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - Started).count();
+				++g_renderFrames;
+				g_renderSumUs += us;
+				if (us > g_renderMaxUs.load())
+				{
+					g_renderMaxUs = us;
+				}
+			}
+		} timer;
 		g_lastRenderUnixMs = MapStateSdk::GetCurrentUnixTimeMilliseconds();
 		std::shared_ptr<const Published> published;
 		{

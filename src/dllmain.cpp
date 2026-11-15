@@ -1,9 +1,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-#include "map_state_runtime.h"
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID)
 {
 	switch (reason)
 	{
@@ -11,7 +10,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
 		DisableThreadLibraryCalls(hModule);
 		break;
 	case DLL_PROCESS_DETACH:
-		MapStateRuntime::HandleProcessDetach(reserved != nullptr);
 		break;
 	case DLL_THREAD_ATTACH:
 	case DLL_THREAD_DETACH:

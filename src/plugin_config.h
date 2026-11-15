@@ -64,13 +64,6 @@ namespace MapExtensionPluginConfig
 			"Log per-phase refresh timings to help diagnose remaining client-side frame cost"
 		},
 		{
-			"Http",
-			"Port",
-			ConfigValueType::Integer,
-			"9000",
-			"Local HTTP port used to publish map snapshot JSON"
-		},
-		{
 			"Runtime",
 			"RefreshIntervalMs",
 			ConfigValueType::Integer,
@@ -156,11 +149,6 @@ namespace MapExtensionPluginConfig
 		static bool LogRefreshTimings()
 		{
 			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogRefreshTimings", false) : false;
-		}
-
-		static int HttpPort()
-		{
-			return (s_config && s_self) ? s_config->ReadInt(s_self, "Http", "Port", 9000) : 9000;
 		}
 
 		static int RefreshIntervalMs()

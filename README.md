@@ -4,7 +4,7 @@ French README: `README.fr.md`
 
 `MapExtension_Plugin` adds a logistics map inside StarRupture. Press `F8` in game to open a ModLoader panel that draws the game's own map terrain with your cargo network, teleporters, players, base cores, monoliths, antennas, resources and the rupture cycle.
 
-Since version 0.8 the map lives in the game. The former browser viewer (`MapExtensionViewer.html`, `map-tiles/`) is no longer shipped; see [Upgrading from 0.7](#upgrading-from-07).
+Since version 0.8 the map lives in the game. The former browser viewer (`MapExtensionViewer.html`, `map-tiles/`) and its local HTTP API are removed; see [Upgrading from 0.7](#upgrading-from-07).
 
 The plugin works in both single-player and multiplayer. For solo/local sessions, install the client build only. For dedicated-server sessions, install the client build on the player machine and the server build on the dedicated server so the server can send map and rupture-cycle data to connected clients.
 
@@ -22,7 +22,6 @@ The plugin works in both single-player and multiplayer. For solo/local sessions,
 - Display Ignitium and Star Tears according to the rupture phase, with a rupture strip at the top of the map showing the phase, the time left and the resource of that phase
 - Browse a pre-generated world catalog: ore deposits with purity, plants, creatures and points of interest, one filter per type, drawn with the game's own icons
 - Receive authoritative map and rupture-cycle snapshots from the server build in dedicated-server sessions
-- Expose `GET /health`, `GET /cargo`, and `GET /rupture-cycle` on a local HTTP server for external tools
 
 ## Where the data comes from
 
@@ -41,42 +40,6 @@ Positions come from runtime actors validated in loaded areas. While the publishe
 Markers distinguish available, not harvestable at the moment, depleted and estimated-from-cycle states. Unloading an area is not evidence of harvesting.
 
 The timeline uses a calibrated 3240-second cycle (30/60/600/2430/120 seconds), animated between observations. It can drift from the game.
-
-## `/cargo` POI data
-
-`GET /cargo` includes POI totals in `counts` and a `pois` array:
-
-```json
-{
-  "counts": {
-    "pois": 1,
-    "abandoned_bases": 0,
-    "plant_resources": 1,
-    "ignitium": 0,
-    "star_tears": 0
-  },
-  "pois": [
-    {
-      "kind": "plant_resource",
-      "label": "Hydrobulb",
-      "resource": "Hydrobulb",
-      "depleted": false,
-      "state": "available",
-      "source": "actor_observation.gatherable",
-      "unique_key": "example-plant-key",
-      "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
-      "map": { "x": 0.0, "y": 0.0 }
-    }
-  ]
-}
-```
-
-- `kind` is `abandoned_base`, `plant_resource`, `ignitium`, or `star_tears`.
-- `label` is the display label; `resource` is the detected resource name and can be empty for an abandoned base.
-- `depleted` is `true` for depleted resource actors observed during the active world. Their last known positions remain published.
-- `state` is `available`, `unavailable`, `unknown`, or `depleted`; it distinguishes temporary non-harvestability from depletion.
-- `source` identifies the capture path, `unique_key` identifies the POI, `world` contains Unreal `x`/`y`/`z` coordinates, and `map` contains projected `x`/`y` coordinates.
-- `counts.pois` is the total POI count; `counts.abandoned_bases`, `counts.plant_resources`, `counts.ignitium`, and `counts.star_tears` contain the per-kind totals.
 
 ## Dedicated-server sync compatibility
 
@@ -114,7 +77,7 @@ Automatic updates can be disabled modloader-wide with `[AutoUpdate] Enabled=0` i
 - Replace the client DLL and copy the new `Plugins/MapExtension/` folder next to it.
 - `MapExtensionViewer.html`, `map-tiles/` and the `map-data/` folder you kept next to the viewer are no longer used; delete them.
 - The in-game map is now enabled by default. An existing `MapExtension_Plugin.ini` keeps its own `[InGameMap] Enabled` value: set it to `1` if it is `0`.
-- The local HTTP API is unchanged, so an older copy of the viewer keeps working, but it no longer receives updates.
+- The local HTTP API (`/health`, `/cargo`, `/rupture-cycle`) is removed with the viewer. An older copy of the viewer no longer receives data, and the `[Http] Port` setting is ignored; the plugin opens no network port.
 - Dedicated server: sync protocol is still v6; update the server DLL together with the client.
 
 ## Project status
@@ -154,9 +117,6 @@ LogResourceObservations=0
 LogActorScanFallback=0
 LogRefreshTimings=0
 
-[Http]
-Port=9000
-
 [Runtime]
 RefreshIntervalMs=2000
 
@@ -174,7 +134,6 @@ TileBudgetMiB=64
 - `LogResourceObservations`: logs observed resource state changes, local generation resets and changes in the number of ambiguous depletion records (`1` or `0`). Enable with `LogRuptureCycleEvents` on the solo/host/server authority to compare a harvest and a full cycle. These are observation times, not exact harvest times or player attribution; a short-lived actor may disappear between captures. Native harvest hooks still require executable-specific validation.
 - `LogActorScanFallback`: logs actor scan fallback (`1` or `0`)
 - `LogRefreshTimings`: logs per-phase refresh timings (`1` or `0`)
-- `Port`: sets the local HTTP port used by the plugin
 - `RefreshIntervalMs`: sets the runtime refresh interval in milliseconds
 - `InGameMap.Enabled`: enables the in-game map panel, on by default (`1` or `0`). Applies immediately, no restart needed
 - `InGameMap.ToggleKey`: key that opens or closes that panel (default `F8`)

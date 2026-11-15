@@ -80,6 +80,10 @@ namespace MapExtensionClient::InGameMap
 	// Game thread uniquement. Parcourt la liste d'acteurs : a appeler rarement.
 	LiveStructures CaptureLiveStructures();
 
+	// Game thread uniquement. Paie une fois, hors de l'ouverture de la carte, les
+	// premieres resolutions de classes dont CaptureLiveStructures a besoin.
+	void WarmUpLiveState();
+
 	// Game thread uniquement. Niveau de radiation replique pour la carte native ; -1 si inconnu.
 	int ReadRadiationLevel();
 }

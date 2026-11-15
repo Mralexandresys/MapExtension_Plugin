@@ -106,6 +106,13 @@ namespace
 			{
 				LOG_WARN("[InGameMap] no icon for %s (%s)", group.Label.c_str(), group.ItemClassPath.c_str());
 			}
+			else if (IPluginImGuiTextures* textures = Textures())
+			{
+				// Taille copiee : une icone prise avant la fin du streaming sort en petit mip.
+				int width = 0, height = 0;
+				textures->GetSize(g_catalogIcons[g_catalogIconsNext], &width, &height);
+				LOG_INFO("[InGameMap] item icon %s: %dx%d", group.Label.c_str(), width, height);
+			}
 		}
 		if (g_catalogIconsNext >= g_catalog->Groups.size())
 		{
@@ -165,7 +172,12 @@ namespace
 			if (const std::string state = icon ? "loaded" : reason; logged[key] != state)
 			{
 				logged[key] = state;
-				LOG_INFO("[InGameMap] marker icon %s: %s (waits=%d)", asset.c_str(), state.c_str(), waits[key]);
+				int width = 0, height = 0;
+				if (IPluginImGuiTextures* textures = Textures(); icon && textures)
+				{
+					textures->GetSize(icon, &width, &height);
+				}
+				LOG_INFO("[InGameMap] marker icon %s: %s (waits=%d, %dx%d)", asset.c_str(), state.c_str(), waits[key], width, height);
 			}
 			waits[key] = 0;
 		}
@@ -233,6 +245,9 @@ namespace
 			FreeTiles();
 			g_tiles.resize(terrain.Segments.size());
 		}
+		// Les 36 tuiles d'un coup (~70 a 90 ms mesures en Release, 3 fois par arrivee
+		// en monde). Etaler la copie a ete essaye puis retire : l'apercu mettait
+		// 5,5 s a apparaitre, juge pire que l'a-coup par l'utilisateur.
 		const auto started = std::chrono::steady_clock::now();
 		int loaded = 0;
 		for (size_t index = 0; index < terrain.Segments.size(); ++index)
@@ -471,7 +486,30 @@ namespace
 			FreeHiResTiles();
 			return;
 		}
+		const auto started = std::chrono::steady_clock::now();
 		Service();
+
+		// Releve de performance toutes les 30 s d'ouverture, si Diagnostics.LogRefreshTimings=1.
+		static int passes = 0;
+		static double sumMs = 0.0, maxMs = 0.0;
+		const double ms = MillisecondsSince(started);
+		sumMs += ms;
+		maxMs = (std::max)(maxMs, ms);
+		if (++passes >= 60)
+		{
+			const int64_t frames = g_renderFrames.exchange(0);
+			const int64_t renderSumUs = g_renderSumUs.exchange(0);
+			const int64_t renderMaxUs = g_renderMaxUs.exchange(0);
+			if (MapExtensionPluginConfig::Config::LogRefreshTimings())
+			{
+				LOG_INFO("[InGameMap] timings over %d passes: service avg=%.2f ms max=%.2f ms | render frames=%lld avg=%.3f ms max=%.3f ms",
+					passes, sumMs / passes, maxMs, static_cast<long long>(frames),
+					frames > 0 ? static_cast<double>(renderSumUs) / 1000.0 / static_cast<double>(frames) : 0.0,
+					static_cast<double>(renderMaxUs) / 1000.0);
+			}
+			passes = 0;
+			sumMs = maxMs = 0.0;
+		}
 	}
 
 	// Filet si EngineTick ne tourne pas (cf. AGENTS.md) : au moins une publication par monde.
@@ -482,6 +520,13 @@ namespace
 			// Nouveau monde : textures rechargees par le jeu, on rejoue la sequence d'apercu.
 			g_previewClock = 0.0f;
 			g_previewLoadsDone = 0;
+			// Pendant le chargement du monde : l'a-coup des premieres resolutions n'est pas visible.
+			static bool warmedUp = false;
+			if (!warmedUp)
+			{
+				warmedUp = true;
+				WarmUpLiveState();
+			}
 			Service();
 		}
 	}

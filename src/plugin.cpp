@@ -40,7 +40,7 @@ static PluginInfo s_pluginInfo = {
 	"MapExtension_Plugin",
 	MODLOADER_BUILD_TAG,
 	MODLOADER_BUILD_AUTHOR,
-	"Exposes StarRupture map data, cargo links, teleporters, and players over local HTTP",
+	"In-game logistics map: cargo links, teleporters, players, base cores, monoliths and the rupture cycle",
 	PLUGIN_INTERFACE_VERSION,
 	MAPEXTENSION_PLUGIN_TARGET
 };
@@ -78,7 +78,7 @@ __declspec(dllexport) bool PluginInit(IPluginSelf* self)
 
 	if (!MapStateRuntime::RegisterCallbacks())
 	{
-		LOG_ERROR("Failed to register runtime callbacks / HTTP endpoint");
+		LOG_ERROR("Failed to register runtime callbacks");
 		return false;
 	}
 

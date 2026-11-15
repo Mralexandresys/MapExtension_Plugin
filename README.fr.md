@@ -4,7 +4,7 @@ README anglais : `README.md`
 
 `MapExtension_Plugin` ajoute une carte logistique dans StarRupture. La touche `F8` ouvre en jeu un panneau ModLoader qui dessine le terrain de la carte du jeu avec le reseau cargo, les teleporteurs, les joueurs, les base cores, les monolithes, les antennes, les ressources et le cycle de rupture.
 
-Depuis la version 0.8, la carte est dans le jeu. L'ancien viewer navigateur (`MapExtensionViewer.html`, `map-tiles/`) n'est plus livre ; voir [Mise a jour depuis la 0.7](#mise-a-jour-depuis-la-07).
+Depuis la version 0.8, la carte est dans le jeu. L'ancien viewer navigateur (`MapExtensionViewer.html`, `map-tiles/`) et son API HTTP locale sont supprimes ; voir [Mise a jour depuis la 0.7](#mise-a-jour-depuis-la-07).
 
 Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local, seul le build client est necessaire. Sur serveur dedie, il faut installer le build client sur la machine du joueur et le build serveur sur le serveur dedie, pour que le serveur envoie les donnees de carte et de cycle de rupture aux clients connectes.
 
@@ -22,7 +22,6 @@ Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local,
 - Afficher l'Ignitium et les Star Tears selon la phase de rupture, avec en haut de la carte un bandeau de rupture indiquant la phase, le temps restant et la ressource de la phase
 - Parcourir un catalogue du monde pre-genere : gisements avec purete, plantes, creatures et points d'interet, un filtre par type, dessines avec les icones du jeu
 - Recevoir des snapshots autoritatifs de carte et de cycle de rupture depuis le build serveur sur serveur dedie
-- Exposer `GET /health`, `GET /cargo` et `GET /rupture-cycle` sur un serveur HTTP local pour des outils externes
 
 ## D'ou viennent les donnees
 
@@ -41,42 +40,6 @@ Les positions viennent d'acteurs runtime valides dans les zones chargees. Tant q
 Les marqueurs distinguent les etats disponible, non recoltable pour le moment, epuise et estime d'apres le cycle. Le dechargement d'une zone ne prouve pas une recolte.
 
 La timeline utilise un cycle calibre de 3240 secondes (30/60/600/2430/120 secondes), anime entre les observations. Elle peut deriver par rapport au jeu.
-
-## Donnees POI de `/cargo`
-
-`GET /cargo` inclut les totaux POI dans `counts` et un tableau `pois` :
-
-```json
-{
-  "counts": {
-    "pois": 1,
-    "abandoned_bases": 0,
-    "plant_resources": 1,
-    "ignitium": 0,
-    "star_tears": 0
-  },
-  "pois": [
-    {
-      "kind": "plant_resource",
-      "label": "Hydrobulb",
-      "resource": "Hydrobulb",
-      "depleted": false,
-      "state": "available",
-      "source": "actor_observation.gatherable",
-      "unique_key": "example-plant-key",
-      "world": { "x": 0.0, "y": 0.0, "z": 0.0 },
-      "map": { "x": 0.0, "y": 0.0 }
-    }
-  ]
-}
-```
-
-- `kind` vaut `abandoned_base`, `plant_resource`, `ignitium` ou `star_tears`.
-- `label` est le libelle affiche ; `resource` est le nom de ressource detecte et peut etre vide pour une base abandonnee.
-- `depleted` vaut `true` pour les acteurs de ressource epuises observes dans le monde actif. Leur derniere position connue reste publiee.
-- `state` vaut `available`, `unavailable`, `unknown` ou `depleted` et distingue impossibilite temporaire de recolte et epuisement.
-- `source` identifie le chemin de capture, `unique_key` identifie le POI, `world` contient les coordonnees Unreal `x`/`y`/`z` et `map` contient les coordonnees projetees `x`/`y`.
-- `counts.pois` est le nombre total de POI ; `counts.abandoned_bases`, `counts.plant_resources`, `counts.ignitium` et `counts.star_tears` contiennent les totaux par kind.
 
 ## Compatibilite de la synchronisation serveur dedie
 
@@ -114,7 +77,7 @@ Les mises a jour automatiques peuvent etre desactivees globalement dans le modlo
 - Remplacer la DLL client et copier le nouveau dossier `Plugins/MapExtension/` a cote.
 - `MapExtensionViewer.html`, `map-tiles/` et le dossier `map-data/` gardes a cote du viewer ne servent plus ; les supprimer.
 - La carte en jeu est maintenant activee par defaut. Un `MapExtension_Plugin.ini` existant garde sa propre valeur `[InGameMap] Enabled` : la passer a `1` si elle vaut `0`.
-- L'API HTTP locale est inchangee, donc une ancienne copie du viewer continue de fonctionner, mais elle ne recoit plus de mises a jour.
+- L'API HTTP locale (`/health`, `/cargo`, `/rupture-cycle`) est supprimee avec le viewer. Une ancienne copie du viewer ne recoit plus de donnees et le reglage `[Http] Port` est ignore ; le plugin n'ouvre aucun port reseau.
 - Serveur dedie : le protocole de synchronisation reste v6 ; mettre a jour la DLL serveur en meme temps que le client.
 
 ## Etat du projet
@@ -154,9 +117,6 @@ LogResourceObservations=0
 LogActorScanFallback=0
 LogRefreshTimings=0
 
-[Http]
-Port=9000
-
 [Runtime]
 RefreshIntervalMs=2000
 
@@ -174,7 +134,6 @@ TileBudgetMiB=64
 - `LogResourceObservations` : loggue les changements d'etat observes, les resets de generation locale et les changements du nombre d'entrees d'epuisement ambigues (`1` ou `0`). Activer avec `LogRuptureCycleEvents` sur l'autorite solo/hote/serveur pour comparer une recolte et un cycle complet. Ce sont des heures d'observation, pas des heures exactes de recolte ni une attribution a un joueur ; un acteur bref peut disparaitre entre deux captures. Les hooks natifs de recolte demandent encore une validation sur les executables cibles.
 - `LogActorScanFallback` : loggue le fallback actor scan (`1` ou `0`)
 - `LogRefreshTimings` : loggue les timings par phase de refresh (`1` ou `0`)
-- `Port` : definit le port HTTP local utilise par le plugin
 - `RefreshIntervalMs` : definit l'intervalle de refresh runtime en millisecondes
 - `InGameMap.Enabled` : active le panneau de carte en jeu, active par defaut (`1` ou `0`). Applique immediatement, sans redemarrage
 - `InGameMap.ToggleKey` : touche qui ouvre ou ferme ce panneau (defaut `F8`)

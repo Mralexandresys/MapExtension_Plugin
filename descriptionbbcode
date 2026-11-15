@@ -27,7 +27,6 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [*]Show [b]abandoned bases[/b] with their discovery state and what is left to collect, plus caves and other points of interest[/*]
 [*]Show [b]Ignitium[/b] and [b]Star Tears[/b] according to the rupture phase, with a [b]rupture strip[/b] at the top of the map: phase, time left and the resource of that phase[/*]
 [*]Browse a built-in [b]world catalog[/b]: extractor deposits with purity (Impure, Normal, Pure), plants, creatures and points of interest, one filter per type, drawn with the game's own icons[/*]
-[*]Provide local data through built-in HTTP endpoints for external tools[/*]
 [/list]
 
 [line]
@@ -38,6 +37,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [list]
 [*]New in-game map panel, opened with [b]F8[/b], drawn on the game's own map terrain in full resolution[/*]
 [*]The browser viewer is removed: [b]MapExtensionViewer.html[/b], [b]map-tiles[/b] and the [b]map-data[/b] folder next to it are no longer shipped or needed[/*]
+[*]The local HTTP endpoints are removed too: the mod no longer opens any network port, and the [b]Port[/b] setting is gone[/*]
 [*]The world catalog now ships inside the plugin folder ([b]ModLoader\Plugins\MapExtension\map-data[/b])[/*]
 [/list]
 
@@ -256,9 +256,6 @@ Main defaults:
 [code][General]
 Enabled=1
 
-[Http]
-Port=9000
-
 [Runtime]
 RefreshIntervalMs=2000
 
@@ -270,7 +267,6 @@ TileBudgetMiB=64[/code]
 
 [list]
 [*][b]Enabled[/b]: turns the plugin on or off[/*]
-[*][b]Port[/b]: local port of the HTTP endpoints[/*]
 [*][b]RefreshIntervalMs[/b]: how often the runtime data is refreshed[/*]
 [*][b]InGameMap.Enabled[/b]: turns the in-game map on or off[/*]
 [*][b]InGameMap.ToggleKey[/b]: key that opens and closes the map[/*]
@@ -278,23 +274,6 @@ TileBudgetMiB=64[/code]
 [/list]
 
 Most players will not need to change anything. The default settings are enough to use the mod.
-
-[line]
-
-[size=4][b]Advanced Notes[/b][/size]
-
-For advanced users, the plugin still exposes local endpoints that external tools can read:
-
-[list]
-[*][code]GET /health[/code]
-[/*]
-[*][code]GET /cargo[/code]
-[/*]
-[*][code]GET /rupture-cycle[/code]
-[/*]
-[/list]
-
-You do not need to use these to enjoy the mod.
 
 [line]
 
@@ -306,7 +285,7 @@ No. It is an extra map panel, opened with F8, focused on logistics and world sta
 
 [b]What happened to MapExtensionViewer.html?[/b]
 
-It was removed in 0.8. The map is now inside the game. You can delete the HTML file and the [b]map-tiles[/b] and [b]map-data[/b] folders you kept next to it.
+It was removed in 0.8, along with the local HTTP endpoints it used. The map is now inside the game. You can delete the HTML file and the [b]map-tiles[/b] and [b]map-data[/b] folders you kept next to it; an old copy of the page no longer receives any data.
 
 [b]The map opens but deposits and plants are missing.[/b]
 

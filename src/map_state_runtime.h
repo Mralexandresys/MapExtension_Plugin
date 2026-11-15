@@ -6,7 +6,6 @@ namespace MapStateRuntime
 {
 	bool RegisterCallbacks();
 	void UnregisterCallbacks();
-	void HandleProcessDetach(bool processTerminating);
 
 	void OnEngineInit();
 	void OnEngineShutdown();
