@@ -11,6 +11,8 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 
 [b]Multiplayer now means co-op:[/b] StarRupture ended dedicated-server support, so MapExtension no longer supports dedicated servers for now, as long as there are none. Multiplayer support moves to co-op, where the host can share their map with the players who join (experimental, see the v0.10 change log).
 
+[b]New in 0.10:[/b] the map [b]keeps working after a game update[/b], without waiting for a new MapExtension version.
+
 [b]New in 0.8:[/b] the map now lives in the game. The browser page ([b]MapExtensionViewer.html[/b]) is no longer part of the mod.
 
 [img]https://staticdelivery.nexusmods.com/mods/8632/images/91/91-1794757141-1215732237.png[/img]
@@ -37,6 +39,14 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 
 [size=4][b]Change Log v0.10[/b][/size]
 
+[b]Keeps working after a game update[/b]
+[list]
+[*]MapExtension no longer depends on the game build it was compiled for. It asks the Mod Loader for every value it reads from the game, so the same version keeps working after a StarRupture update[/*]
+[*]The Mod Loader updates its game data at each start. If a new game build changes something it cannot find yet, only the map feature that needs it turns off (for example the monoliths); the rest of the map keeps working[/*]
+[*]Keep the [b]Mod Loader[/b] up to date: that is what follows the game updates now[/*]
+[*]Tested on the current game build with a MapExtension build compiled for an older game build: the full map works, and every value that moved between the two builds is read correctly[/*]
+[/list]
+
 [b]Co-op: share the host's map (experimental)[/b]
 [list]
 [*]When you host a co-op game, tick [b]Share map with co-op players (experimental)[/b] in the in-game map toolbar. The players who join you then see your cargo network, teleporters, players, points of interest and rupture cycle[/*]
@@ -57,6 +67,7 @@ The goal is simple: [b]make your world easier to read[/b] once your base and tra
 [list]
 [*]Replace the client DLL; the [b]MapExtension[/b] folder does not change[/*]
 [*]Nothing to change in your config file: [code]ShareMapWithClients=0[/code] is added on first launch[/*]
+[*]New diagnostic option [code][Diagnostics] FieldAudit[/code] (default 0, off). Only useful to send a detailed log after a game update[/*]
 [/list]
 
 [size=4][b]Change Log v0.9[/b][/size]
@@ -218,7 +229,8 @@ If you are new to this kind of mod, the idea is very simple:
 [*]The [b]Mod Loader[/b] lets StarRupture load plugin mods[/*]
 [*]This plugin runs while your game is open and reads the state of your current session[/*]
 [*]Press [b]F8[/b] and the map opens as a panel over the game[/*]
-[*]In dedicated-server play, the client and server builds of [b]MapExtension_Plugin[/b] exchange map and rupture data with each other[/*]
+[*]In co-op, the host can send their map to the players who join (experimental)[/*]
+[*]It asks the Mod Loader for every game value by name, so it keeps working after a game update[/*]
 [/list]
 
 The mod only [b]observes[/b]. It does not automate anything, does not change your save and does not send commands to the game.
@@ -307,6 +319,9 @@ Enabled=1
 [Runtime]
 RefreshIntervalMs=2000
 
+[Coop]
+ShareMapWithClients=0
+
 [InGameMap]
 ToggleKey=F8
 TileBudgetMiB=64
@@ -316,6 +331,7 @@ ShowPopup=1[/code]
 [list]
 [*][b]Enabled[/b]: turns the plugin on or off[/*]
 [*][b]RefreshIntervalMs[/b]: how often the runtime data is refreshed[/*]
+[*][b]Coop.ShareMapWithClients[/b]: when you host a co-op game, share your map with the players who join (experimental, also toggled from the map toolbar)[/*]
 [*][b]InGameMap.ToggleKey[/b]: key that opens and closes the map[/*]
 [*][b]InGameMap.TileBudgetMiB[/b]: video memory allowed for full-resolution map terrain (0 keeps the low-resolution preview only)[/*]
 [*][b]InGameMap.ShowPopup[/b]: window shown when a game is loaded, closed with OK: the map opens with F8, and players coming from a version older than 0.7 must download the mod again (0 hides it)[/*]
@@ -343,9 +359,13 @@ The [b]MapExtension[/b] folder is not next to the DLL. Copy it again from the cl
 
 Check that the [b]ToggleKey[/b] in [b]MapExtension_Plugin.ini[/b] is not used by another mod.
 
-[b]Monoliths show no state after a game update.[/b]
+[b]Does the mod still work after a game update?[/b]
 
-Their state is read for a specific game build. After a game update the Mod Loader switches off that single feature until the mod is updated. Everything else keeps working.
+Yes. Since 0.10 MapExtension asks the Mod Loader for everything it reads from the game, so no MapExtension update is needed. Keep the Mod Loader up to date.
+
+[b]A part of the map is missing after a game update (for example monolith states).[/b]
+
+The Mod Loader could not find a value that part needs on the new game build yet, so it turned off only that feature; the rest keeps working. It usually comes back once the Mod Loader's game data is updated (checked at each game start). If it does not, please report it with your [b]modloader.log[/b]; setting [code]FieldAudit=1[/code] in [b]MapExtension_Plugin.ini[/b] makes that log more useful.
 
 [b]Is this a client-side mod?[/b]
 

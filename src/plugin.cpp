@@ -41,6 +41,9 @@ const IPluginSelf* GetPluginSelf() { return g_pluginSelf; }
 // (game_fields.h), so it may run on a game build it was not compiled for. The server build
 // has no OnPluginLoadHooks to resolve them and stays bound to its own build.
 #if defined(MODLOADER_CLIENT_BUILD)
+// A migrated plugin that names no game build is refused on every build: stop the build instead.
+static_assert(PLUGIN_GAME_BUILT_CL != 0,
+	"PLUGIN_GAME_BUILT_CL is 0: the Game-SDK has no Client/build_cl.txt; pass /p:PluginGameBuiltCL=<CL>");
 #define MAPEXTENSION_MAP_FLAGS PLUGIN_MAP_MIGRATED
 #else
 #define MAPEXTENSION_MAP_FLAGS 0u
