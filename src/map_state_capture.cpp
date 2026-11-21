@@ -1,6 +1,7 @@
 #include "map_state_capture.h"
 
 
+#include "game_fields.h"
 #include "map_state_sdk_helpers.h"
 #include "plugin_config.h"
 #include "plugin_helpers.h"
@@ -11,9 +12,7 @@
 #include "client/map_state_remote_cache.h"
 #endif
 
-#if defined(MODLOADER_SERVER_BUILD)
 #include "server/map_sync_server.h"
-#endif
 
 #include "AuItems_classes.hpp"
 #include "BP_PackageReceiver_classes.hpp"
@@ -21,6 +20,7 @@
 #include "BP_Sulphur_Logic_Large_AbandonedBase_classes.hpp"
 #include "BP_Teleporter_classes.hpp"
 #include "Chimera_classes.hpp"
+#include "Chimera_parameters.hpp"
 #include "Chimera_structs.hpp"
 #include "CoreUObject_classes.hpp"
 #include "Engine_classes.hpp"
@@ -62,6 +62,137 @@ using TeleporterMarker = MapStateRuntime::Detail::TeleporterMarker;
 
 namespace
 {
+	MX_FIELD(Players, ACrGameStateBase, bIsDedicatedServer);
+	MX_FIELD(Rupture, UCrEnviroWaveSubsystem, CurrentPreWaveSubstage);
+	MX_FIELD(Rupture, UCrEnviroWaveSubsystem, CurrentFadeoutSubstage);
+	MX_FIELD(Rupture, UCrEnviroWaveSubsystem, CurrentGrowbackSubstage);
+	MX_FIELD(Rupture, UCrEnviroWaveSubsystem, OnWaveStartedDynamic);
+	MX_FIELD(Rupture, UCrEnviroWaveSubsystem, OnWaveFadeoutSubstageChanged);
+	MX_FIELD(Rupture, UCrEnviroWaveSubsystem, OnWaveGrowbackSubstageChanged);
+	MX_FIELD(Rupture, UCrEnviroWaveSubsystem, OnWavePreWaveSubstageChanged);
+	MX_FIELD(Logistics, UCrBuilidngsDeveloperSettings, SenderDefaultName);
+	MX_FIELD(Logistics, UCrBuilidngsDeveloperSettings, ReceiverDefaultName);
+	MX_FIELD(Items, UAuItemDataBase, ItemName);
+	MX_FIELD(Items, UAuItemDataBase, UniqueItemName);
+	MX_FIELD(Logistics, FCrMassEntityReplicationHelper, NetID);
+	MX_FIELD(Logistics, FCrMassEntityReplicationHelper, Entity);
+	MX_SIZE(Logistics, FCrMassPersistentEntityID);
+	MX_FIELD(Logistics, FCrMassPersistentEntityID, ID);
+	MX_FIELD(Logistics, UCrBuildingCustomNameSubsystem, CustomNames);
+	MX_FIELD(Logistics, ACrGameStateBase, PackageTransportReplicator);
+	MX_FIELD(Logistics, ACrPackageTransportReplicator, SenderReceiversContainer);
+	MX_FIELD(Logistics, FCrSenderReceiversContainer, AllSenderReceiversData);
+	MX_SIZE(Logistics, FCrSenderReceiverData);
+	MX_FIELD(Logistics, FCrSenderReceiverData, Entity);
+	MX_FIELD(Logistics, FCrSenderReceiverData, Location);
+	MX_FIELD(Logistics, FCrSenderReceiverData, bIsSender);
+	MX_FIELD(Logistics, ACrPackageTransportReplicator, ConnectionsContainer);
+	MX_FIELD(Logistics, FCrPackageTransportConnectionsContainer, ConnectionsData);
+	MX_SIZE(Logistics, FCrPackageTransportConnectionData);
+	MX_FIELD(Logistics, FCrPackageTransportConnectionData, Sender);
+	MX_FIELD(Logistics, FCrPackageTransportConnectionData, Receiver);
+	MX_FIELD(Logistics, FCrPackageTransportConnectionData, Item);
+	MX_FIELD(Logistics, FCrPackageTransportConnectionData, PrevReceiver);
+	MX_FIELD(Logistics, FCrPackageTransportConnectionData, RequestedAmount);
+	MX_FIELD(Logistics, ACrGameStateBase, TeleportReplicator);
+	MX_FIELD(Logistics, ACrTeleportReplicator, TeleportersContainer);
+	MX_FIELD(Logistics, FCrTeleportersContainer, TeleportersData);
+	MX_SIZE(Logistics, FCrTeleporterData);
+	MX_FIELD(Logistics, FCrTeleporterData, Location);
+	MX_FIELD(Logistics, FCrTeleporterData, Teleporter);
+	MX_FIELD(Gatherables, ACrGatherableSpawnersRepActor, RepGlobalGatherablePCGSeed);
+	MX_FIELD(Gatherables, ACrGatherableSpawnersRepActor, RepDepletedGatherables);
+	MX_FIELD(Gatherables, FCrRepDepletedGatherablesContainer, RepDepletedGatherables);
+	MX_SIZE(Gatherables, FCrRepDepletedGatherableData);
+	MX_FIELD(Gatherables, FCrRepDepletedGatherableData, Location);
+	MX_FIELD(Gatherables, FCrRepDepletedGatherableData, Bounds);
+	MX_FIELD(Gatherables, ACrGatherableSpawnersRepActor, RepPermanentDepletedGatherables);
+	MX_FIELD(Gatherables, FCrRepPermanentDepletedGatherablesContainer, RepPermanentDepletedGatherables);
+	MX_SIZE(Gatherables, FCrRepPermanentDepletedGatherableData);
+	MX_FIELD(Gatherables, FCrRepPermanentDepletedGatherableData, Location);
+	MX_FIELD(Gatherables, FCrRepPermanentDepletedGatherableData, Bounds);
+	MX_FIELD(Gatherables, ACrGatherableBaseActor, bIsDepleted);
+	MX_FIELD(Gatherables, ACrGatherableBaseActor, InteractionRewardResource);
+	MX_FIELD(Gatherables, ACrOreActor, Resource);
+	MX_FIELD(Logistics, ACrMegamachineDeviceBase, InteractionText);
+
+	// Game UFunctions: parameter blocks at the running build's layout.
+	MX_RETURN_ROWS(Rupture, CrEnviroWaveSubsystem, GetCurrentType);
+	MX_RETURN_ROWS(Rupture, CrEnviroWaveSubsystem, GetCurrentStage);
+	MX_RETURN_ROWS(Rupture, CrEnviroWaveSubsystem, GetCurrentStageProgress);
+	MX_RETURN_ROWS(Rupture, CrEnviroWaveSubsystem, GetTimeSinceLastWaveStarted);
+	MX_RETURN_ROWS(Logistics, CrInteractionComponent, GetInteractionDisplayName);
+	MX_RETURN_ROWS(Logistics, CrBuildingCustomNameSubsystem, GetBuildingCustomName);
+	MX_PARAM(Logistics, CrBuildingCustomNameSubsystem, GetBuildingCustomName, BuildingActor);
+	MX_PARAMS_SIZE(Logistics, CrPlayerControllerBase, ServerGetBuildingCustomName);
+	MX_PARAM(Logistics, CrPlayerControllerBase, ServerGetBuildingCustomName, Building);
+	MX_SIZE(Logistics, FCrMassEntityReplicationHelper);
+	MX_RETURN_ROWS(Gatherables, CrStandaloneMeteOreChunk, IsMineableChunk);
+	MX_RETURN_ROWS(Gatherables, CrGatherableSpawnersSubsystem, BP_IsGatherableDepleted);
+	MX_PARAM(Gatherables, CrGatherableSpawnersSubsystem, BP_IsGatherableDepleted, InGatherable);
+
+	// UCrGatherableSpawnersSubsystem::BP_IsGatherableDepleted(actor); false when the call cannot be made.
+	bool IsGatherableDepleted(SDK::UObject* spawners, const SDK::AActor* actor)
+	{
+		const PluginFieldSpec& in = MX_ARG(CrGatherableSpawnersSubsystem, BP_IsGatherableDepleted, InGatherable);
+		const PluginFieldSpec& out = MX_ARG(CrGatherableSpawnersSubsystem, BP_IsGatherableDepleted, ReturnValue);
+		PluginMap::ParamsBlock block = PluginMap::ParamsBlockOf(MX_PARAMS(CrGatherableSpawnersSubsystem, BP_IsGatherableDepleted), { &in, &out });
+		if (!block || in.resolvedSize != sizeof(actor) || out.resolvedSize != sizeof(bool))
+		{
+			return false;
+		}
+		std::memcpy(block.Param("InGatherable"), &actor, sizeof(actor));
+		bool depleted = false;
+		if (GameFields::Invoke(spawners, "CrGatherableSpawnersSubsystem", "BP_IsGatherableDepleted", block))
+		{
+			std::memcpy(&depleted, block.Param("ReturnValue"), sizeof(depleted));
+		}
+		return depleted;
+	}
+
+	// UCrBuildingCustomNameSubsystem::GetBuildingCustomName(actor); empty when the call cannot be made.
+	std::string CallGetBuildingCustomName(SDK::UObject* subsystem, SDK::AActor* actor)
+	{
+		const PluginFieldSpec& in = MX_ARG(CrBuildingCustomNameSubsystem, GetBuildingCustomName, BuildingActor);
+		const PluginFieldSpec& out = MX_ARG(CrBuildingCustomNameSubsystem, GetBuildingCustomName, ReturnValue);
+		PluginMap::ParamsBlock block = PluginMap::ParamsBlockOf(MX_PARAMS(CrBuildingCustomNameSubsystem, GetBuildingCustomName), { &in, &out });
+		if (!block || in.resolvedSize != sizeof(actor) || out.resolvedSize != sizeof(SDK::FString))
+		{
+			return {};
+		}
+		std::memcpy(block.Param("BuildingActor"), &actor, sizeof(actor));
+		if (!GameFields::Invoke(subsystem, "CrBuildingCustomNameSubsystem", "GetBuildingCustomName", block))
+		{
+			return {};
+		}
+		return reinterpret_cast<const SDK::FString*>(block.Param("ReturnValue"))->ToString();
+	}
+
+	// ACrPlayerControllerBase::ServerGetBuildingCustomName(helper): the struct is copied at its live size.
+	void CallServerGetBuildingCustomName(SDK::UObject* playerController, const uint8_t* helper)
+	{
+		const PluginFieldSpec& building = MX_ARG(CrPlayerControllerBase, ServerGetBuildingCustomName, Building);
+		PluginMap::ParamsBlock block = PluginMap::ParamsBlockOf(MX_PARAMS(CrPlayerControllerBase, ServerGetBuildingCustomName), { &building });
+		if (!block || !helper || building.resolvedSize != MX_LIVE_SIZE(FCrMassEntityReplicationHelper))
+		{
+			return;
+		}
+		std::memcpy(block.Param("Building"), helper, building.resolvedSize);
+		GameFields::Invoke(playerController, "CrPlayerControllerBase", "ServerGetBuildingCustomName", block);
+	}
+	MX_FIELD(Gatherables, ACrOreActor, OreData);
+	MX_FIELD(Gatherables, FCrOreRuntimeData, bIsDepleted);
+	MX_FIELD(Gatherables, UGatherableCropSettings, GatherableInteractivityData);
+	MX_FIELD(Gatherables, UCrGatherableActorInteractivityData, Data);
+	MX_SIZE(Gatherables, FCrGatherableActorInteractivityArray);
+	MX_FIELD(Gatherables, FCrGatherableActorInteractivityArray, InteractivityForWaveStages);
+	MX_SIZE(Gatherables, FCrGatherableEnviroWaveProgressInteractivityThresholds);
+	MX_FIELD(Gatherables, FCrGatherableEnviroWaveProgressInteractivityThresholds, WaveStage);
+	MX_FIELD(Gatherables, FCrGatherableEnviroWaveProgressInteractivityThresholds, EnableInteractionEnviroWaveStageProgressThresholdStart);
+	MX_FIELD(Gatherables, FCrGatherableEnviroWaveProgressInteractivityThresholds, EnableInteractionEnviroWaveStageProgressThresholdEnd);
+	MX_FIELD(Gatherables, FCrGatherableEnviroWaveProgressInteractivityThresholds, FadeoutSubstages);
+	MX_FIELD(Gatherables, FCrGatherableEnviroWaveProgressInteractivityThresholds, GrowbackSubstages);
+
 	constexpr int kMaxLoggedMarkersPerSnapshot = 8;
 	constexpr int kMaxLoggedActorsPerKind = 4;
 	constexpr int64_t kCargoActorRefreshMinIntervalMs = 750;
@@ -299,9 +430,18 @@ namespace
 		uint64_t generation,
 		CargoSnapshot& outSnapshot)
 	{
-		if (!gameState || !gameState->bIsDedicatedServer)
+		if (!gameState)
 		{
 			return false;
+		}
+		if (!MX(gameState, ACrGameStateBase, bIsDedicatedServer))
+		{
+			// Co-op client: the host's snapshot replaces the local capture only
+			// while it keeps arriving; otherwise the local capture stands.
+			if (!MapExtensionClient::Sync::HasFreshCoopHostSnapshot())
+			{
+				return false;
+			}
 		}
 
 		CargoSnapshot snapshot = previousSnapshot;
@@ -401,19 +541,19 @@ namespace
 		SDK::UCrEnviroWaveSubsystem* waveSubsystem,
 		RuptureCycleLocalState& outState)
 	{
-		if (!waveSubsystem)
+		if (!waveSubsystem || !GameFields::On(GameFields::Group::Rupture))
 		{
 			return false;
 		}
 
 		__try
 		{
-			outState.Wave = waveSubsystem->GetCurrentType();
-			outState.Stage = waveSubsystem->GetCurrentStage();
-			outState.PreWaveSubstage = waveSubsystem->CurrentPreWaveSubstage;
-			outState.FadeoutSubstage = waveSubsystem->CurrentFadeoutSubstage;
-			outState.GrowbackSubstage = waveSubsystem->CurrentGrowbackSubstage;
-			outState.ElapsedSeconds = waveSubsystem->GetTimeSinceLastWaveStarted();
+			outState.Wave = MapStateSdk::LiveWave(MX_RETURN(SDK::EEnviroWave, waveSubsystem, CrEnviroWaveSubsystem, GetCurrentType));
+			outState.Stage = MapStateSdk::LiveStage(MX_RETURN(SDK::EEnviroWaveStage, waveSubsystem, CrEnviroWaveSubsystem, GetCurrentStage));
+			outState.PreWaveSubstage = MapStateSdk::LivePreWave(MX(waveSubsystem, UCrEnviroWaveSubsystem, CurrentPreWaveSubstage));
+			outState.FadeoutSubstage = MapStateSdk::LiveFadeout(MX(waveSubsystem, UCrEnviroWaveSubsystem, CurrentFadeoutSubstage));
+			outState.GrowbackSubstage = MapStateSdk::LiveGrowback(MX(waveSubsystem, UCrEnviroWaveSubsystem, CurrentGrowbackSubstage));
+			outState.ElapsedSeconds = MX_RETURN(double, waveSubsystem, CrEnviroWaveSubsystem, GetTimeSinceLastWaveStarted);
 			return true;
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
@@ -858,19 +998,19 @@ namespace
 		g_ruptureCycleDelegateHooks.WaveSubsystem = waveSubsystem;
 		g_ruptureCycleDelegateHooks.WaveStarted = HookRuptureCycleDelegate(
 			delegateHook,
-			static_cast<void*>(&waveSubsystem->OnWaveStartedDynamic),
+			const_cast<uint8_t*>(MX_PTR(waveSubsystem, UCrEnviroWaveSubsystem, OnWaveStartedDynamic)),
 			waveSubsystem);
 		g_ruptureCycleDelegateHooks.FadeoutSubstageChanged = HookRuptureCycleDelegate(
 			delegateHook,
-			static_cast<void*>(&waveSubsystem->OnWaveFadeoutSubstageChanged),
+			const_cast<uint8_t*>(MX_PTR(waveSubsystem, UCrEnviroWaveSubsystem, OnWaveFadeoutSubstageChanged)),
 			waveSubsystem);
 		g_ruptureCycleDelegateHooks.GrowbackSubstageChanged = HookRuptureCycleDelegate(
 			delegateHook,
-			static_cast<void*>(&waveSubsystem->OnWaveGrowbackSubstageChanged),
+			const_cast<uint8_t*>(MX_PTR(waveSubsystem, UCrEnviroWaveSubsystem, OnWaveGrowbackSubstageChanged)),
 			waveSubsystem);
 		g_ruptureCycleDelegateHooks.PreWaveSubstageChanged = HookRuptureCycleDelegate(
 			delegateHook,
-			static_cast<void*>(&waveSubsystem->OnWavePreWaveSubstageChanged),
+			const_cast<uint8_t*>(MX_PTR(waveSubsystem, UCrEnviroWaveSubsystem, OnWavePreWaveSubstageChanged)),
 			waveSubsystem);
 
 		g_ruptureCycleDelegateHooks.Installed =
@@ -1161,8 +1301,8 @@ namespace
 		if (SDK::UCrBuilidngsDeveloperSettings* settings = SDK::UCrBuilidngsDeveloperSettings::GetDefaultObj())
 		{
 			const std::string configuredName = kind == CargoKind::Sender
-				? settings->SenderDefaultName.ToString()
-				: settings->ReceiverDefaultName.ToString();
+				? MX(settings, UCrBuilidngsDeveloperSettings, SenderDefaultName).ToString()
+				: MX(settings, UCrBuilidngsDeveloperSettings, ReceiverDefaultName).ToString();
 			if (!configuredName.empty())
 			{
 				return NormalizeCargoBuildingName(kind, configuredName);
@@ -1179,15 +1319,16 @@ namespace
 			return {};
 		}
 
-		const std::string itemName = item->ItemName.ToString();
+		const std::string itemName = MX(item, UAuItemDataBase, ItemName).ToString();
 		if (!itemName.empty())
 		{
 			return itemName;
 		}
 
-		if (!item->UniqueItemName.IsNone())
+		const SDK::FName unique = MX(item, UAuItemDataBase, UniqueItemName);
+		if (!unique.IsNone())
 		{
-			const std::string uniqueName = item->UniqueItemName.ToString();
+			const std::string uniqueName = unique.ToString();
 			if (!uniqueName.empty())
 			{
 				return uniqueName;
@@ -1237,10 +1378,12 @@ namespace
 		return oss.str();
 	}
 
-	std::string BuildReplicationHelperKey(const SDK::FCrMassEntityReplicationHelper& helper)
+	// `helper` points at a game FCrMassEntityReplicationHelper.
+	std::string BuildReplicationHelperKey(const uint8_t* helper)
 	{
 		std::ostringstream oss;
-		oss << helper.NetID.Value << ':' << helper.Entity.ID;
+		oss << MX(helper, FCrMassEntityReplicationHelper, NetID).Value << ':'
+			<< MX(MX_PTR(helper, FCrMassEntityReplicationHelper, Entity), FCrMassPersistentEntityID, ID);
 		return oss.str();
 	}
 
@@ -1588,7 +1731,7 @@ namespace
 				continue;
 			}
 
-			const std::string displayName = interactionComponent->GetInteractionDisplayName().ToString();
+			const std::string displayName = MX_RETURN(SDK::FText, interactionComponent, CrInteractionComponent, GetInteractionDisplayName).ToString();
 			if (!displayName.empty())
 			{
 				return displayName;
@@ -1605,8 +1748,8 @@ namespace
 			SDK::UCrBuildingCustomNameSubsystem::StaticClass());
 	}
 
-	uint32_t GetPersistentEntityIdValue(const SDK::FCrMassPersistentEntityID& entityId);
-	uint32_t GetReplicationHelperEntityIdValue(const SDK::FCrMassEntityReplicationHelper& helper);
+	uint32_t GetPersistentEntityIdValue(const uint8_t* entityId);
+	uint32_t GetReplicationHelperEntityIdValue(const uint8_t* helper);
 
 	BuildingCustomNameLookup BuildBuildingCustomNameLookup(SDK::UWorld* world)
 	{
@@ -1617,22 +1760,16 @@ namespace
 			return lookup;
 		}
 
-		for (const auto& entry : lookup.Subsystem->CustomNames)
+		const auto names = MX_MAP(MX_PTR(lookup.Subsystem, UCrBuildingCustomNameSubsystem, CustomNames), FCrMassPersistentEntityID, SDK::FString);
+		names.ForEach([&](uint8_t* key, uint8_t* value)
 		{
-			const uint32_t entityId = GetPersistentEntityIdValue(entry.Key());
-			if (entityId == 0)
+			const uint32_t entityId = GetPersistentEntityIdValue(key);
+			std::string displayName = reinterpret_cast<const SDK::FString*>(value)->ToString();
+			if (entityId != 0 && !displayName.empty())
 			{
-				continue;
+				lookup.ByEntityId.emplace(entityId, std::move(displayName));
 			}
-
-			std::string displayName = entry.Value().ToString();
-			if (displayName.empty())
-			{
-				continue;
-			}
-
-			lookup.ByEntityId.emplace(entityId, std::move(displayName));
-		}
+		});
 
 		return lookup;
 	}
@@ -1651,17 +1788,17 @@ namespace
 			return {};
 		}
 
-		return customNameSubsystem->GetBuildingCustomName(buildingActor).ToString();
+		return CallGetBuildingCustomName(customNameSubsystem, buildingActor);
 	}
 
-	uint32_t GetPersistentEntityIdValue(const SDK::FCrMassPersistentEntityID& entityId)
+	uint32_t GetPersistentEntityIdValue(const uint8_t* entityId)
 	{
-		return entityId.ID;
+		return MX(entityId, FCrMassPersistentEntityID, ID);
 	}
 
-	uint32_t GetReplicationHelperEntityIdValue(const SDK::FCrMassEntityReplicationHelper& helper)
+	uint32_t GetReplicationHelperEntityIdValue(const uint8_t* helper)
 	{
-		return GetPersistentEntityIdValue(helper.Entity);
+		return GetPersistentEntityIdValue(MX_PTR(helper, FCrMassEntityReplicationHelper, Entity));
 	}
 
 	SDK::ACrPlayerControllerBase* TryGetLocalCrPlayerController(SDK::UWorld* world)
@@ -1688,7 +1825,7 @@ namespace
 
 	std::string FindCachedBuildingCustomName(
 		const BuildingCustomNameLookup& customNameLookup,
-		const SDK::FCrMassEntityReplicationHelper& helper)
+		const uint8_t* helper)
 	{
 		const uint32_t targetId = GetReplicationHelperEntityIdValue(helper);
 		if (targetId == 0)
@@ -1707,7 +1844,7 @@ namespace
 
 	void RequestBuildingCustomNameIfNeeded(
 		SDK::UWorld* world,
-		const SDK::FCrMassEntityReplicationHelper& helper)
+		const uint8_t* helper)
 	{
 		const uint32_t entityId = GetReplicationHelperEntityIdValue(helper);
 		if (!world || entityId == 0)
@@ -1731,12 +1868,12 @@ namespace
 			return;
 		}
 
-		playerController->ServerGetBuildingCustomName(helper);
+		CallServerGetBuildingCustomName(playerController, helper);
 	}
 
 	std::string GetBuildingCustomName(
 		SDK::UWorld* world,
-		const SDK::FCrMassEntityReplicationHelper& helper,
+		const uint8_t* helper,
 		const BuildingCustomNameLookup& customNameLookup)
 	{
 		if (!world)
@@ -1909,7 +2046,7 @@ namespace
 			return {};
 		}
 
-		const std::string interactionText = teleporter->InteractionText.ToString();
+		const std::string interactionText = MX(teleporter, ACrMegamachineDeviceBase, InteractionText).ToString();
 		if (!interactionText.empty())
 		{
 			return interactionText;
@@ -2039,7 +2176,7 @@ namespace
 			return;
 		}
 
-		SDK::ACrPackageTransportReplicator* replicator = gameState->PackageTransportReplicator;
+		SDK::ACrPackageTransportReplicator* replicator = MX(gameState, ACrGameStateBase, PackageTransportReplicator);
 		snapshot.HasPackageTransportReplicator = replicator != nullptr;
 		if (!replicator)
 		{
@@ -2056,18 +2193,22 @@ namespace
 		std::unordered_map<std::string, SenderReplicationInfo> senderLookup;
 		std::unordered_set<std::string> connectionKeys;
 
-		const SDK::FCrSenderReceiversContainer& senderReceivers = replicator->SenderReceiversContainer;
-		for (int index = 0; index < senderReceivers.AllSenderReceiversData.Num(); ++index)
+		const auto senderReceivers = MX(MX_PTR(replicator, ACrPackageTransportReplicator, SenderReceiversContainer),
+			FCrSenderReceiversContainer, AllSenderReceiversData);
+		for (int index = 0; index < senderReceivers.Num(); ++index)
 		{
-			const SDK::FCrSenderReceiverData& senderReceiver = senderReceivers.AllSenderReceiversData[index];
-			const std::string entityKey = BuildReplicationHelperKey(senderReceiver.Entity);
-			const SDK::FVector worldLocation = MakeVector(
-				senderReceiver.Location.X,
-				senderReceiver.Location.Y,
-				senderReceiver.Location.Z);
-			const std::string displayName = GetBuildingCustomName(world, senderReceiver.Entity, customNameLookup);
+			const uint8_t* senderReceiver = MX_AT(senderReceivers, index, FCrSenderReceiverData);
+			if (!senderReceiver)
+			{
+				break;
+			}
+			const uint8_t* entity = MX_PTR(senderReceiver, FCrSenderReceiverData, Entity);
+			const std::string entityKey = BuildReplicationHelperKey(entity);
+			const auto location = MX(senderReceiver, FCrSenderReceiverData, Location);
+			const SDK::FVector worldLocation = MakeVector(location.X, location.Y, location.Z);
+			const std::string displayName = GetBuildingCustomName(world, entity, customNameLookup);
 
-			if (senderReceiver.bIsSender)
+			if (MX(senderReceiver, FCrSenderReceiverData, bIsSender))
 			{
 				senderLookup.emplace(
 					entityKey,
@@ -2108,17 +2249,23 @@ namespace
 					});
 		}
 
-		const SDK::FCrPackageTransportConnectionsContainer& connections = replicator->ConnectionsContainer;
-		snapshot.ConnectionCount = connections.ConnectionsData.Num();
-		for (int index = 0; index < connections.ConnectionsData.Num(); ++index)
+		const auto connections = MX(MX_PTR(replicator, ACrPackageTransportReplicator, ConnectionsContainer),
+			FCrPackageTransportConnectionsContainer, ConnectionsData);
+		snapshot.ConnectionCount = connections.Num();
+		for (int index = 0; index < connections.Num(); ++index)
 		{
-			const SDK::FCrPackageTransportConnectionData& connection = connections.ConnectionsData[index];
-			const std::string senderKey = BuildReplicationHelperKey(connection.Sender);
-			const std::string receiverKey = BuildReplicationHelperKey(connection.Receiver);
-			const std::string resourceName = GetItemDisplayName(connection.Item);
+			const uint8_t* connection = MX_AT(connections, index, FCrPackageTransportConnectionData);
+			if (!connection)
+			{
+				break;
+			}
+			const uint8_t* connectionSender = MX_PTR(connection, FCrPackageTransportConnectionData, Sender);
+			const std::string senderKey = BuildReplicationHelperKey(connectionSender);
+			const std::string receiverKey = BuildReplicationHelperKey(MX_PTR(connection, FCrPackageTransportConnectionData, Receiver));
+			const std::string resourceName = GetItemDisplayName(MX(connection, FCrPackageTransportConnectionData, Item));
 			const std::string senderPublicKey = MakePublicKey(CargoKind::Sender, senderKey);
 			const std::string receiverPublicKey = MakePublicKey(CargoKind::Receiver, receiverKey);
-			const std::string previousReceiverKey = BuildReplicationHelperKey(connection.PrevReceiver);
+			const std::string previousReceiverKey = BuildReplicationHelperKey(MX_PTR(connection, FCrPackageTransportConnectionData, PrevReceiver));
 			const std::string previousReceiverPublicKey = previousReceiverKey.empty()
 				? std::string{}
 				: MakePublicKey(CargoKind::Receiver, previousReceiverKey);
@@ -2140,7 +2287,7 @@ namespace
 					: previousSenderMarker->DisplayName;
 				if (senderDisplayName.empty())
 				{
-					senderDisplayName = GetBuildingCustomName(world, connection.Sender, customNameLookup);
+					senderDisplayName = GetBuildingCustomName(world, connectionSender, customNameLookup);
 				}
 				senderMarker = AddOrUpdateMarker(
 					snapshot,
@@ -2258,7 +2405,7 @@ namespace
 			route.SenderLabel = resolvedSenderLabel;
 			route.ReceiverLabel = resolvedReceiverLabel;
 			route.ItemDisplayName = resourceName;
-			route.RequestedAmount = connection.RequestedAmount;
+			route.RequestedAmount = MX(connection, FCrPackageTransportConnectionData, RequestedAmount);
 			route.SenderWorldLocation = resolvedSenderWorldLocation;
 			route.ReceiverWorldLocation = resolvedReceiverWorldLocation;
 			route.SenderMapLocation = resolvedSenderMapLocation;
@@ -2391,18 +2538,25 @@ namespace
 		std::unordered_map<std::string, size_t> teleporterIndexes;
 		std::unordered_map<std::string, size_t> teleporterIndexesByLocation;
 
-		if (gameState && gameState->TeleportReplicator)
+		SDK::ACrTeleportReplicator* teleportReplicator = gameState ? MX(gameState, ACrGameStateBase, TeleportReplicator) : nullptr;
+		if (teleportReplicator)
 		{
 			snapshot.HasTeleportReplicator = true;
 			snapshot.UsedTeleporterReplicator = true;
 
-			const SDK::FCrTeleportersContainer& teleporters = gameState->TeleportReplicator->TeleportersContainer;
-			for (int index = 0; index < teleporters.TeleportersData.Num(); ++index)
+			const auto teleporters = MX(MX_PTR(teleportReplicator, ACrTeleportReplicator, TeleportersContainer),
+				FCrTeleportersContainer, TeleportersData);
+			for (int index = 0; index < teleporters.Num(); ++index)
 			{
-				const SDK::FCrTeleporterData& teleporter = teleporters.TeleportersData[index];
-				const SDK::FVector worldLocation =
-					MakeVector(teleporter.Location.X, teleporter.Location.Y, teleporter.Location.Z);
-				const std::string internalKey = BuildReplicationHelperKey(teleporter.Teleporter);
+				const uint8_t* teleporter = MX_AT(teleporters, index, FCrTeleporterData);
+				if (!teleporter)
+				{
+					break;
+				}
+				const auto location = MX(teleporter, FCrTeleporterData, Location);
+				const SDK::FVector worldLocation = MakeVector(location.X, location.Y, location.Z);
+				const uint8_t* teleporterHelper = MX_PTR(teleporter, FCrTeleporterData, Teleporter);
+				const std::string internalKey = BuildReplicationHelperKey(teleporterHelper);
 
 				AddOrUpdateTeleporter(
 					snapshot,
@@ -2410,7 +2564,7 @@ namespace
 					worldLocation,
 					internalKey,
 					"teleport_replicator",
-					GetBuildingCustomName(world, teleporter.Teleporter, customNameLookup));
+					GetBuildingCustomName(world, teleporterHelper, customNameLookup));
 				teleporterIndexesByLocation.emplace(
 					BuildLocationKey("teleporter", worldLocation),
 					snapshot.Teleporters.size() - 1);
@@ -2674,7 +2828,8 @@ namespace
 			return false;
 		}
 
-		SDK::UClass* rewardClass = actor->InteractionRewardResource.Get();
+		auto reward = MX(actor, ACrGatherableBaseActor, InteractionRewardResource);  // Get() is not const
+		SDK::UClass* rewardClass = reward.Get();
 		if (rewardClass)
 		{
 			const std::string rewardClassName = rewardClass->GetName();
@@ -2712,7 +2867,8 @@ namespace
 			return false;
 		}
 
-		SDK::UClass* rewardClass = actor->InteractionRewardResource.Get();
+		auto reward = MX(actor, ACrGatherableBaseActor, InteractionRewardResource);  // Get() is not const
+		SDK::UClass* rewardClass = reward.Get();
 		if (!rewardClass)
 		{
 			return false;
@@ -2751,7 +2907,8 @@ namespace
 			return false;
 		}
 
-		SDK::UClass* resourceClass = actor->Resource.Get();
+		auto resource = MX(actor, ACrOreActor, Resource);  // Get() is not const
+		SDK::UClass* resourceClass = resource.Get();
 		if (resourceClass
 			&& (resourceClass == SDK::UI_FireWaveOre_C::StaticClass()
 				|| resourceClass->GetName() == "I_FireWaveOre_C"))
@@ -2890,7 +3047,7 @@ namespace
 			}
 		}
 		const std::optional<int32_t> seed = replicationActor
-			? std::optional<int32_t>(replicationActor->RepGlobalGatherablePCGSeed) : std::nullopt;
+			? std::optional<int32_t>(MX(replicationActor, ACrGatherableSpawnersRepActor, RepGlobalGatherablePCGSeed)) : std::nullopt;
 		const std::optional<bool> heatMoving = cycle.Available
 			? std::optional<bool>(cycle.Wave == "Heat" && cycle.Stage == "Moving") : std::nullopt;
 		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
@@ -3025,7 +3182,7 @@ namespace
 			context.HasCycle = TryReadLocalRuptureCycleState(wave, context.Cycle);
 			if (context.HasCycle)
 			{
-				context.StageProgress = wave->GetCurrentStageProgress();
+				context.StageProgress = MX_RETURN(float, wave, CrEnviroWaveSubsystem, GetCurrentStageProgress);
 				context.HasCycle = std::isfinite(context.StageProgress);
 			}
 		}
@@ -3033,9 +3190,10 @@ namespace
 		{
 			// Let the engine resolve the soft reference; the generated Get() ignores
 			// weak-object serial numbers. This conversion does not load the asset.
+			const auto configured = MX(settings, UGatherableCropSettings, GatherableInteractivityData);
 			SDK::TSoftObjectPtr<SDK::UObject> soft{};
-			soft.WeakPtr = settings->GatherableInteractivityData.WeakPtr;
-			soft.ObjectID = settings->GatherableInteractivityData.ObjectID;
+			soft.WeakPtr = configured.WeakPtr;
+			soft.ObjectID = configured.ObjectID;
 			auto* data = SDK::UKismetSystemLibrary::Conv_SoftObjectReferenceToObject(soft);
 			if (TryIsObjectOfClass(data, TryGetStaticClass<SDK::UCrGatherableActorInteractivityData>()))
 				context.Interactivity = static_cast<SDK::UCrGatherableActorInteractivityData*>(data);
@@ -3046,25 +3204,45 @@ namespace
 	Harvestability ReadStarTearsHarvestability(SDK::UClass* actorClass, const ResourceReadContext& context)
 	{
 		if (!context.HasCycle || !context.Interactivity) return Harvestability::Unknown;
-		for (const auto& pair : context.Interactivity->Data)
+		// TMap<TSubclassOf<ACrGatherableBaseActor>, FCrGatherableActorInteractivityArray>: an engine
+		// key, a game value walked at its live size.
+		using ClassKey = SDK::TSubclassOf<SDK::ACrGatherableBaseActor>;
+		const PluginMap::ScriptMapView map(MX_PTR(context.Interactivity, UCrGatherableActorInteractivityData, Data),
+			PluginMap::MapLayout(sizeof(ClassKey), alignof(ClassKey), MX_LIVE_SIZE(FCrGatherableActorInteractivityArray),
+				MX_LIVE_ALIGN(FCrGatherableActorInteractivityArray)));
+		Harvestability result = Harvestability::Unknown;
+		map.ForEach([&](uint8_t* key, uint8_t* value)
 		{
-			auto configuredClass = pair.Key(); // Generated Get() is not const.
-			if (configuredClass.Get() != actorClass) continue;
-			for (const auto& rule : pair.Value().InteractivityForWaveStages)
+			if (reinterpret_cast<ClassKey*>(key)->Get() != actorClass) return true;  // Generated Get() is not const.
+			result = Harvestability::Unavailable;
+			const auto rules = MX(value, FCrGatherableActorInteractivityArray, InteractivityForWaveStages);
+			for (int index = 0; index < rules.Num(); ++index)
 			{
-				if (rule.WaveStage != context.Cycle.Stage) continue;
+				const uint8_t* rule = MX_AT(rules, index, FCrGatherableEnviroWaveProgressInteractivityThresholds);
+				const auto stage = MapStateSdk::LiveStage(MX(rule, FCrGatherableEnviroWaveProgressInteractivityThresholds, WaveStage));
+				if (!rule || stage != context.Cycle.Stage) continue;
 				// CanInteract evaluates the first rule for the current stage.
-				if (context.StageProgress < rule.EnableInteractionEnviroWaveStageProgressThresholdStart
-					|| context.StageProgress >= rule.EnableInteractionEnviroWaveStageProgressThresholdEnd) return Harvestability::Unavailable;
-				if (rule.WaveStage == SDK::EEnviroWaveStage::Fadeout
-					&& !rule.FadeoutSubstages.Contains(context.Cycle.FadeoutSubstage)) return Harvestability::Unavailable;
-				if (rule.WaveStage == SDK::EEnviroWaveStage::Growback
-					&& !rule.GrowbackSubstages.Contains(context.Cycle.GrowbackSubstage)) return Harvestability::Unavailable;
-				return Harvestability::Available;
+				if (context.StageProgress < MX(rule, FCrGatherableEnviroWaveProgressInteractivityThresholds, EnableInteractionEnviroWaveStageProgressThresholdStart)
+					|| context.StageProgress >= MX(rule, FCrGatherableEnviroWaveProgressInteractivityThresholds, EnableInteractionEnviroWaveStageProgressThresholdEnd)) return false;
+				// The lists hold live enum values: translate each before comparing.
+				const auto contains = [](const auto& live, auto wanted, auto translate)
+				{
+					for (int i = 0; i < live.Num(); ++i)
+						if (translate(live[i]) == wanted) return true;
+					return false;
+				};
+				if (stage == SDK::EEnviroWaveStage::Fadeout
+					&& !contains(MX(rule, FCrGatherableEnviroWaveProgressInteractivityThresholds, FadeoutSubstages),
+						context.Cycle.FadeoutSubstage, MapStateSdk::LiveFadeout)) return false;
+				if (stage == SDK::EEnviroWaveStage::Growback
+					&& !contains(MX(rule, FCrGatherableEnviroWaveProgressInteractivityThresholds, GrowbackSubstages),
+						context.Cycle.GrowbackSubstage, MapStateSdk::LiveGrowback)) return false;
+				result = Harvestability::Available;
+				return false;
 			}
-			return Harvestability::Unavailable;
-		}
-		return Harvestability::Unknown;
+			return false;
+		});
+		return result;
 	}
 
 	bool ObserveTrackedGatherableActor(
@@ -3092,11 +3270,11 @@ namespace
 			resourceName);
 		// bIsPermanentlyGathered configures persistence after gathering; it is
 		// not evidence that this live actor has already been gathered.
-		marker.Depleted = actor->bIsDepleted;
+		marker.Depleted = MX(actor, ACrGatherableBaseActor, bIsDepleted);
 		if (kind == PoiKind::StarTears)
 		{
 			marker.Harvestability = ReadStarTearsHarvestability(actor->Class, context);
-			if (!marker.Depleted && context.Spawners && context.Spawners->BP_IsGatherableDepleted(actor))
+			if (!marker.Depleted && context.Spawners && IsGatherableDepleted(context.Spawners, actor))
 			{
 				marker.Depleted = true;
 				marker.Source = "subsystem.depleted";
@@ -3126,14 +3304,14 @@ namespace
 			"actor_observation.ore",
 			resourceName,
 			resourceName);
-		marker.Depleted = actor->OreData.bIsDepleted;
+		marker.Depleted = MX(MX_PTR(actor, ACrOreActor, OreData), FCrOreRuntimeData, bIsDepleted);
 		marker.Harvestability = Harvestability::Unknown;
 		if (actor->IsA(SDK::ACrStandaloneMeteOreChunk::StaticClass()))
 		{
-			marker.Harvestability = static_cast<SDK::ACrStandaloneMeteOreChunk*>(actor)->IsMineableChunk()
+			marker.Harvestability = MX_RETURN(bool, actor, CrStandaloneMeteOreChunk, IsMineableChunk)
 				? Harvestability::Available : Harvestability::Unavailable;
 		}
-		if (!marker.Depleted && context.Spawners && context.Spawners->BP_IsGatherableDepleted(actor))
+		if (!marker.Depleted && context.Spawners && IsGatherableDepleted(context.Spawners, actor))
 		{
 			marker.Depleted = true;
 			marker.Source = "subsystem.depleted";
@@ -3179,11 +3357,17 @@ namespace
 		}
 	}
 
-	template <typename TDepletedEntry>
+	// A replicated depleted-gatherable record, copied out of the game's array.
+	struct DepletedEntry
+	{
+		SDK::FVector Location;
+		SDK::FVector Origin;  // Bounds.Origin
+	};
+
 	size_t MarkDepletedResourceEntries(
 		SDK::UWorld* world,
 		PoiCatalog& catalog,
-		const SDK::TArray<TDepletedEntry>& entries,
+		const std::vector<DepletedEntry>& entries,
 		const std::unordered_set<std::string>& loadedResourceKeys)
 	{
 		size_t ambiguous = 0;
@@ -3202,7 +3386,7 @@ namespace
 					return delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z
 						<= kDepletedPlantMatchRadius * kDepletedPlantMatchRadius;
 				};
-				if (isNearLocation(entry.Location) || isNearLocation(entry.Bounds.Origin))
+				if (isNearLocation(entry.Location) || isNearLocation(entry.Origin))
 				{
 					match.Add();
 					candidate = &marker;
@@ -3231,10 +3415,24 @@ namespace
 		{
 			auto* replicationActor = static_cast<SDK::ACrGatherableSpawnersRepActor*>(actor);
 			if (!replicationActor) continue;
-			ambiguous += MarkDepletedResourceEntries(world, catalog,
-				replicationActor->RepDepletedGatherables.RepDepletedGatherables, loadedResourceKeys);
-			ambiguous += MarkDepletedResourceEntries(world, catalog,
-				replicationActor->RepPermanentDepletedGatherables.RepPermanentDepletedGatherables, loadedResourceKeys);
+			std::vector<DepletedEntry> entries;
+			const auto depleted = MX(MX_PTR(replicationActor, ACrGatherableSpawnersRepActor, RepDepletedGatherables),
+				FCrRepDepletedGatherablesContainer, RepDepletedGatherables);
+			for (int index = 0; index < depleted.Num(); ++index)
+			{
+				const uint8_t* entry = MX_AT(depleted, index, FCrRepDepletedGatherableData);
+				entries.push_back({ MX(entry, FCrRepDepletedGatherableData, Location), MX(entry, FCrRepDepletedGatherableData, Bounds).Origin });
+			}
+			ambiguous += MarkDepletedResourceEntries(world, catalog, entries, loadedResourceKeys);
+			entries.clear();
+			const auto permanent = MX(MX_PTR(replicationActor, ACrGatherableSpawnersRepActor, RepPermanentDepletedGatherables),
+				FCrRepPermanentDepletedGatherablesContainer, RepPermanentDepletedGatherables);
+			for (int index = 0; index < permanent.Num(); ++index)
+			{
+				const uint8_t* entry = MX_AT(permanent, index, FCrRepPermanentDepletedGatherableData);
+				entries.push_back({ MX(entry, FCrRepPermanentDepletedGatherableData, Location), MX(entry, FCrRepPermanentDepletedGatherableData, Bounds).Origin });
+			}
+			ambiguous += MarkDepletedResourceEntries(world, catalog, entries, loadedResourceKeys);
 		}
 		std::lock_guard<std::mutex> lock(g_observedPlantCatalogMutex);
 		if (ambiguous != g_observedPlantCatalog.LastAmbiguousDepletionCount)
@@ -3638,6 +3836,7 @@ namespace Detail
 
 	bool RefreshCargoSnapshot(SDK::UWorld* world, const char* reason)
 	{
+		GameFields::AuditTick();
 		const bool isRealtimeRefresh = IsRealtimeRefreshReason(reason);
 		const TrackedChimeraWorldState trackedState = CopyTrackedChimeraWorldState();
 		CargoSnapshot nextSnapshot{};
@@ -3714,7 +3913,8 @@ namespace Detail
 
 		const bool needsCustomNameLookup =
 			gameState
-			&& (gameState->PackageTransportReplicator != nullptr || gameState->TeleportReplicator != nullptr);
+			&& (MX(gameState, ACrGameStateBase, PackageTransportReplicator) != nullptr
+				|| MX(gameState, ACrGameStateBase, TeleportReplicator) != nullptr);
 		const BuildingCustomNameLookup customNameLookup =
 			needsCustomNameLookup ? BuildBuildingCustomNameLookup(world) : BuildingCustomNameLookup{};
 		CaptureFromReplicator(
@@ -3941,9 +4141,7 @@ namespace MapStateRuntime
 			LOG_INFO("Engine init received");
 		}
 
-#if defined(MODLOADER_SERVER_BUILD)
 		MapExtensionServer::Sync::OnEngineInit();
-#endif
 		Detail::LogRuntimePlanIfNeeded();
 		Detail::TryRefreshCurrentWorld("EngineInit");
 	}
@@ -3973,9 +4171,7 @@ namespace MapStateRuntime
 		ClearPublishedSnapshot("EngineShutdown");
 		ResetRuptureCycleState();
 
-#if defined(MODLOADER_SERVER_BUILD)
 		MapExtensionServer::Sync::OnEngineShutdown();
-#endif
 	}
 
 	void OnEngineTick(float deltaSeconds)
@@ -4014,10 +4210,13 @@ namespace MapStateRuntime
 			}
 		}
 
+		// Registers the snapshot request handler once this process holds
+		// authority (dedicated server, or a co-op host on the client build).
+		MapExtensionServer::Sync::OnEngineTick();
 #if !defined(MODLOADER_SERVER_BUILD)
-		// On a dedicated-server client, periodically request an authoritative
-		// snapshot from the server plugin. The sync client handles rate-limiting
-		// and dedicated-session detection internally.
+		// On a dedicated-server or co-op client, periodically request a snapshot
+		// from the authority. The sync client handles rate-limiting and session
+		// detection internally.
 		MapExtensionClient::Sync::RequestSnapshotIfNeeded(trackedState.World, "EngineTick");
 #endif
 
@@ -4203,9 +4402,7 @@ namespace MapStateRuntime
 			LOG_INFO("AnyWorldBeginPlay #%d: world=%p name=%s", g_anyWorldBeginPlayCount, static_cast<void*>(world), safeName);
 		}
 
-#if defined(MODLOADER_SERVER_BUILD)
 		MapExtensionServer::Sync::OnAnyWorldBeginPlay(world, safeName);
-#endif
 
 		if (std::strstr(safeName, "ChimeraMain") != nullptr)
 		{
@@ -4328,9 +4525,7 @@ namespace MapStateRuntime
 			MarkChimeraWorldReady("ExperienceLoadComplete");
 		}
 		Detail::TryRefreshCurrentWorld("ExperienceLoadComplete");
-#if defined(MODLOADER_SERVER_BUILD)
 		MapExtensionServer::Sync::OnExperienceLoadComplete();
-#endif
 	}
 
 	void OnBeforeWorldEndPlay(SDK::UWorld* world, const char* worldName)
@@ -4341,9 +4536,7 @@ namespace MapStateRuntime
 			LOG_INFO("BeforeWorldEndPlay: world=%p name=%s", static_cast<void*>(world), safeName);
 		}
 
-#if defined(MODLOADER_SERVER_BUILD)
 		MapExtensionServer::Sync::OnBeforeWorldEndPlay(world, safeName);
-#endif
 
 		// If the ending world is our tracked ChimeraMain, mark it as not ready
 		// while the world pointer is still valid.
@@ -4376,9 +4569,7 @@ namespace MapStateRuntime
 			LOG_INFO("AfterWorldEndPlay: world=%p name=%s", static_cast<void*>(world), safeName);
 		}
 
-#if defined(MODLOADER_SERVER_BUILD)
 		MapExtensionServer::Sync::OnAfterWorldEndPlay(world, safeName);
-#endif
 
 		// If the ended world is our tracked ChimeraMain, clear everything.
 		// The world pointer may be partially torn down at this point.
@@ -4404,9 +4595,7 @@ namespace MapStateRuntime
 		{
 			LOG_INFO("PlayerJoined: controller=%p", playerController);
 		}
-#if defined(MODLOADER_SERVER_BUILD)
 		MapExtensionServer::Sync::OnPlayerJoined(playerController);
-#endif
 		// On server, this is a good time to try bootstrapping the world
 		// if we haven't yet. On client, it's mostly informational.
 		Detail::TryRefreshCurrentWorld("PlayerJoined");

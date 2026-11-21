@@ -1,4 +1,5 @@
 #include "map_sync_server.h"
+#include "game_fields.h"
 
 #include "../map_state_capture.h"
 #include "../map_state_sdk_helpers.h"
@@ -7,6 +8,7 @@
 #include "../shared/map_sync_protocol.h"
 
 #include "Chimera_classes.hpp"
+#include "Chimera_parameters.hpp"
 #include "CoreUObject_classes.hpp"
 #include "Engine_classes.hpp"
 #include "plugin_network_helpers.h"
@@ -20,6 +22,12 @@
 
 namespace
 {
+	MX_FIELD(Rupture, UCrEnviroWaveSubsystem, CurrentPreWaveSubstage);
+	MX_FIELD(Rupture, UCrEnviroWaveSubsystem, CurrentFadeoutSubstage);
+	MX_FIELD(Rupture, UCrEnviroWaveSubsystem, CurrentGrowbackSubstage);
+	MX_RETURN_ROWS(Rupture, CrEnviroWaveSubsystem, GetCurrentType);
+	MX_RETURN_ROWS(Rupture, CrEnviroWaveSubsystem, GetCurrentStage);
+	MX_RETURN_ROWS(Rupture, CrEnviroWaveSubsystem, GetTimeSinceLastWaveStarted);
 	using CargoConnection = MapStateRuntime::Detail::CargoConnection;
 	using CargoMarker = MapStateRuntime::Detail::CargoMarker;
 	using CargoSnapshot = MapStateRuntime::Detail::CargoSnapshot;
@@ -106,12 +114,12 @@ namespace
 
 		__try
 		{
-			outState.Wave = waveSubsystem->GetCurrentType();
-			outState.Stage = waveSubsystem->GetCurrentStage();
-			outState.PreWaveSubstage = waveSubsystem->CurrentPreWaveSubstage;
-			outState.FadeoutSubstage = waveSubsystem->CurrentFadeoutSubstage;
-			outState.GrowbackSubstage = waveSubsystem->CurrentGrowbackSubstage;
-			outState.ElapsedSeconds = waveSubsystem->GetTimeSinceLastWaveStarted();
+			outState.Wave = MapStateSdk::LiveWave(MX_RETURN(SDK::EEnviroWave, waveSubsystem, CrEnviroWaveSubsystem, GetCurrentType));
+			outState.Stage = MapStateSdk::LiveStage(MX_RETURN(SDK::EEnviroWaveStage, waveSubsystem, CrEnviroWaveSubsystem, GetCurrentStage));
+			outState.PreWaveSubstage = MapStateSdk::LivePreWave(MX(waveSubsystem, UCrEnviroWaveSubsystem, CurrentPreWaveSubstage));
+			outState.FadeoutSubstage = MapStateSdk::LiveFadeout(MX(waveSubsystem, UCrEnviroWaveSubsystem, CurrentFadeoutSubstage));
+			outState.GrowbackSubstage = MapStateSdk::LiveGrowback(MX(waveSubsystem, UCrEnviroWaveSubsystem, CurrentGrowbackSubstage));
+			outState.ElapsedSeconds = MX_RETURN(double, waveSubsystem, CrEnviroWaveSubsystem, GetTimeSinceLastWaveStarted);
 			outState.HasElapsed = true;
 			return true;
 		}
@@ -208,10 +216,27 @@ namespace
 		g_lastLoggedRuptureStateKeyValid = false;
 	}
 
+	bool IsAuthority()
+	{
+		IPluginHooks* hooks = GetHooks();
+		return hooks && hooks->Network && hooks->Network->IsServer && hooks->Network->IsServer();
+	}
+
+	// The client build answers only as a co-op host that opted in; the server
+	// build always answers.
+	bool ShouldServeSnapshots()
+	{
+#if defined(MODLOADER_CLIENT_BUILD)
+		return IsAuthority() && MapExtensionPluginConfig::Config::CoopShareMapWithClients();
+#else
+		return IsAuthority();
+#endif
+	}
+
 	bool CaptureRuptureCycleState(SDK::UWorld* world, RuptureCycleState& outState)
 	{
 		SDK::ACrGameStateBase* gameState = TryGetGameState(world);
-		if (!gameState || !gameState->bIsDedicatedServer)
+		if (!gameState || !IsAuthority())
 		{
 			return false;
 		}
@@ -234,7 +259,7 @@ namespace
 
 	bool TryBootstrapCurrentWorld(const char* reason)
 	{
-		SDK::UWorld* world = SDK::UWorld::GetWorld();
+		SDK::UWorld* world = PluginSdkRuntime::GetWorld();
 		if (!world)
 		{
 			return false;
@@ -305,8 +330,13 @@ namespace
 		entry.world_x = static_cast<float>(marker.WorldLocation.X);
 		entry.world_y = static_cast<float>(marker.WorldLocation.Y);
 		entry.world_z = static_cast<float>(marker.WorldLocation.Z);
+#if defined(MODLOADER_CLIENT_BUILD)
+		// On a co-op host IsSelf is the host's own player, not the recipient.
+		const bool isSelf = !recipientSelfKey.empty() && marker.PublicKey == recipientSelfKey;
+#else
 		const bool isSelf = marker.IsSelf
 			|| (!recipientSelfKey.empty() && marker.PublicKey == recipientSelfKey);
+#endif
 		entry.flags = isSelf ? MapSyncProtocol::kPlayerEntrySelf : 0;
 		MapSyncProtocol::CopyCStringTruncated(entry.label, sizeof(entry.label), marker.DisplayName.c_str());
 		MapSyncProtocol::CopyCStringTruncated(entry.source, sizeof(entry.source), marker.Source.c_str());
@@ -515,7 +545,9 @@ namespace
 			return;
 		}
 
+#if !defined(MODLOADER_CLIENT_BUILD)
 		MapStateRuntime::Detail::RefreshCargoSnapshot(g_trackedWorld, reason ? reason : "ServerSnapshotRequest");
+#endif
 		CargoSnapshot snapshot = MapStateRuntime::Detail::CopySnapshot();
 		if (snapshot.PoiRevision == 0)
 		{
@@ -685,6 +717,11 @@ namespace
 
 	void OnSnapshotRequest(void* senderPlayerController, const MapSyncProtocol::ClientSnapshotRequestPacket& packet)
 	{
+		if (!ShouldServeSnapshots())
+		{
+			return;
+		}
+
 		if (packet.protocol_version != MapSyncProtocol::kProtocolVersion)
 		{
 			LOG_WARN(
@@ -709,6 +746,28 @@ namespace
 	}
 }
 
+namespace
+{
+	void TryRegisterRequestHandler()
+	{
+		IPluginHooks* hooks = GetHooks();
+		const IPluginSelf* self = GetPluginSelf();
+		if (g_snapshotRequestHandle || !hooks || !self || !IsAuthority())
+		{
+			return;
+		}
+
+		g_snapshotRequestHandle = Network::OnServerReceive<MapSyncProtocol::ClientSnapshotRequestPacket>(
+			hooks,
+			self,
+			[](void* senderPlayerController, const MapSyncProtocol::ClientSnapshotRequestPacket& packet)
+			{
+				OnSnapshotRequest(senderPlayerController, packet);
+			});
+		LOG_INFO("Snapshot request handler registered (this process is the session authority)");
+	}
+}
+
 namespace MapExtensionServer
 {
 	namespace Sync
@@ -728,28 +787,23 @@ namespace MapExtensionServer
 				return true;
 			}
 
-			if (!hooks->Network->IsServer())
-			{
-				return true;
-			}
-
-			g_snapshotRequestHandle = Network::OnServerReceive<MapSyncProtocol::ClientSnapshotRequestPacket>(
-				hooks,
-				self,
-				[](void* senderPlayerController, const MapSyncProtocol::ClientSnapshotRequestPacket& packet)
-				{
-					OnSnapshotRequest(senderPlayerController, packet);
-				});
-
+			// A client build is the authority only once it hosts a co-op game;
+			// OnEngineTick registers the handler then.
+			TryRegisterRequestHandler();
 			TryBootstrapCurrentWorld("ServerInitialize");
 			return true;
+		}
+
+		void OnEngineTick()
+		{
+			TryRegisterRequestHandler();
 		}
 
 		void Shutdown()
 		{
 			IPluginHooks* hooks = GetHooks();
 			const IPluginSelf* self = GetPluginSelf();
-			if (g_snapshotRequestHandle && hooks && hooks->Network && self && hooks->Network->IsServer())
+			if (g_snapshotRequestHandle && hooks && hooks->Network && self)
 			{
 				hooks->Network->UnregisterServerMessageHandler(
 					self,

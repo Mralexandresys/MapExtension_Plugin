@@ -16,8 +16,9 @@ The browser viewer (`mapview/`, `MapExtensionViewer.html`, `map-tiles/`) was rem
 - `map_state_types.h`: shared snapshot types and map projection constants
 - `client/map_sync_client.cpp` / `client/map_sync_client.h`: client-side snapshot requests and plugin-network handling
 - `client/map_state_remote_cache.cpp` / `client/map_state_remote_cache.h`: client cache for remote rupture/cargo snapshots
-- `server/map_sync_server.cpp` / `server/map_sync_server.h`: server-side snapshot capture and response streaming
+- `server/map_sync_server.cpp` / `server/map_sync_server.h`: snapshot response streaming for the session authority. Built in both configurations: the server build always answers, the client build answers only as a co-op host with `[Coop] ShareMapWithClients=1`. The request handler is registered from `OnEngineTick` once `Network->IsServer()` is true
 - `shared/map_sync_protocol.h`: shared packet definitions for client/server snapshot sync
+- `game_fields.h` / `game_fields.cpp`: every game member, struct size, UFunction call and enum value, requested from the mod loader by name (`PLUGIN_MAP_MIGRATED`), so the client DLL runs on game builds it was not compiled for. `[Diagnostics] FieldAudit=1` logs the resolved offsets against the compiled ones and every value that differs. Rules: `AGENTS.md`, section "Reading game data on any game build"
 
 Keep the runtime split along these boundaries.
 
@@ -88,7 +89,7 @@ Terrain tiles: a permanent preview (the resident mip of each of the 36 segments,
 ## Prerequisites
 
 - Visual Studio 2022 (17.8 or newer), or a newer Visual Studio with the v143 C++ build tools installed, the Desktop development with C++ workload and the Windows 10 SDK. The project and CI both use v143.
-- SDK layout: `StarRupture-Plugin-SDK` with `include/`, `Shared.props`, and `StarRupture SDK/`
+- SDK layout: `StarRupture-Plugin-SDK` with `include/`, `PluginGameBuild.props`, and `StarRupture SDK/`
 
 ## Plugin build
 
@@ -100,7 +101,6 @@ Use only `Server Release|x64` for server builds so the output matches the packag
 
 The project resolves these SDK paths:
 
-- `PluginSdkSharedProps=StarRupture-Plugin-SDK\Shared.props`
 - `PluginApiIncludeDir=StarRupture-Plugin-SDK\include\`
 - `StarRuptureSdkBaseDir=StarRupture-Plugin-SDK\StarRupture SDK\`
 
@@ -252,6 +252,8 @@ Protocol v2 added POIs to the existing rupture, player, teleporter, cargo-marker
 - `ServerPoiEntry` carries world coordinates, `kind`, the depletion/harvestability flags, label, resource, source, and unique key.
 - `ServerPoisChunkPacket` carries at most `kPoiChunkCapacity` entries (currently four). The packet remains trivially copyable and is statically limited to the recommended 1 KiB payload size.
 - The server rejects collections that cannot be represented by the `uint16_t` wire counters. The client validates the snapshot ID, generation, POI revision, begin/end counts and totals, chunk counts, chunk indexes, per-chunk item counts, page layout, and merged public-key uniqueness before publishing the assembled snapshot.
+
+**Co-op.** A client in net mode `Client` on a non-dedicated session requests the same snapshots from the host every 5 s. It uses the host snapshot only while one arrived in the last 15 s (`HasFreshCoopHostSnapshot`) and otherwise keeps its local capture, so a host that does not share, or runs another plugin version (the loader drops packets between different plugin versions), leaves the joining player on the local map. On the host, the flag `kPlayerEntrySelf` comes only from the recipient's key, never from the host's own `IsSelf`.
 
 **Always update the client and dedicated-server builds together when deploying protocol v6.** The client sidecar updates only `MapExtension_Plugin.dll` on player machines; it does not update the dedicated-server DLL. A mismatched pair will ignore each other's packets, so the server DLL must be replaced manually during the same rollout.
 

@@ -10,6 +10,7 @@
 #include "Chimera_structs.hpp"
 #include "CoreUObject_classes.hpp"
 #include "Engine_classes.hpp"
+#include "game_fields.h"
 
 #include <chrono>
 #include <cstdint>
@@ -19,6 +20,66 @@
 
 namespace MapStateSdk
 {
+	// Game enums read on the running build, back to the compiled SDK values (by entry name).
+	inline SDK::EEnviroWave LiveWave(SDK::EEnviroWave live)
+	{
+		using E = SDK::EEnviroWave;
+		static GameFields::LiveEnum<E> map("EEnviroWave", E::None, { { "None", E::None }, { "Heat", E::Heat }, { "Cold", E::Cold } });
+		return map(live);
+	}
+	inline SDK::EEnviroWaveStage LiveStage(SDK::EEnviroWaveStage live)
+	{
+		using E = SDK::EEnviroWaveStage;
+		static GameFields::LiveEnum<E> map("EEnviroWaveStage", E::None, { { "None", E::None }, { "PreWave", E::PreWave },
+			{ "Moving", E::Moving }, { "Fadeout", E::Fadeout }, { "Growback", E::Growback } });
+		return map(live);
+	}
+	inline SDK::EEnviroWavePreWaveSubstage LivePreWave(SDK::EEnviroWavePreWaveSubstage live)
+	{
+		using E = SDK::EEnviroWavePreWaveSubstage;
+		static GameFields::LiveEnum<E> map("EEnviroWavePreWaveSubstage", E::None, { { "None", E::None },
+			{ "BeforeExplosion", E::BeforeExplosion }, { "AfterExplosion", E::AfterExplosion } });
+		return map(live);
+	}
+	inline SDK::EEnviroWaveFadeoutSubstage LiveFadeout(SDK::EEnviroWaveFadeoutSubstage live)
+	{
+		using E = SDK::EEnviroWaveFadeoutSubstage;
+		static GameFields::LiveEnum<E> map("EEnviroWaveFadeoutSubstage", E::None, { { "None", E::None },
+			{ "FireWave", E::FireWave }, { "Burning", E::Burning }, { "Fading", E::Fading } });
+		return map(live);
+	}
+	inline SDK::EEnviroWaveGrowbackSubstage LiveGrowback(SDK::EEnviroWaveGrowbackSubstage live)
+	{
+		using E = SDK::EEnviroWaveGrowbackSubstage;
+		static GameFields::LiveEnum<E> map("EEnviroWaveGrowbackSubstage", E::None, { { "None", E::None },
+			{ "MoonPhase", E::MoonPhase }, { "RegrowthStart", E::RegrowthStart }, { "Regrowth", E::Regrowth } });
+		return map(live);
+	}
+	inline SDK::ECrAlienObeliskState LiveObeliskState(SDK::ECrAlienObeliskState live)
+	{
+		using E = SDK::ECrAlienObeliskState;
+		static GameFields::LiveEnum<E> map("ECrAlienObeliskState", E::Disabled, { { "Disabled", E::Disabled },
+			{ "Cooldown", E::Cooldown }, { "Enabled", E::Enabled }, { "EnabledAndVisiblyCharged", E::EnabledAndVisiblyCharged },
+			{ "AttackInProgress", E::AttackInProgress } });
+		return map(live);
+	}
+	inline SDK::ECrAntennaState LiveAntennaState(SDK::ECrAntennaState live)
+	{
+		using E = SDK::ECrAntennaState;
+		static GameFields::LiveEnum<E> map("ECrAntennaState", E::Unknown, { { "Unknown", E::Unknown }, { "Infected", E::Infected },
+			{ "ReadyToCharge", E::ReadyToCharge }, { "Charging", E::Charging }, { "ReadyToActivate", E::ReadyToActivate },
+			{ "Activated", E::Activated }, { "Locked", E::Locked } });
+		return map(live);
+	}
+	inline SDK::EPointOfInterestState LivePoiState(SDK::EPointOfInterestState live)
+	{
+		using E = SDK::EPointOfInterestState;
+		static GameFields::LiveEnum<E> map("EPointOfInterestState", E::Unknown, { { "Hidden", E::Hidden },
+			{ "VisibleUnknown", E::VisibleUnknown }, { "VisibleDiscovered", E::VisibleDiscovered }, { "Disabled", E::Disabled },
+			{ "Unknown", E::Unknown } });
+		return map(live);
+	}
+
 	inline int64_t GetCurrentUnixTimeMilliseconds()
 	{
 		using namespace std::chrono;

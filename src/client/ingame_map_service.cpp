@@ -1,7 +1,14 @@
 #include "ingame_map_internal.h"
+#include "game_fields.h"
+#include "map_sync_client.h"
 
 // Game thread : chargement des textures, capture de l'etat du jeu et publication
 // de l'instantane immuable lu par le rendu.
+
+namespace
+{
+	MX_FIELD(Players, ACrGameStateBase, bIsDedicatedServer);
+}
 
 namespace MapExtensionClient::InGameMap
 {
@@ -337,11 +344,39 @@ namespace
 		}
 	}
 
+	CoopRole ReadCoopRole()
+	{
+		IPluginHooks* hooks = GetHooks();
+		if (!hooks || !hooks->NetMode || !hooks->NetMode->GetNetMode)
+		{
+			return CoopRole::None;
+		}
+		switch (hooks->NetMode->GetNetMode())
+		{
+		case EPluginNetMode::ListenServer:
+			return CoopRole::Host;
+		case EPluginNetMode::Client:
+		{
+			SDK::UWorld* world = PluginSdkRuntime::GetWorld();
+			SDK::AGameStateBase* gameState = world ? SDK::UGameplayStatics::GetGameState(world) : nullptr;
+			if (!MapStateSdk::TryIsObjectOfClass(gameState, SDK::ACrGameStateBase::StaticClass())
+				|| MX(gameState, ACrGameStateBase, bIsDedicatedServer))
+			{
+				return CoopRole::None;
+			}
+			return MapExtensionClient::Sync::HasFreshCoopHostSnapshot() ? CoopRole::ClientFromHost : CoopRole::ClientLocal;
+		}
+		default:
+			return CoopRole::None;
+		}
+	}
+
 	// Game thread : capture terrain + snapshot, publication pour le render callback.
 	void Service()
 	{
 		auto next = std::make_shared<Published>();
 		next->Snapshot = MapStateRuntime::Detail::CopySnapshot();
+		next->Coop = ReadCoopRole();
 		if (MapStateSdk::IsChimeraWorldName(next->Snapshot.WorldName))
 		{
 			CaptureTerrain(next->Terrain, !g_terrainLogged);

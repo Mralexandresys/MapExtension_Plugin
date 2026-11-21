@@ -823,3 +823,43 @@ Inconnu : en solo, la table contient-elle tous les noms dès le chargement ? Log
 connus du jeu, tous bâtiments).
 
 Builds client release et debug verts. Non testé en jeu.
+
+## 2026-11-21 — Premier test sur CL-130045 (ModLoader 1.26.1, SDK plugin 75ac2f5, Game-SDK CL-130045)
+
+Log `logs/ModLoader.log` 10:56-11:01, solo.
+
+- Le plugin charge : `Interface: 78 ... game build CL-130045`. Le loader signale un layout modifié
+  (`UCrEnviroWaveTimerSubsystem::TimerActor` 0x90 -> 0x98, mesuré contre son SDK CL-127004) et garde le plugin
+  parce qu'il déclare le build qui tourne.
+- `UMassEntitySubsystem::EntityManager` vient de la ligne CL-130045 de la table du loader (0x38/0x10), pas de notre
+  ligne CL-127004 : le `builtCL = 127004` de la requête ne coupe donc pas la fonctionnalité quand la table couvre le
+  build. `FMassArchetypeData::GetFragmentDataForEntity` n'est pas dans la table : notre signature a résolu.
+- Le parcours natif marche avec les valeurs de CL-127004 (stockage 0x20/0x60, slots 2/9) : `obelisks native=75
+  (entities=65535)`, `base cores=60 (native=60), core data=60 joined=60`, mêmes chiffres que sur CL-127004.
+  Constaté en jeu, pas vérifié sur les octets de l'exécutable.
+- Terrain 36/36 tuiles, 19/19 icônes d'objets, 241 POI reconnus, cargo `markers=214 connections=60
+  teleporters=19 players=1`. Aucune erreur ni exception du plugin.
+- Cycle de rupture : l'étape en cours s'affiche correctement en jeu (constaté par le développeur, aucune ligne
+  dédiée dans le log).
+
+## 2026-11-21 — Lecture des monolithes par requête Mass (table du loader)
+
+Remplace le parcours du stockage d'entités (offsets 0x20/0x60, slots 2/9, signature de
+`FMassArchetypeData::GetFragmentDataForEntity`) par une requête Mass : entités ayant un `FTransformFragment`,
+puis `InternalGetFragmentDataPtr` pour les fragments obélisque, base core et transform. Toutes les adresses et la
+taille de `FMassEntityQuery` viennent de la table du loader par clé, sans signature de secours ; la table du
+ModLoader a ces lignes pour CL-127004, 128786, 129402 et 130045. Signatures vérifiées contre les octets des lignes
+de la table (`GetMatchingEntityHandles(this, retour caché)`, `InternalGetFragmentDataPtr(this, handle par valeur,
+type)`), pas sur l'exécutable.
+
+Build client release vert. Non testé en jeu. Attendu dans le log : `obelisks native=75`, `base cores=60 (native=60)`,
+et `entities=` égal au nombre d'entités ayant un transform (et non plus la borne 65535).
+
+## Migration PLUGIN_MAP_MIGRATED : tests en jeu (21/11, CL-130045, ModLoader v1.26.1)
+
+Toutes les lectures du jeu passent par `src/game_fields.h` (champs, tailles, paramètres de UFunction, enums), demandées au loader par nom ; le client déclare `PLUGIN_MAP_MIGRATED`.
+
+- **Même build** (DLL compilé contre le SDK CL-130045, log 12:31) : 181/181 lignes résolues (168 par réflexion, 15 par la table), 8 groupes actifs. Données identiques à la session d'avant migration (11:22, même sauvegarde) : cargo 214/60/19/1, antennes 37, monolithes 75, base cores 60 joints 60, 319 noms personnalisés, 241 POI, 36 tuiles, 19/19 icônes.
+- **Build croisé** (DLL compilé contre le SDK CL-127004 `659656c0`, joué sur CL-130045, `FieldAudit=1`, log 12:54-13:01) : admis par le loader, 8 groupes actifs, mêmes données de carte. L'audit liste les écarts entre les deux builds : `bIsDedicatedServer` 0x518→0x540, `SenderDefaultName`/`ReceiverDefaultName` +0xE0, `FCrPackageTransportConnectionData` 0x70→0x78, `FCrBaseCoreData` 0x48→0x50 (4 membres décalés), `AlienObeliskSerializer` 0x270→0x378 octets, `AlienObelisk` 0x260→0x368. Sur 719 325 lectures, 5 membres diffèrent entre l'offset compilé et l'offset résolu, tous parmi les déplacés (l'ancien chemin aurait lu `bIsDedicatedServer=1`, un refroidissement de 4 au lieu de 2540, un niveau 0 au lieu de 2) ; 0 faute d'accès. Enums : mêmes numéros sur les deux builds.
+- Corrigé pendant les tests : un membre seulement traversé (`MX_PTR`) qui grossit faisait couper son groupe par le contrôle de taille du loader ; les champs sont maintenant demandés en `PLUGIN_FIELD_ANY_SIZE`, la taille n'est vérifiée qu'à la lecture d'une valeur.
+- Non vu en jeu : une vague de rupture en cours (session entre deux vagues : `wave=None`, `elapsed` cohérent), les marqueurs de bâtiments avec données, le partage coop.

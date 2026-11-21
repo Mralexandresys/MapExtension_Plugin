@@ -64,6 +64,13 @@ namespace MapExtensionPluginConfig
 			"Log per-phase refresh timings to help diagnose remaining client-side frame cost"
 		},
 		{
+			"Diagnostics",
+			"FieldAudit",
+			ConfigValueType::Boolean,
+			"0",
+			"Also read every game member at its compiled offset and log where it differs from the offset the mod loader gives for the running game build"
+		},
+		{
 			"Runtime",
 			"RefreshIntervalMs",
 			ConfigValueType::Integer,
@@ -83,6 +90,13 @@ namespace MapExtensionPluginConfig
 			ConfigValueType::Integer,
 			"64",
 			"Approximate video memory budget for full-resolution terrain tiles of the in-game map (0 = preview quality only)"
+		},
+		{
+			"Coop",
+			"ShareMapWithClients",
+			ConfigValueType::Boolean,
+			"0",
+			"Experimental, not tested in a real co-op game yet. When hosting a co-op game, send this map (cargo, teleporters, players, points of interest, rupture cycle) to joining players running the same MapExtension version. Also toggled from the in-game map"
 		},
 		{
 			"InGameMap",
@@ -151,6 +165,11 @@ namespace MapExtensionPluginConfig
 			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "LogRefreshTimings", false) : false;
 		}
 
+		static bool FieldAudit()
+		{
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Diagnostics", "FieldAudit", false) : false;
+		}
+
 		static int RefreshIntervalMs()
 		{
 			return (s_config && s_self) ? s_config->ReadInt(s_self, "Runtime", "RefreshIntervalMs", 2000) : 2000;
@@ -164,6 +183,19 @@ namespace MapExtensionPluginConfig
 		static bool InGameMapShowPopup()
 		{
 			return (s_config && s_self) ? s_config->ReadBool(s_self, "InGameMap", "ShowPopup", true) : true;
+		}
+
+		static bool CoopShareMapWithClients()
+		{
+			return (s_config && s_self) ? s_config->ReadBool(s_self, "Coop", "ShareMapWithClients", false) : false;
+		}
+
+		static void SetCoopShareMapWithClients(bool value)
+		{
+			if (s_config && s_self)
+			{
+				s_config->WriteBool(s_self, "Coop", "ShareMapWithClients", value);
+			}
 		}
 
 		static const char* InGameMapToggleKey()

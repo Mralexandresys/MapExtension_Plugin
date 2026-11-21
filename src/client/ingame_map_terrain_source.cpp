@@ -2,6 +2,7 @@
 
 #include "ingame_map_live_state.h"
 
+#include "../game_fields.h"
 #include "../map_state_sdk_helpers.h"
 #include "../plugin_helpers.h"
 
@@ -27,6 +28,28 @@ namespace
 {
 	constexpr int kMaxSegments = 4096;
 
+	MX_FIELD(Terrain, UCrMapMenuDevSettings, TerrainData);
+	MX_FIELD(Terrain, UCrMapMenuDevSettings, MinZoom);
+	MX_FIELD(Terrain, UCrMapMenuDevSettings, DefaultZoom);
+	MX_FIELD(Terrain, UCrMapMenuDevSettings, MaxZoom);
+	MX_FIELD(Terrain, UCrMapMenuDevSettings, MapAreaPivotPoint);
+	MX_FIELD(Terrain, UCrMapMenuTerrainData, TerrainSegmentsData);
+	MX_FIELD(Terrain, UCrMapMenuTerrainData, MapTerrainTopLeftPivotPoint);
+	MX_FIELD(Terrain, UCrMapMenuTerrainData, MapTerrainSegmentSize);
+	MX_FIELD(Terrain, UCrMapMenuTerrainData, MapFarToEdgeMipMapChange);
+	MX_FIELD(Terrain, UCrMapMenuTerrainData, MapNearToEdgeMipMapChange);
+	MX_FIELD(Terrain, UCrMapMenuTerrainData, TerrainMipMapByZoomValueData);
+	MX_SIZE(Terrain, FCrTerrainSegmentData);
+	MX_FIELD(Terrain, FCrTerrainSegmentData, TerrainSegmentGridIndex);
+	MX_FIELD(Terrain, FCrTerrainSegmentData, TerrainSegmentTexture);
+	MX_FIELD(Terrain, FCrTerrainSegmentData, TerrainSegmentTextureRadiation2);
+	MX_SIZE(Terrain, FCrTerrainMipMapByZoomValueData);
+	MX_FIELD(Terrain, FCrTerrainMipMapByZoomValueData, MaximalZoomValue);
+	MX_FIELD(Terrain, FCrTerrainMipMapByZoomValueData, MipMap);
+	MX_FIELD(Items, UAuItemDataBase, ItemIcon);
+	MX_FIELD(Items, UAuItemDataBase, ItemName);
+	MX_FIELD(Items, UAuItemDataBase, UniqueItemName);
+
 	// MapTerrainSegmentSize est en metres alors que le pivot et les positions
 	// monde sont en cm : mesure en jeu (CL-127004), pivot (-480000, -380000),
 	// segment 1000, grille 6x6 -> seule l'echelle x100 englobe l'export web.
@@ -35,7 +58,8 @@ namespace
 	SDK::UCrMapMenuTerrainData* ResolveTerrainData(SDK::UCrMapMenuDevSettings* settings)
 	{
 		SDK::UClass* terrainClass = SDK::UCrMapMenuTerrainData::StaticClass();
-		SDK::UObject* terrain = settings->TerrainData.Get();
+		auto terrainData = MX(settings, UCrMapMenuDevSettings, TerrainData);
+		SDK::UObject* terrain = terrainData.Get();
 		if (MapStateSdk::TryIsObjectOfClass(terrain, terrainClass))
 		{
 			return static_cast<SDK::UCrMapMenuTerrainData*>(terrain);
@@ -44,7 +68,7 @@ namespace
 		// Pas encore charge (carte native jamais ouverte) ou collecte par le GC :
 		// chargement bloquant de la soft-ref, patron valide sur feature/new-ui.
 		SDK::TSoftObjectPtr<SDK::UObject> untyped{};
-		static_cast<SDK::FSoftObjectPtr&>(untyped) = static_cast<const SDK::FSoftObjectPtr&>(settings->TerrainData);
+		static_cast<SDK::FSoftObjectPtr&>(untyped) = static_cast<const SDK::FSoftObjectPtr&>(terrainData);
 		const auto started = std::chrono::steady_clock::now();
 		terrain = SDK::UKismetSystemLibrary::LoadAsset_Blocking(untyped);
 		const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
@@ -63,21 +87,28 @@ namespace
 
 	SDK::UTexture2D* FindSegmentTexture(int gridX, int gridY, bool useR2)
 	{
+		if (!GameFields::On(GameFields::Group::Terrain))
+		{
+			return nullptr;
+		}
 		SDK::UCrMapMenuDevSettings* settings = SDK::UCrMapMenuDevSettings::GetDefaultObj();
 		SDK::UCrMapMenuTerrainData* terrain = settings ? ResolveTerrainData(settings) : nullptr;
 		if (!terrain)
 		{
 			return nullptr;
 		}
-		const int count = (std::min)(terrain->TerrainSegmentsData.Num(), kMaxSegments);
+		const auto segments = MX(terrain, UCrMapMenuTerrainData, TerrainSegmentsData);
+		const int count = (std::min)(segments.Num(), kMaxSegments);
 		for (int index = 0; index < count; ++index)
 		{
-			const SDK::FCrTerrainSegmentData& data = terrain->TerrainSegmentsData[index];
-			if (data.TerrainSegmentGridIndex.X != gridX || data.TerrainSegmentGridIndex.Y != gridY)
+			const uint8_t* data = MX_AT(segments, index, FCrTerrainSegmentData);
+			const SDK::FIntPoint grid = MX(data, FCrTerrainSegmentData, TerrainSegmentGridIndex);
+			if (!data || grid.X != gridX || grid.Y != gridY)
 			{
 				continue;
 			}
-			SDK::UObject* resource = (useR2 ? data.TerrainSegmentTextureRadiation2 : data.TerrainSegmentTexture).ResourceObject;
+			SDK::UObject* resource = (useR2 ? MX(data, FCrTerrainSegmentData, TerrainSegmentTextureRadiation2)
+				: MX(data, FCrTerrainSegmentData, TerrainSegmentTexture)).ResourceObject;
 			return MapStateSdk::TryIsObjectOfClass(resource, SDK::UTexture2D::StaticClass())
 				? static_cast<SDK::UTexture2D*>(resource)
 				: nullptr;
@@ -91,6 +122,10 @@ namespace
 	bool CaptureTerrain(TerrainDescriptor& out, bool logDetails)
 	{
 		out = {};
+		if (!GameFields::On(GameFields::Group::Terrain))
+		{
+			return false;
+		}
 		SDK::UCrMapMenuDevSettings* settings = SDK::UCrMapMenuDevSettings::GetDefaultObj();
 		if (!settings)
 		{
@@ -102,26 +137,36 @@ namespace
 			return false;
 		}
 
-		const int count = terrain->TerrainSegmentsData.Num();
+		const auto segments = MX(terrain, UCrMapMenuTerrainData, TerrainSegmentsData);
+		const int count = segments.Num();
 		if (count <= 0 || count > kMaxSegments)
 		{
 			LOG_WARN("[InGameMap] TerrainSegmentsData count out of range: %d", count);
 			return false;
 		}
 
+		const auto pivot = MX(terrain, UCrMapMenuTerrainData, MapTerrainTopLeftPivotPoint);
+		const auto segmentSize = MX(terrain, UCrMapMenuTerrainData, MapTerrainSegmentSize);
 		out.Grid = {
-			terrain->MapTerrainTopLeftPivotPoint.X, terrain->MapTerrainTopLeftPivotPoint.Y,
-			terrain->MapTerrainSegmentSize.X * kSegmentSizeToWorldUnits,
-			terrain->MapTerrainSegmentSize.Y * kSegmentSizeToWorldUnits };
+			pivot.X, pivot.Y,
+			segmentSize.X * kSegmentSizeToWorldUnits,
+			segmentSize.Y * kSegmentSizeToWorldUnits };
 		out.Segments.reserve(static_cast<size_t>(count));
 		for (int index = 0; index < count; ++index)
 		{
-			const SDK::FCrTerrainSegmentData& data = terrain->TerrainSegmentsData[index];
+			const uint8_t* data = MX_AT(segments, index, FCrTerrainSegmentData);
+			if (!data)
+			{
+				return false;
+			}
+			const SDK::FIntPoint grid = MX(data, FCrTerrainSegmentData, TerrainSegmentGridIndex);
+			const SDK::FSlateBrush r1 = MX(data, FCrTerrainSegmentData, TerrainSegmentTexture);
+			const SDK::FSlateBrush r2 = MX(data, FCrTerrainSegmentData, TerrainSegmentTextureRadiation2);
 			TerrainSegment segment;
-			segment.GridX = data.TerrainSegmentGridIndex.X;
-			segment.GridY = data.TerrainSegmentGridIndex.Y;
-			segment.R1 = BrushResourceName(data.TerrainSegmentTexture);
-			segment.R2 = BrushResourceName(data.TerrainSegmentTextureRadiation2);
+			segment.GridX = grid.X;
+			segment.GridY = grid.Y;
+			segment.R1 = BrushResourceName(r1);
+			segment.R2 = BrushResourceName(r2);
 			out.MinX = index == 0 ? segment.GridX : (std::min)(out.MinX, segment.GridX);
 			out.MaxX = index == 0 ? segment.GridX : (std::max)(out.MaxX, segment.GridX);
 			out.MinY = index == 0 ? segment.GridY : (std::min)(out.MinY, segment.GridY);
@@ -130,8 +175,6 @@ namespace
 			if (logDetails)
 			{
 				// UVRegion / ImageSize logges pour l'inconnue R2 (2,5) (plan ?10.5).
-				const SDK::FSlateBrush& r1 = data.TerrainSegmentTexture;
-				const SDK::FSlateBrush& r2 = data.TerrainSegmentTextureRadiation2;
 				LOG_INFO(
 					"[InGameMap] segment (%d,%d) R1=%s size=%.0fx%.0f uv=[%.3f,%.3f-%.3f,%.3f valid=%d] | R2=%s size=%.0fx%.0f uv=[%.3f,%.3f-%.3f,%.3f valid=%d]",
 					segment.GridX, segment.GridY,
@@ -149,19 +192,24 @@ namespace
 		{
 			LOG_INFO(
 				"[InGameMap] terrain: pivot=(%.1f, %.1f, %.1f) segment_size=(%.1f, %.1f, %.1f) segments=%d grid=[%d..%d]x[%d..%d] radiation_level=%d",
-				terrain->MapTerrainTopLeftPivotPoint.X, terrain->MapTerrainTopLeftPivotPoint.Y, terrain->MapTerrainTopLeftPivotPoint.Z,
-				terrain->MapTerrainSegmentSize.X, terrain->MapTerrainSegmentSize.Y, terrain->MapTerrainSegmentSize.Z,
+				pivot.X, pivot.Y, pivot.Z,
+				segmentSize.X, segmentSize.Y, segmentSize.Z,
 				count, out.MinX, out.MaxX, out.MinY, out.MaxY, out.RadiationLevel);
+			const auto areaPivot = MX(settings, UCrMapMenuDevSettings, MapAreaPivotPoint);
 			LOG_INFO(
 				"[InGameMap] settings: zoom min/default/max=%.3f/%.3f/%.3f map_area_pivot=(%.1f, %.1f, %.1f) mip_change far/near=%d/%d",
-				settings->MinZoom, settings->DefaultZoom, settings->MaxZoom,
-				settings->MapAreaPivotPoint.X, settings->MapAreaPivotPoint.Y, settings->MapAreaPivotPoint.Z,
-				terrain->MapFarToEdgeMipMapChange, terrain->MapNearToEdgeMipMapChange);
-			const int mipRules = std::clamp(terrain->TerrainMipMapByZoomValueData.Num(), 0, 64);
+				MX(settings, UCrMapMenuDevSettings, MinZoom), MX(settings, UCrMapMenuDevSettings, DefaultZoom),
+				MX(settings, UCrMapMenuDevSettings, MaxZoom),
+				areaPivot.X, areaPivot.Y, areaPivot.Z,
+				MX(terrain, UCrMapMenuTerrainData, MapFarToEdgeMipMapChange),
+				MX(terrain, UCrMapMenuTerrainData, MapNearToEdgeMipMapChange));
+			const auto rules = MX(terrain, UCrMapMenuTerrainData, TerrainMipMapByZoomValueData);
+			const int mipRules = std::clamp(rules.Num(), 0, 64);
 			for (int index = 0; index < mipRules; ++index)
 			{
-				const SDK::FCrTerrainMipMapByZoomValueData& rule = terrain->TerrainMipMapByZoomValueData[index];
-				LOG_INFO("[InGameMap] mip rule %d: max_zoom=%.3f mip=%d", index, rule.MaximalZoomValue, rule.MipMap);
+				const uint8_t* rule = MX_AT(rules, index, FCrTerrainMipMapByZoomValueData);
+				LOG_INFO("[InGameMap] mip rule %d: max_zoom=%.3f mip=%d", index,
+					MX(rule, FCrTerrainMipMapByZoomValueData, MaximalZoomValue), MX(rule, FCrTerrainMipMapByZoomValueData, MipMap));
 			}
 		}
 		return true;
@@ -207,7 +255,11 @@ namespace
 		{
 			return nullptr;
 		}
-		SDK::UObject* resource = static_cast<SDK::UAuItemDataBase*>(defaults)->ItemIcon.ResourceObject;
+		if (!GameFields::On(GameFields::Group::Items))
+		{
+			return nullptr;
+		}
+		SDK::UObject* resource = MX(defaults, UAuItemDataBase, ItemIcon).ResourceObject;
 		if (!MapStateSdk::TryIsObjectOfClass(resource, SDK::UTexture2D::StaticClass()))
 		{
 			return nullptr;
@@ -262,7 +314,7 @@ namespace
 	{
 		std::vector<void*> icons(keys.size(), nullptr);
 		IPluginHooks* hooks = GetHooks();
-		if (keys.empty() || !hooks || !hooks->ImGuiTextures || !hooks->ImGuiTextures->LoadFromUTexture2D || !SDK::UObject::GObjects)
+		if (keys.empty() || !GameFields::On(GameFields::Group::Items) || !hooks || !hooks->ImGuiTextures || !hooks->ImGuiTextures->LoadFromUTexture2D || !SDK::UObject::GObjects)
 		{
 			return icons;
 		}
@@ -280,15 +332,17 @@ namespace
 			auto* item = static_cast<SDK::UAuItemDataBase*>(object);
 			// Memes noms que GetItemDisplayName (map_state_capture.cpp), plus la classe.
 			const std::string className = object->Class->GetName();
-			const std::string displayName = item->ItemName.ToString();
-			const std::string uniqueName = item->UniqueItemName.IsNone() ? std::string() : item->UniqueItemName.ToString();
+			const SDK::FText itemName = MX(item, UAuItemDataBase, ItemName);
+			const SDK::FName unique = MX(item, UAuItemDataBase, UniqueItemName);
+			const std::string displayName = itemName.ToString();
+			const std::string uniqueName = unique.IsNone() ? std::string() : unique.ToString();
 			for (size_t key = 0; key < keys.size(); ++key)
 			{
 				if (icons[key] || keys[key].empty() || (keys[key] != className && keys[key] != displayName && keys[key] != uniqueName))
 				{
 					continue;
 				}
-				SDK::UObject* resource = item->ItemIcon.ResourceObject;
+				SDK::UObject* resource = MX(item, UAuItemDataBase, ItemIcon).ResourceObject;
 				if (!MapStateSdk::TryIsObjectOfClass(resource, textureClass))
 				{
 					continue;
