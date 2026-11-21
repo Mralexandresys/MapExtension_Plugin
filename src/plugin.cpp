@@ -1,5 +1,6 @@
 #include "plugin.h"
 
+#include "game_fields.h"
 #include "map_state_runtime.h"
 #include "plugin_config.h"
 #include "plugin_helpers.h"
@@ -36,13 +37,24 @@ const IPluginSelf* GetPluginSelf() { return g_pluginSelf; }
 #error "MapExtension_Plugin must be built as a client or server plugin"
 #endif
 
+// Every game member, size and function the client reads comes from the loader by name
+// (game_fields.h), so it may run on a game build it was not compiled for. The server build
+// has no OnPluginLoadHooks to resolve them and stays bound to its own build.
+#if defined(MODLOADER_CLIENT_BUILD)
+#define MAPEXTENSION_MAP_FLAGS PLUGIN_MAP_MIGRATED
+#else
+#define MAPEXTENSION_MAP_FLAGS 0u
+#endif
+
 static PluginInfo s_pluginInfo = {
 	"MapExtension_Plugin",
 	MODLOADER_BUILD_TAG,
 	MODLOADER_BUILD_AUTHOR,
 	"In-game logistics map: cargo links, teleporters, players, base cores, monoliths and the rupture cycle",
 	PLUGIN_INTERFACE_VERSION,
-	MAPEXTENSION_PLUGIN_TARGET
+	MAPEXTENSION_PLUGIN_TARGET,
+	PLUGIN_GAME_BUILT_CL,
+	MAPEXTENSION_MAP_FLAGS
 };
 
 extern "C" {
@@ -56,12 +68,15 @@ __declspec(dllexport) PluginInfo* GetPluginInfo()
 // Export optionnel : seul moment ou le loader accepte une resolution d'adresse.
 __declspec(dllexport) void OnPluginLoadHooks(IPluginSelf* self, IPluginHookScanner* scanner)
 {
+	GameFields::ResolveAll(self, scanner);
 	MapExtensionClient::InGameMap::ResolveNativeAccess(self, scanner);
 }
 #endif
 
 __declspec(dllexport) bool PluginInit(IPluginSelf* self)
 {
+	// First, before any early return: the SDK's GObjects and FName point at the running build.
+	const bool sdkGlobals = PluginSdkRuntime::Init(self ? self->hooks : nullptr);
 	g_pluginSelf = self;
 	g_logger = self ? self->logger : nullptr;
 	g_config = self ? self->config : nullptr;
@@ -70,6 +85,11 @@ __declspec(dllexport) bool PluginInit(IPluginSelf* self)
 	LOG_INFO("Plugin initializing...");
 
 	MapExtensionPluginConfig::Config::Initialize(self);
+	if (!sdkGlobals)
+	{
+		LOG_WARN("The mod loader gave no Game-SDK globals: the SDK keeps its compiled addresses");
+	}
+	GameFields::LogResolution();
 	if (!MapExtensionPluginConfig::Config::IsEnabled())
 	{
 		LOG_WARN("Plugin is disabled in config");

@@ -29,7 +29,6 @@
   <PropertyGroup>
     <RepoRootDir Condition="'$(RepoRootDir)' == ''">$(MSBuildThisFileDirectory)</RepoRootDir>
     <PluginSdkRootDir Condition="'$(PluginSdkRootDir)' == ''">$(MSBuildThisFileDirectory)StarRupture-Plugin-SDK\</PluginSdkRootDir>
-    <PluginSdkSharedProps Condition="'$(PluginSdkSharedProps)' == ''">$(PluginSdkRootDir)Shared.props</PluginSdkSharedProps>
     <PluginApiIncludeDir Condition="'$(PluginApiIncludeDir)' == ''">$(PluginSdkRootDir)include\</PluginApiIncludeDir>
     <StarRuptureSdkBaseDir Condition="'$(StarRuptureSdkBaseDir)' == ''">$(PluginSdkRootDir)StarRupture SDK\</StarRuptureSdkBaseDir>
     <SolutionDir Condition="'$(SolutionDir)' == ''">$(RepoRootDir)</SolutionDir>
@@ -63,9 +62,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings" />
-  <ImportGroup Label="Shared">
-    <Import Project="$(PluginSdkSharedProps)" />
-  </ImportGroup>
+  <ImportGroup Label="Shared" />
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
@@ -108,6 +105,16 @@
     <StarRuptureSDKSourceDir>$(StarRuptureSdkBaseDir)Server\SDK\</StarRuptureSDKSourceDir>
     <StarRuptureSDKConfigDir>$(StarRuptureSdkBaseDir)Server\;$(StarRuptureSdkBaseDir)Server\SDK\</StarRuptureSDKConfigDir>
   </PropertyGroup>
+  <!-- The SDK's Shared.props derives the Game-SDK paths from $(SolutionDir), which is this
+       repository, not the nested SDK. Import PluginGameBuild.props here instead, once
+       StarRuptureSDKConfigDir points at the real headers, so PLUGIN_GAME_BUILT_CL comes
+       from their build_cl.txt. -->
+  <ItemDefinitionGroup Condition="'$(ModLoaderBuildTag)' != ''">
+    <ClCompile>
+      <PreprocessorDefinitions>MODLOADER_BUILD_TAG="$(ModLoaderBuildTag)";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <Import Project="$(PluginSdkRootDir)PluginGameBuild.props" />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Client Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -190,6 +197,7 @@
     <ClInclude Include="src\plugin.h" />
     <ClInclude Include="src\plugin_config.h" />
     <ClInclude Include="src\plugin_helpers.h" />
+    <ClInclude Include="src\game_fields.h" />
     <ClInclude Include="third_party/nlohmann/json.hpp" />
     <ClInclude Include="src\shared\map_sync_protocol.h" />
     <ClInclude Include="src\shared\resource_observation.h" />
@@ -213,18 +221,6 @@
     <ClCompile Include="$(StarRuptureSDKSourceDir)Engine_functions.cpp">
       <Visible>false</Visible>
     </ClCompile>
-    <ClCompile Include="$(StarRuptureSDKSourceDir)Chimera_functions.cpp">
-      <Visible>false</Visible>
-    </ClCompile>
-    <ClCompile Include="$(StarRuptureSDKSourceDir)ChimeraUI_functions.cpp">
-      <Visible>false</Visible>
-    </ClCompile>
-    <ClCompile Include="$(StarRuptureSDKSourceDir)UMG_functions.cpp">
-      <Visible>false</Visible>
-    </ClCompile>
-    <ClCompile Include="$(StarRuptureSDKSourceDir)CommonUI_functions.cpp">
-      <Visible>false</Visible>
-    </ClCompile>
     <ClCompile Include="src\map_state_capture.cpp" />
 
 
@@ -232,6 +228,7 @@
     <ClCompile Include="src\dllmain.cpp" />
     <ClCompile Include="src\plugin.cpp" />
     <ClCompile Include="src\plugin_config.cpp" />
+    <ClCompile Include="src\game_fields.cpp" />
     <ClCompile Include="src\client\map_sync_client.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
@@ -264,10 +261,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Debug'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)'=='Server Release'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="src\server\map_sync_server.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)'=='Client Debug'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)'=='Client Release'">true</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="src\server\map_sync_server.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

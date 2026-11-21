@@ -34,6 +34,7 @@ All plugin C++ lives under `src/`. Paths below that start with a source file nam
 - `plugin_config.h`: config schema and typed config accessors.
 - `plugin_config.cpp`: storage for the config interface and plugin-self pointers; schema initialization lives in `plugin_config.h`.
 - `plugin_helpers.h`: shared accessors for plugin hooks/self.
+- `game_fields.h` / `.cpp`: the only way the plugin reads the game. Every game member, struct size, UFunction parameter and enum value is requested from the mod loader by name, grouped in features, and optionally audited against the compiled offsets (`[Diagnostics] FieldAudit`).
 - `map_state_capture.cpp` / `.h`: world scanning, snapshot refresh, local fallback, gameplay callbacks.
 - `map_state_runtime.cpp` / `.h`: callback registration and client/server sync module lifecycle.
 - `map_state_types.h`: shared snapshot types and map projection constants.
@@ -51,7 +52,7 @@ All plugin C++ lives under `src/`. Paths below that start with a source file nam
 - `StarRupture-Plugin-SDK/include/plugin_interface.h`: plugin API, interfaces, callbacks, enums.
 - `StarRupture-Plugin-SDK/include/plugin_network_helpers.h`: typed helpers for client/server plugin-network packets.
 - `StarRupture-Plugin-SDK/StarRupture SDK/`: Dumper-7 generated UE5 SDK headers for client/server targets.
-- `StarRupture-Plugin-SDK/Shared.props`: MSBuild SDK path/build property defaults.
+- `StarRupture-Plugin-SDK/PluginGameBuild.props`: sets `PLUGIN_GAME_BUILT_CL` from the Game-SDK's `build_cl.txt`; imported by the project after its SDK paths (the SDK's `Shared.props` is not imported: it derives paths from `$(SolutionDir)`).
 - `StarRupture-Plugin-SDK/PluginDevelopment.md`: full plugin API reference and hook documentation.
 - `StarRupture-Plugin-SDK/ExamplePlugin/`: minimal starter plugin reference.
 
@@ -112,7 +113,7 @@ Server validation command: `./build.sh server release --summary`.
 
 - Client builds define `MODLOADER_CLIENT_BUILD`; server builds define `MODLOADER_SERVER_BUILD`.
 - `client/*.cpp` files are excluded from server configurations in the project file.
-- `server/map_sync_server.cpp` is excluded from client configurations in the project file.
+- `server/map_sync_server.cpp` is built in both configurations: the client build uses it to answer as a co-op host when `[Coop] ShareMapWithClients` is on. StarRupture ended dedicated-server support; the release workflow publishes the client package only.
 - Shared C++ used by both builds lives directly in `src/` and in `src/shared/`; changes there require both client and server validation.
 - The runtime startup path is `PluginInit` in `plugin.cpp` -> `MapExtensionPluginConfig::Config::Initialize` -> `MapStateRuntime::RegisterCallbacks`.
 - `MapStateRuntime::RegisterCallbacks` owns hook registration and initialization of both sync modules; keep lifecycle changes symmetric with shutdown.
@@ -133,11 +134,23 @@ Server validation command: `./build.sh server release --summary`.
 - Keep `README.md` and `README.fr.md` semantically aligned.
 - The in-game map source is ASCII-only (the project builds without `/utf-8`) and its UI labels are English.
 
+## Reading game data on any game build (PLUGIN_MAP_MIGRATED)
+
+- The client build sets `PLUGIN_MAP_MIGRATED` with `PLUGIN_GAME_BUILT_CL` (from the Game-SDK's `build_cl.txt`), so one DLL runs on any game build the mod loader knows, including one released after the build. Keep every game read behind `game_fields.h`:
+  - a member: `MX_FIELD(Group, Class, Member)` at namespace scope, read with `MX(object, Class, Member)`; a nested struct through `MX_PTR`, never by value;
+  - an array of game structs: `MX_SIZE` + `MX_AT`, never `array[i]` or a range-for; a `TMap`: `MX_MAP` / `PluginMap::ScriptMapView` with `MX_LIVE_SIZE` and `MX_LIVE_ALIGN`;
+  - a game UFunction: `MX_RETURN_ROWS` / `MX_PARAMS_SIZE` / `MX_PARAM`, called through `GameFields::Invoke` or `MX_RETURN`, never the generated SDK method. The project does not compile `Chimera_functions.cpp`, `ChimeraUI_functions.cpp`, `UMG_functions.cpp` or `CommonUI_functions.cpp`, so a call to a generated game method fails at link time; only `Basic.cpp`, `CoreUObject_functions.cpp` and `Engine_functions.cpp` are built;
+  - a game enum: through a `GameFields::LiveEnum` translator (`MapStateSdk::Live*`), so a renumbered enum still compares with the SDK constants.
+- Never write `object->Member`, `sizeof`/`alignof` of a game struct, or copy a game struct by value in plugin code; engine types (`FVector`, `FName`, `FText`, `FString`, `TArray` headers, `FSlateBrush`, `UObject` internals) stay compiled. Run the SDK's `tools/rule3-check.mjs --mode report` after a change; only the suspects on our own types (`Tiles`, `ItemCount`, `CustomNames`, `RequestedAmount`) may remain. The checker cannot type many receivers, so also grep the change for member names of game classes.
+- A row the loader cannot place turns off its group (`GameFields::Group`) only; code reading an unresolved row gets a value-initialised result. The server build has no `OnPluginLoadHooks`, resolves nothing and is not migrated.
+- Validate a migration change with the cross build as well: build against the CL-127004 Game SDK (`659656c0`, plus a `build_cl.txt`) and run it on the installed build with `FieldAudit=1`.
+
 ## In-game map threading and native reads
 
 - The game-thread service in `client/ingame_map_service.cpp` publishes an immutable snapshot every 500 ms while the panel is open; the render callback (`client/ingame_map_render.cpp`) reads only that. State shared between the two is declared `inline` in `client/ingame_map_internal.h`; everything else stays file-local. Do not read UObjects from the render callback, and do not keep UObject pointers across service passes.
 - `LoadFromUTexture2D` returns null for a texture that is not on the GPU yet. Force its mips resident and retry on a later pass instead of treating it as missing.
 - Native reads (`ResolveNativeAccess`, `ScanEntitiesGuarded` in `client/ingame_map_live_state.cpp`) must stay behind a loader feature declared in `OnPluginLoadHooks`, so an unresolved key turns off that feature and never the plugin. Keep them read-only, hook-free and under `__try/__except`.
-- Native offsets, vtable slots and signatures are valid for one game changelist (CL-127004 today). `StarRupture-Game-IDADump/` is a local, untracked reading aid that may not match the installed executable: verify bytes on the installed executable before using an address, and never widen the changelist gate to an unverified build.
+- The monolith and base-core read is a Mass query (`FMassEntityQuery` ctor, `AddRequirement<FTransformFragment>`, `GetMatchingEntityHandles`, `InternalGetFragmentDataPtr`, `FMemory::Free`, dtor, the `FMassEntityQuery` size and `UMassEntitySubsystem::EntityManager`), every address and size taken from the loader's version map by key, with no pattern of our own: a build the map does not cover turns the feature off. Keep it that way; do not bring back the entity-storage walk with compiled offsets or vtable slots.
+- Any other native offset, vtable slot or signature compiled into the plugin is valid for one game changelist only. `StarRupture-Game-IDADump/` is a local, untracked reading aid that may not match the installed executable: verify bytes on the installed executable before using an address, and never widen the changelist gate to an unverified build.
 - Base cores are read both ways: natively for their position (the game's building markers arrive tens of seconds late) and from the reflected markers for their name. Keep the reflected path working alone, since it is the fallback when the native feature is off.
 - Prefer a reflected source over a native read whenever the game replicates the data in time (`ACrMapMenuDataReplicationHelper`, `ACrAbandonBaseInfoReplicator`, `ACrAntennasOwner`, `ACrBaseCoreReplicationHelper`).

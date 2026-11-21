@@ -8,6 +8,8 @@ Since version 0.8 the map lives in the game. The former browser viewer (`MapExte
 
 The plugin works in both single-player and multiplayer. For solo/local sessions, install the client build only. For dedicated-server sessions, install the client build on the player machine and the server build on the dedicated server so the server can send map and rupture-cycle data to connected clients.
 
+In co-op (one player hosts the game), every player installs the client build. The host can share their map with the joining players (experimental, not tested in a real co-op game yet; feedback is welcome): tick **Share map with co-op players (experimental)** in the in-game map toolbar (saved as `[Coop] ShareMapWithClients`). Joining players then see the host's cargo network, teleporters, players, points of interest and rupture cycle; the toolbar shows `Map: from host`, or `Map: local` when the host does not share or runs a different MapExtension version.
+
 ## Features
 
 - Open the map with `F8` (configurable), close it with the same key or `Escape`; drag to pan, mouse wheel to zoom, optional "Follow me"
@@ -72,6 +74,12 @@ Two limits are worth knowing:
 
 Automatic updates can be disabled modloader-wide with `[AutoUpdate] Enabled=0` in `modloader.ini`.
 
+### Upgrading from 0.9
+
+- Replace the client DLL; the `Plugins/MapExtension/` folder does not change.
+- Co-op (experimental, not tested in a real co-op game yet): new `[Coop] ShareMapWithClients` option (default `0`), toggled by the host from the in-game map. Host and joining players must run the same MapExtension version. Feedback is welcome.
+- Dedicated server: StarRupture ended dedicated-server support, so no server package is published any more. Sync protocol is still v6; the 0.8 server DLL keeps working with this client.
+
 ### Upgrading from 0.8
 
 - Replace the client DLL; the `Plugins/MapExtension/` folder does not change.
@@ -123,9 +131,13 @@ LogRuptureCycleEvents=0
 LogResourceObservations=0
 LogActorScanFallback=0
 LogRefreshTimings=0
+FieldAudit=0
 
 [Runtime]
 RefreshIntervalMs=2000
+
+[Coop]
+ShareMapWithClients=0
 
 [InGameMap]
 ToggleKey=F8
@@ -141,7 +153,9 @@ ShowPopup=1
 - `LogResourceObservations`: logs observed resource state changes, local generation resets and changes in the number of ambiguous depletion records (`1` or `0`). Enable with `LogRuptureCycleEvents` on the solo/host/server authority to compare a harvest and a full cycle. These are observation times, not exact harvest times or player attribution; a short-lived actor may disappear between captures. Native harvest hooks still require executable-specific validation.
 - `LogActorScanFallback`: logs actor scan fallback (`1` or `0`)
 - `LogRefreshTimings`: logs per-phase refresh timings (`1` or `0`)
+- `FieldAudit`: for troubleshooting after a game update. Also reads every game value the old way (at the position it had in the game build the mod was compiled for) and logs, at load and every 60 s, the values that moved or differ (`1` or `0`, default `0`; read at load)
 - `RefreshIntervalMs`: sets the runtime refresh interval in milliseconds
+- `Coop.ShareMapWithClients`: when you host a co-op game, sends your map to joining players running the same MapExtension version (default `0`). Experimental. Also toggled by the **Share map with co-op players (experimental)** box of the in-game map, shown to the host only
 - `InGameMap.ToggleKey`: key that opens or closes that panel (default `F8`)
 - `InGameMap.TileBudgetMiB`: approximate video memory allowed for full-resolution terrain tiles (default `64`; `0` keeps the low-resolution preview only)
 - `InGameMap.ShowPopup`: each time a game is loaded, shows a centered window, closed with its OK button, saying the map opens in game with the toggle key and that players coming from a version older than 0.7 must download the mod again from Nexus Mods (default `1`; `0` hides it)

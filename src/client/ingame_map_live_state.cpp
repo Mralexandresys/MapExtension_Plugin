@@ -1,4 +1,5 @@
 #include "ingame_map_live_state.h"
+#include "game_fields.h"
 
 #include "../map_state_sdk_helpers.h"
 #include "../plugin_helpers.h"
@@ -27,6 +28,73 @@ namespace MapExtensionClient::InGameMap
 {
 namespace
 {
+	// Points d'interet, marqueurs et rayonnement : l'aide de replication de la carte du jeu.
+	MX_FIELD(Markers, ACrGameStateBase, MapMenuDataReplicationHelper);
+	MX_FIELD(Markers, ACrMapMenuDataReplicationHelper, BuildingsMarkerDataContainer);
+	MX_FIELD(Markers, FBuildingsMarkerDataContainer, BuildingsMarkerData);
+	MX_SIZE(Markers, FBuildingMarkerDataFastArrayItem);
+	MX_FIELD(Markers, FBuildingMarkerDataFastArrayItem, Location);
+	MX_FIELD(Markers, FBuildingMarkerDataFastArrayItem, BuildingUniqueName);
+	MX_FIELD(Markers, FBuildingMarkerDataFastArrayItem, BuildingName);
+	MX_FIELD(Markers, FBuildingMarkerDataFastArrayItem, BuildingHandle);
+	MX_FIELD(Markers, ACrMapMenuDataReplicationHelper, BaseAttackMarkerDataContainer);
+	MX_FIELD(Markers, FBaseAttackMarkerDataContainer, BaseAttackMarkerData);
+	MX_SIZE(Markers, FBaseAttackMarkerDataFastArrayItem);
+	MX_FIELD(Markers, FBaseAttackMarkerDataFastArrayItem, Location);
+	MX_FIELD(Markers, FBaseAttackMarkerDataFastArrayItem, State);
+	MX_FIELD(Markers, FBaseAttackMarkerDataFastArrayItem, AttackLocationIfAny);
+	MX_FIELD(Markers, ACrMapMenuDataReplicationHelper, PointOfInterestReplicationData);
+	MX_SIZE(Markers, FPointOfInterestData);
+	MX_FIELD(Markers, FPointOfInterestData, PointOfInterestMarkerID);
+	MX_FIELD(Markers, FPointOfInterestData, State);
+	MX_FIELD(Markers, ACrMapMenuDataReplicationHelper, CurrentRadiationLevelReplicated);
+
+	// Antennes, base cores, bases abandonnees et monolithes.
+	MX_FIELD(Structures, ACrAntennasOwner, AntennaContainer);
+	MX_FIELD(Structures, FCrAntennaContainer, AntennasData);
+	MX_SIZE(Structures, FCrAntennaData);
+	MX_FIELD(Structures, FCrAntennaData, AntennaLocation);
+	MX_FIELD(Structures, FCrAntennaData, State);
+	MX_FIELD(Structures, UCrBuildingCustomNameSubsystem, CustomNames);
+	MX_SIZE(Structures, FCrMassPersistentEntityID);
+	MX_FIELD(Structures, FCrMassPersistentEntityID, ID);
+	MX_FIELD(Structures, FCrMassPersistentEntityID, CachedHandle);
+	MX_FIELD(Structures, ACrBaseCoreReplicationHelper, BaseCoreDataContainer);
+	MX_FIELD(Structures, FCrBaseCoreDataContainer, BaseCoreData);
+	MX_SIZE(Structures, FCrBaseCoreData);
+	MX_FIELD(Structures, FCrBaseCoreData, BaseCore);
+	MX_FIELD(Structures, FCrBaseCoreData, UpgradeLevel);
+	MX_FIELD(Structures, FCrBaseCoreData, CurrentCoolingCapacity);
+	MX_FIELD(Structures, FCrBaseCoreData, CurrentCoolingCapacityUsed);
+	MX_FIELD(Structures, FCrBaseCoreData, InfectionSphere);
+	MX_FIELD(Structures, FCrMassEntityReplicationHelper, Entity);
+	MX_FIELD(Structures, ACrAbandonBaseInfoReplicator, AbandonBaseDataContainer);
+	MX_FIELD(Structures, FCrAbandonBaseDataContainer, AbandonBaseData);
+	MX_SIZE(Structures, FCrAbandonBaseData);
+	MX_FIELD(Structures, FCrAbandonBaseData, AbandonBasePOIId);
+	MX_FIELD(Structures, FCrAbandonBaseData, FoundablesCollectedStatus);
+	MX_FIELD(Structures, FCrAbandonBaseData, BlueprintChestsCollectedStatus);
+	MX_FIELD(Structures, FCrAbandonBaseData, StoryItemsCollectedStatus);
+	MX_FIELD(Structures, FCrAbandonBaseData, InfectionCystsDestroyedStatus);
+	MX_SIZE(Structures, FCrAbandonBaseDataCollectedStatus);
+	MX_FIELD(Structures, FCrAbandonBaseDataCollectedStatus, Status);
+	MX_FIELD(Structures, ACrMassAlienObeliskClientBubbleInfo, AlienObeliskSerializer);
+	MX_FIELD(Structures, FCrMassAlienObeliskClientBubbleSerializer, AlienObelisk);
+	MX_SIZE(Structures, FCrAlienObeliskFastArrayItem);
+	MX_FIELD(Structures, FCrAlienObeliskFastArrayItem, Agent);
+	MX_FIELD(Structures, FCrReplicatedAlienObelisk, PositionYaw);
+	MX_FIELD(Structures, FCrReplicatedAlienObelisk, AlienObeliskData);
+	MX_FIELD(Structures, FReplicatedAgentPositionYawData, Position);
+	MX_FIELD(Structures, FCrReplicatedAlienObeliskData, State);
+	MX_FIELD(Structures, FCrReplicatedAlienObeliskData, ChargeValue);
+	MX_FIELD(Structures, ACrAlienObelisk, PrevChargeValue);
+	MX_FIELD(Structures, UCrAlienObeliskTrait, Parameters);
+	MX_FIELD(Structures, FCrAlienObeliskParameters, ChargeValueToActivateAttack);
+	MX_FIELD(Structures, FCrAlienObeliskFragment, AttackLocation);
+	MX_FIELD(Structures, FCrAlienObeliskFragment, State);
+	MX_FIELD(Structures, FCrAlienObeliskFragment, ChargeValue);
+	MX_FIELD(Structures, FTransformFragment, Transform);
+
 	SDK::ACrMapMenuDataReplicationHelper* FindMapHelper(SDK::UWorld* world)
 	{
 		SDK::AGameStateBase* gameState = world ? SDK::UGameplayStatics::GetGameState(world) : nullptr;
@@ -34,8 +102,7 @@ namespace
 		{
 			return nullptr;
 		}
-		SDK::ACrMapMenuDataReplicationHelper* helper =
-			static_cast<SDK::ACrGameStateBase*>(gameState)->MapMenuDataReplicationHelper;
+		SDK::ACrMapMenuDataReplicationHelper* helper = MX(gameState, ACrGameStateBase, MapMenuDataReplicationHelper);
 		return MapStateSdk::TryIsObjectOfClass(helper, SDK::ACrMapMenuDataReplicationHelper::StaticClass()) ? helper : nullptr;
 	}
 
@@ -49,38 +116,53 @@ namespace
 
 	constexpr int kMaxPoiEntries = 4096;
 
-	void CountStatuses(const SDK::TArray<SDK::FCrAbandonBaseDataCollectedStatus>& statuses, int& done, int& total)
+	// Element type left to the caller: the array is stepped by the resolved size, never sizeof.
+	template <class StatusArray>
+	void CountStatuses(const StatusArray& statuses, int& done, int& total)
 	{
 		total = std::clamp(statuses.Num(), 0, kMaxPoiEntries);
 		done = 0;
 		for (int index = 0; index < total; ++index)
 		{
-			done += statuses[index].Status ? 1 : 0;
+			done += MX(MX_AT(statuses, index, FCrAbandonBaseDataCollectedStatus), FCrAbandonBaseDataCollectedStatus, Status) ? 1 : 0;
 		}
 	}
 
 	// ---- Lecture native des obelisques (entites Mass) ----
 	// Aucune source reflechie ne liste les obelisques en solo : leur etat et leur
 	// charge vivent dans FCrAlienObeliskFragment. On parcourt le stockage d'entites
-	// du FMassEntityManager et on demande le fragment a la fonction du jeu.
-	// Disposition verifiee sur l'executable CL-127004 (IsEntityValid et
-	// InternalGetFragmentDataPtr) ; le champ EntityManager n'est resolu que pour ce
-	// CL, donc tout autre build coupe la fonctionnalite au chargement.
-	constexpr size_t kEntityStorageOffset = 0x20;      // TVariant<Empty, SingleThreaded, Concurrent>
-	constexpr size_t kEntityStorageTypeOffset = 0x60;  // 1 ou 2 : un stockage est construit
-	constexpr int kStorageSlotGetArchetype = 2;        // IEntityStorageInterface, vtable +0x10
-	constexpr int kStorageSlotIsValidIndex = 9;        // vtable +0x48
-	constexpr int kMaxEntityIndex = 4 * 1024 * 1024;
+	// du FMassEntityManager par une requete Mass (entites ayant un FTransformFragment)
+	// et on demande les fragments au jeu. Toutes les adresses et tailles viennent de
+	// la table du loader : aucune valeur compilee pour un build.
 	constexpr int kMaxNativeObelisks = 256;
 	constexpr int kMaxNativeBaseCores = 512;
-	constexpr char kKeyGetFragment[] = "FMassArchetypeData::GetFragmentDataForEntity";
 	constexpr char kKeyEntityManager[] = "UMassEntitySubsystem::EntityManager";
-	// Debut de la fonction, unique dans l'executable CL-127004 (une seule occurrence).
-	constexpr char kPatternGetFragment[] =
-		"40 53 55 57 48 83 EC 30 48 8B D9 4C 8B CA 49 C1 E9 04 4C 8B D2 41 8B C1 C1 E8 10 41 33 C1 44 69 C8 6B CA EB 85";
+	constexpr char kKeyQueryCtor[] = "FMassEntityQuery::FMassEntityQuery";
+	constexpr char kKeyQueryDtor[] = "FMassEntityQuery::~FMassEntityQuery";
+	constexpr char kKeyQueryHandles[] = "FMassEntityQuery::GetMatchingEntityHandles";
+	constexpr char kKeyRequireTransform[] = "FMassFragmentRequirements::AddRequirement<FTransformFragment>";
+	constexpr char kKeyGetFragment[] = "FMassEntityManager::InternalGetFragmentDataPtr";
+	constexpr char kKeyFree[] = "FMemory::Free";
 
-	using GetFragmentDataFn = void* (*)(void* archetype, const void* fragmentType, int32_t entityIndex);
-	GetFragmentDataFn g_getFragmentData = nullptr;
+	struct EntityHandle { int32_t Index; int32_t SerialNumber; };  // FMassEntityHandle (moteur)
+	struct HandleArray { EntityHandle* Data; int32_t Num; int32_t Max; };  // TArray<FMassEntityHandle>
+	using QueryCtorFn = void* (*)(void* query, const void* sharedManager);  // const TSharedPtr<FMassEntityManager>&
+	using QueryDtorFn = void (*)(void* query);
+	using QueryHandlesFn = HandleArray* (*)(void* query, HandleArray* out);  // retour par valeur : pointeur cache
+	using RequireFn = void* (*)(void* requirements, uint8_t access, uint8_t presence);
+	using GetFragmentFn = void* (*)(const void* manager, EntityHandle entity, const void* fragmentType);
+	using FreeFn = void (*)(void* block);
+	QueryCtorFn g_queryCtor = nullptr;
+	QueryDtorFn g_queryDtor = nullptr;
+	QueryHandlesFn g_queryHandles = nullptr;
+	RequireFn g_requireTransform = nullptr;
+	GetFragmentFn g_getFragment = nullptr;
+	FreeFn g_free = nullptr;
+	// Type C++ non reflechi : taille servie par la ligne du loader pour le build qui tourne
+	// (resolvedSize). Une ligne de taille refuse ANY_SIZE ; 0x350 est la taille des lignes
+	// connues, non verifiee (pas de CHECK).
+	PluginFieldSpec g_querySize{ "FMassEntityQuery", "FMassEntityQuery", nullptr,
+		PLUGIN_FIELD_FLAG_NONE, 0x350, -1 };
 	int32_t g_entityManagerOffset = -1;
 	bool g_nativeFeatureOn = false;  // ecrit par le loader pendant OnPluginLoadHooks
 	bool g_nativeFaulted = false;    // game thread : une lecture a leve une exception, on n'y revient pas
@@ -106,47 +188,29 @@ namespace
 	};
 
 	// POD uniquement : __try interdit les objets a destructeur. Un seul parcours pour
-	// les obelisques et les base cores. Retourne 0, -1 si le stockage n'a pas la
-	// forme attendue, -2 sur exception. `baseCoreType` peut etre nul.
-	// ponytail: parcours complet des entites a chaque appel (2 ms mesures) ; memoriser
+	// les obelisques et les base cores. `query` est un bloc de g_querySize.resolvedSize
+	// octets, construit et detruit ici. Retourne 0, -2 sur exception. `baseCoreType` peut etre nul.
+	// ponytail: une requete sur toutes les entites a transform a chaque appel ; memoriser
 	// les handles trouves si scan_ms monte.
-	int ScanEntitiesGuarded(const uint8_t* manager, const void* obeliskType, const void* baseCoreType,
-		const void* transformType, NativeScan* out)
+	int ScanEntitiesGuarded(const uint8_t* manager, const void* sharedManager, void* query,
+		const void* obeliskType, const void* baseCoreType, const void* transformType, NativeScan* out)
 	{
 		__try
 		{
-			const uint8_t storageType = manager[kEntityStorageTypeOffset];
-			if (storageType != 1 && storageType != 2)
+			g_queryCtor(query, sharedManager);
+			g_requireTransform(query, 1 /* EMassFragmentAccess::ReadOnly */, 0 /* EMassFragmentPresence::All */);
+			HandleArray handles{};
+			g_queryHandles(query, &handles);
+			for (int i = 0; i < handles.Num; ++i)
 			{
-				return -1;
-			}
-			void* storage = const_cast<uint8_t*>(manager) + kEntityStorageOffset;
-			void** vtable = *static_cast<void***>(storage);
-			const auto getArchetype = reinterpret_cast<void* (*)(void*, int32_t)>(vtable[kStorageSlotGetArchetype]);
-			const auto isValidIndex = reinterpret_cast<bool (*)(void*, int32_t)>(vtable[kStorageSlotIsValidIndex]);
-			// Les archetypes sans aucun des deux fragments sont rejetes sans rappeler le jeu.
-			void* rejected[64] = {};
-			int index = 1;  // l'index 0 est l'entite invalide
-			for (; index < kMaxEntityIndex && isValidIndex(storage, index); ++index)
-			{
-				void* archetype = getArchetype(storage, index);
-				if (!archetype)
-				{
-					continue;  // entite libre ou seulement reservee
-				}
-				void*& slot = rejected[(reinterpret_cast<uintptr_t>(archetype) >> 4) & 63];
-				if (slot == archetype)
-				{
-					continue;
-				}
-				const auto* obelisk = static_cast<const SDK::FCrAlienObeliskFragment*>(g_getFragmentData(archetype, obeliskType, index));
-				const bool isBaseCore = !obelisk && baseCoreType && g_getFragmentData(archetype, baseCoreType, index) != nullptr;
+				const EntityHandle entity = handles.Data[i];
+				const void* obelisk = g_getFragment(manager, entity, obeliskType);
+				const bool isBaseCore = !obelisk && baseCoreType && g_getFragment(manager, entity, baseCoreType) != nullptr;
 				if (!obelisk && !isBaseCore)
 				{
-					slot = archetype;
 					continue;
 				}
-				const auto* transform = static_cast<const SDK::FTransformFragment*>(g_getFragmentData(archetype, transformType, index));
+				const void* transform = g_getFragment(manager, entity, transformType);
 				if (!transform)
 				{
 					continue;
@@ -154,22 +218,30 @@ namespace
 				if (obelisk && out->ObeliskCount < kMaxNativeObelisks)
 				{
 					RawObelisk& raw = out->Obelisks[out->ObeliskCount++];
-					raw.X = transform->Transform.Translation.X;
-					raw.Y = transform->Transform.Translation.Y;
-					raw.AttackX = obelisk->AttackLocation.X;
-					raw.AttackY = obelisk->AttackLocation.Y;
-					raw.State = static_cast<int>(obelisk->State);
-					raw.Charge = obelisk->ChargeValue;
+					const SDK::FVector position = MX(transform, FTransformFragment, Transform).Translation;
+					const SDK::FVector attack = MX(obelisk, FCrAlienObeliskFragment, AttackLocation);
+					raw.X = position.X;
+					raw.Y = position.Y;
+					raw.AttackX = attack.X;
+					raw.AttackY = attack.Y;
+					raw.State = static_cast<int>(MapStateSdk::LiveObeliskState(MX(obelisk, FCrAlienObeliskFragment, State)));
+					raw.Charge = MX(obelisk, FCrAlienObeliskFragment, ChargeValue);
 				}
 				else if (isBaseCore && out->BaseCoreCount < kMaxNativeBaseCores)
 				{
 					RawBaseCore& raw = out->BaseCores[out->BaseCoreCount++];
-					raw.X = transform->Transform.Translation.X;
-					raw.Y = transform->Transform.Translation.Y;
-					raw.EntityIndex = index;
+					const SDK::FVector position = MX(transform, FTransformFragment, Transform).Translation;
+					raw.X = position.X;
+					raw.Y = position.Y;
+					raw.EntityIndex = entity.Index;
 				}
 			}
-			out->Scanned = index - 1;
+			out->Scanned = handles.Num;
+			if (handles.Data)
+			{
+				g_free(handles.Data);
+			}
+			g_queryDtor(query);
 			return 0;
 		}
 		__except (1)  // EXCEPTION_EXECUTE_HANDLER
@@ -200,7 +272,7 @@ namespace
 			{
 				continue;
 			}
-			const float value = static_cast<SDK::UCrAlienObeliskTrait*>(object)->Parameters.ChargeValueToActivateAttack;
+			const float value = MX(MX_PTR(object, UCrAlienObeliskTrait, Parameters), FCrAlienObeliskParameters, ChargeValueToActivateAttack);
 			if (value > 0.0f)
 			{
 				low = traits ? (std::min)(low, value) : value;
@@ -251,7 +323,8 @@ namespace
 	// Retourne false si la lecture native est indisponible.
 	bool CaptureNativeEntities(SDK::UWorld* world, NativeScan& out)
 	{
-		if (!g_nativeFeatureOn || g_nativeFaulted || !g_getFragmentData || g_entityManagerOffset < 0)
+		if (!g_nativeFeatureOn || g_nativeFaulted || g_entityManagerOffset < 0 || g_querySize.resolvedSize == 0
+			|| !g_queryCtor || !g_queryDtor || !g_queryHandles || !g_requireTransform || !g_getFragment || !g_free)
 		{
 			return false;
 		}
@@ -268,17 +341,23 @@ namespace
 			return false;
 		}
 		// TSharedPtr<FMassEntityManager> : le premier pointeur est l'objet.
-		const uint8_t* manager = *reinterpret_cast<const uint8_t* const*>(reinterpret_cast<const uint8_t*>(subsystem) + g_entityManagerOffset);
+		const void* sharedManager = reinterpret_cast<const uint8_t*>(subsystem) + g_entityManagerOffset;
+		const uint8_t* manager = *static_cast<const uint8_t* const*>(sharedManager);
 		if (!manager)
 		{
 			return false;
 		}
-		const int result = ScanEntitiesGuarded(manager, obeliskType, baseCoreType, transformType, &out);
+		PluginMap::StructBuffer query(g_querySize);
+		if (!query.Data())
+		{
+			return false;
+		}
+		const int result = ScanEntitiesGuarded(manager, sharedManager, query.Data(), obeliskType, baseCoreType, transformType, &out);
 		if (result < 0)
 		{
 			g_nativeFaulted = true;
 			LOG_ERROR("[InGameMap] native entity read disabled for this session (%s)",
-				result == -2 ? "access fault" : "unexpected entity storage");
+				result == -2 ? "access fault" : "unexpected result");
 			return false;
 		}
 		return true;
@@ -298,22 +377,25 @@ namespace
 		if (auto* names = MapStateSdk::TryGetWorldSubsystem<SDK::UCrBuildingCustomNameSubsystem>(
 				world, SDK::UCrBuildingCustomNameSubsystem::StaticClass()))
 		{
-			for (const auto& entry : names->CustomNames)
+			const auto map = MX_MAP(MX_PTR(names, UCrBuildingCustomNameSubsystem, CustomNames), FCrMassPersistentEntityID, SDK::FString);
+			map.ForEach([&](uint8_t* key, uint8_t* value)
 			{
-				std::string name = entry.Value().ToString();
-				if (entry.Key().ID != 0 && !name.empty())
+				const uint32_t id = MX(key, FCrMassPersistentEntityID, ID);
+				std::string name = reinterpret_cast<const SDK::FString*>(value)->ToString();
+				if (id != 0 && !name.empty())
 				{
-					customNames.emplace(entry.Key().ID, std::move(name));
+					customNames.emplace(id, std::move(name));
 				}
-			}
+			});
 		}
 		live.CustomNames = static_cast<int>(customNames.size());
-		const auto& data = static_cast<SDK::ACrBaseCoreReplicationHelper*>(coreHelper)->BaseCoreDataContainer.BaseCoreData;
+		const auto data = MX(MX_PTR(coreHelper, ACrBaseCoreReplicationHelper, BaseCoreDataContainer), FCrBaseCoreDataContainer, BaseCoreData);
 		live.BaseCoreData = std::clamp(data.Num(), 0, kMaxPoiEntries);
 		for (int index = 0; index < live.BaseCoreData; ++index)
 		{
-			const SDK::FCrBaseCoreData& entry = data[index];
-			const SDK::FMassEntityHandle handle = entry.BaseCore.Entity.CachedHandle;
+			const uint8_t* entry = MX_AT(data, index, FCrBaseCoreData);
+			const uint8_t* entity = MX_PTR(MX_PTR(entry, FCrBaseCoreData, BaseCore), FCrMassEntityReplicationHelper, Entity);
+			const SDK::FMassEntityHandle handle = MX(entity, FCrMassPersistentEntityID, CachedHandle);
 			for (LiveBaseCore& core : live.BaseCores)
 			{
 				// Un seul core et une seule entree : jointure evidente meme sans handle en cache.
@@ -323,11 +405,11 @@ namespace
 					&& (core.EntitySerial == 0 || core.EntitySerial == handle.SerialNumber);
 				if (only || sameEntity)
 				{
-					core.Level = entry.UpgradeLevel + 1;  // le jeu stocke a partir de 0 et affiche a partir de 1
-					core.Cooling = entry.CurrentCoolingCapacity;
-					core.CoolingUsed = entry.CurrentCoolingCapacityUsed;
-					core.Infected = entry.InfectionSphere;
-					if (const auto custom = customNames.find(entry.BaseCore.Entity.ID); custom != customNames.end())
+					core.Level = MX(entry, FCrBaseCoreData, UpgradeLevel) + 1;  // le jeu stocke a partir de 0 et affiche a partir de 1
+					core.Cooling = MX(entry, FCrBaseCoreData, CurrentCoolingCapacity);
+					core.CoolingUsed = MX(entry, FCrBaseCoreData, CurrentCoolingCapacityUsed);
+					core.Infected = MX(entry, FCrBaseCoreData, InfectionSphere);
+					if (const auto custom = customNames.find(MX(entity, FCrMassPersistentEntityID, ID)); custom != customNames.end())
 					{
 						core.Name = custom->second;
 						++live.BaseCoresNamed;
@@ -346,12 +428,13 @@ namespace
 		{
 			return;
 		}
-		static const char* const keys[] = { kKeyGetFragment, kKeyEntityManager };
+		static const char* const keys[] = { kKeyEntityManager, kKeyQueryCtor, kKeyQueryDtor, kKeyQueryHandles,
+			kKeyRequireTransform, kKeyGetFragment, kKeyFree, "FMassEntityQuery" };
 		PluginFeatureDesc feature = PLUGIN_FEATURE_DESC_INIT;
 		feature.id = "ingame-map-monoliths";
 		feature.title = "In-game map: monolith state and charge";
 		feature.keys = keys;
-		feature.keyCount = 2;
+		feature.keyCount = static_cast<uint32_t>(std::size(keys));
 		feature.enabled = &g_nativeFeatureOn;
 		// Sans declaration, un echec de resolution refuserait tout le plugin : on ne demande rien.
 		if (!scanner->DeclareFeature(self, &feature))
@@ -360,12 +443,14 @@ namespace
 			return;
 		}
 
-		PluginScanRequest scan = PLUGIN_SCAN_REQUEST_INIT;
-		scan.hookName = kKeyGetFragment;
-		scan.pattern = kPatternGetFragment;
-		scan.kind = PLUGIN_SCAN_FUNCTION_START;
-		scan.flags = PLUGIN_SCAN_FLAG_MAP_KEY;  // table du loader d'abord, notre signature ensuite
-		g_getFragmentData = reinterpret_cast<GetFragmentDataFn>(scanner->Resolve(self, &scan));
+		// Table du loader seulement (pas de signature) : une cle absente coupe la fonctionnalite.
+		g_queryCtor = PluginMap::FunctionAs<QueryCtorFn>(scanner, self, kKeyQueryCtor, nullptr);
+		g_queryDtor = PluginMap::FunctionAs<QueryDtorFn>(scanner, self, kKeyQueryDtor, nullptr);
+		g_queryHandles = PluginMap::FunctionAs<QueryHandlesFn>(scanner, self, kKeyQueryHandles, nullptr);
+		g_requireTransform = PluginMap::FunctionAs<RequireFn>(scanner, self, kKeyRequireTransform, nullptr);
+		g_getFragment = PluginMap::FunctionAs<GetFragmentFn>(scanner, self, kKeyGetFragment, nullptr);
+		g_free = PluginMap::FunctionAs<FreeFn>(scanner, self, kKeyFree, nullptr);
+		PluginMap::ResolveField(scanner, self, g_querySize);
 
 		// Membre natif (TSharedPtr replie dans du padding par le SDK) : meme ligne que plugin_map.h.
 		static const PluginFieldCandidate rows[] = { { 127004, 0x38, 0x10, 0, nullptr } };
@@ -375,7 +460,9 @@ namespace
 		field.member = "EntityManager";
 		field.flags = PLUGIN_FIELD_NATIVE;
 		field.size = 0x10;
-		field.builtCL = PLUGIN_GAME_BUILT_CL;
+		// Pas PLUGIN_GAME_BUILT_CL : le loader accepte builtOffset sur builtCL sans
+		// verification, et toute la disposition native n'est verifiee que sur ce CL.
+		field.builtCL = 127004;
 		field.builtOffset = 0x38;
 		field.candidates = rows;
 		field.candidateCount = 1;
@@ -389,7 +476,7 @@ namespace
 	LiveStructures CaptureLiveStructures()
 	{
 		LiveStructures live;
-		SDK::UWorld* world = SDK::UWorld::GetWorld();
+		SDK::UWorld* world = PluginSdkRuntime::GetWorld();
 		if (!world)
 		{
 			return live;
@@ -397,14 +484,15 @@ namespace
 		SDK::AActor* owner = SDK::UGameplayStatics::GetActorOfClass(world, SDK::ACrAntennasOwner::StaticClass());
 		if (MapStateSdk::TryIsObjectOfClass(owner, SDK::ACrAntennasOwner::StaticClass()))
 		{
-			const auto& antennas = static_cast<SDK::ACrAntennasOwner*>(owner)->AntennaContainer.AntennasData;
+			const auto antennas = MX(MX_PTR(owner, ACrAntennasOwner, AntennaContainer), FCrAntennaContainer, AntennasData);
 			const int count = std::clamp(antennas.Num(), 0, kMaxPoiEntries);
 			float extent = 0.0f;
 			for (int index = 0; index < count; ++index)
 			{
-				const SDK::FCrAntennaData& data = antennas[index];
-				live.Antennas.push_back({ data.AntennaLocation.X, data.AntennaLocation.Y, static_cast<int>(data.State) });
-				extent = (std::max)({ extent, std::abs(data.AntennaLocation.X), std::abs(data.AntennaLocation.Y) });
+				const uint8_t* data = MX_AT(antennas, index, FCrAntennaData);
+				const auto location = MX(data, FCrAntennaData, AntennaLocation);
+				live.Antennas.push_back({ location.X, location.Y, static_cast<int>(MapStateSdk::LiveAntennaState(MX(data, FCrAntennaData, State))) });
+				extent = (std::max)({ extent, std::abs(location.X), std::abs(location.Y) });
 			}
 			// Unite non documentee : le monde fait ~500 000 cm de demi-largeur. Si toutes
 			// les positions tiennent dans 20 000, elles sont en metres.
@@ -420,14 +508,17 @@ namespace
 
 		if (SDK::ACrMapMenuDataReplicationHelper* helper = FindMapHelper(world))
 		{
-			const auto& buildings = helper->BuildingsMarkerDataContainer.BuildingsMarkerData;
+			const auto buildings = MX(MX_PTR(helper, ACrMapMenuDataReplicationHelper, BuildingsMarkerDataContainer),
+				FBuildingsMarkerDataContainer, BuildingsMarkerData);
 			live.BuildingMarkers = std::clamp(buildings.Num(), 0, kMaxPoiEntries);
 			float buildingExtent = 0.0f;
 			for (int index = 0; index < live.BuildingMarkers; ++index)
 			{
-				const SDK::FBuildingMarkerDataFastArrayItem& building = buildings[index];
-				buildingExtent = (std::max)({ buildingExtent, std::abs(building.Location.X), std::abs(building.Location.Y) });
-				const std::string unique = building.BuildingUniqueName.IsNone() ? std::string() : building.BuildingUniqueName.ToString();
+				const uint8_t* building = MX_AT(buildings, index, FBuildingMarkerDataFastArrayItem);
+				const auto location = MX(building, FBuildingMarkerDataFastArrayItem, Location);
+				buildingExtent = (std::max)({ buildingExtent, std::abs(location.X), std::abs(location.Y) });
+				const SDK::FName uniqueName = MX(building, FBuildingMarkerDataFastArrayItem, BuildingUniqueName);
+				const std::string unique = uniqueName.IsNone() ? std::string() : uniqueName.ToString();
 				if (live.BuildingNames.size() < 400 && live.BuildingNames.find(unique) == std::string::npos)
 				{
 					live.BuildingNames += unique + " ";
@@ -438,10 +529,11 @@ namespace
 				{
 					continue;
 				}
-				std::string name = building.BuildingName.ToString();
-				LiveBaseCore core{ building.Location.X, building.Location.Y, name.empty() ? unique : name };
-				core.EntityIndex = building.BuildingHandle.Index;
-				core.EntitySerial = building.BuildingHandle.SerialNumber;
+				std::string name = MX(building, FBuildingMarkerDataFastArrayItem, BuildingName).ToString();
+				const SDK::FMassEntityHandle handle = MX(building, FBuildingMarkerDataFastArrayItem, BuildingHandle);
+				LiveBaseCore core{ location.X, location.Y, name.empty() ? unique : name };
+				core.EntityIndex = handle.Index;
+				core.EntitySerial = handle.SerialNumber;
 				live.BaseCores.push_back(std::move(core));
 			}
 			if (buildingExtent > 0.0f && buildingExtent < 20000.0f)  // metres, meme regle que les antennes
@@ -451,18 +543,21 @@ namespace
 					core.X *= 100.0f; core.Y *= 100.0f;
 				}
 			}
-			const auto& markers = helper->BaseAttackMarkerDataContainer.BaseAttackMarkerData;
+			const auto markers = MX(MX_PTR(helper, ACrMapMenuDataReplicationHelper, BaseAttackMarkerDataContainer),
+				FBaseAttackMarkerDataContainer, BaseAttackMarkerData);
 			const int count = std::clamp(markers.Num(), 0, kMaxPoiEntries);
 			float extent = 0.0f;
 			for (int index = 0; index < count; ++index)
 			{
-				const SDK::FBaseAttackMarkerDataFastArrayItem& marker = markers[index];
-				LiveObelisk obelisk{ marker.Location.X, marker.Location.Y, static_cast<int>(marker.State), -1.0f };
-				obelisk.HasAttack = marker.AttackLocationIfAny.X != 0.0f || marker.AttackLocationIfAny.Y != 0.0f;
-				obelisk.AttackX = marker.AttackLocationIfAny.X;
-				obelisk.AttackY = marker.AttackLocationIfAny.Y;
+				const uint8_t* marker = MX_AT(markers, index, FBaseAttackMarkerDataFastArrayItem);
+				const auto location = MX(marker, FBaseAttackMarkerDataFastArrayItem, Location);
+				const auto attack = MX(marker, FBaseAttackMarkerDataFastArrayItem, AttackLocationIfAny);
+				LiveObelisk obelisk{ location.X, location.Y, static_cast<int>(MapStateSdk::LiveObeliskState(MX(marker, FBaseAttackMarkerDataFastArrayItem, State))), -1.0f };
+				obelisk.HasAttack = attack.X != 0.0f || attack.Y != 0.0f;
+				obelisk.AttackX = attack.X;
+				obelisk.AttackY = attack.Y;
 				live.Obelisks.push_back(obelisk);
-				extent = (std::max)({ extent, std::abs(marker.Location.X), std::abs(marker.Location.Y) });
+				extent = (std::max)({ extent, std::abs(location.X), std::abs(location.Y) });
 			}
 			live.ObeliskMarkers = count;
 			if (extent > 0.0f && extent < 20000.0f)  // metres, meme regle que les antennes
@@ -496,13 +591,16 @@ namespace
 			{
 				continue;
 			}
-			const auto& items = static_cast<SDK::ACrMassAlienObeliskClientBubbleInfo*>(bubbles[bubbleIndex])->AlienObeliskSerializer.AlienObelisk;
+			const auto items = MX(MX_PTR(bubbles[bubbleIndex], ACrMassAlienObeliskClientBubbleInfo, AlienObeliskSerializer),
+				FCrMassAlienObeliskClientBubbleSerializer, AlienObelisk);
 			const int count = std::clamp(items.Num(), 0, kMaxPoiEntries);
 			for (int index = 0; index < count; ++index)
 			{
-				const SDK::FCrReplicatedAlienObelisk& agent = items[index].Agent;
-				merge(static_cast<float>(agent.PositionYaw.Position.X), static_cast<float>(agent.PositionYaw.Position.Y),
-					static_cast<int>(agent.AlienObeliskData.State), agent.AlienObeliskData.ChargeValue);
+				const uint8_t* agent = MX_PTR(MX_AT(items, index, FCrAlienObeliskFastArrayItem), FCrAlienObeliskFastArrayItem, Agent);
+				const SDK::FVector position = MX(MX_PTR(agent, FCrReplicatedAlienObelisk, PositionYaw), FReplicatedAgentPositionYawData, Position);
+				const uint8_t* data = MX_PTR(agent, FCrReplicatedAlienObelisk, AlienObeliskData);
+				merge(static_cast<float>(position.X), static_cast<float>(position.Y),
+					static_cast<int>(MapStateSdk::LiveObeliskState(MX(data, FCrReplicatedAlienObeliskData, State))), MX(data, FCrReplicatedAlienObeliskData, ChargeValue));
 				++live.ObeliskReplicated;
 			}
 		}
@@ -526,7 +624,7 @@ namespace
 			});
 			if (!charged)
 			{
-				merge(x, y, -1, obelisk->PrevChargeValue);
+				merge(x, y, -1, MX(obelisk, ACrAlienObelisk, PrevChargeValue));
 			}
 		}
 
@@ -591,14 +689,16 @@ namespace
 	PoiStateMap CapturePoiStates()
 	{
 		PoiStateMap states;
-		SDK::UWorld* world = SDK::UWorld::GetWorld();
+		SDK::UWorld* world = PluginSdkRuntime::GetWorld();
 		if (SDK::ACrMapMenuDataReplicationHelper* helper = FindMapHelper(world))
 		{
-			const int count = std::clamp(helper->PointOfInterestReplicationData.Num(), 0, kMaxPoiEntries);
+			const auto pois = MX(helper, ACrMapMenuDataReplicationHelper, PointOfInterestReplicationData);
+			const int count = std::clamp(pois.Num(), 0, kMaxPoiEntries);
 			for (int index = 0; index < count; ++index)
 			{
-				const SDK::FPointOfInterestData& data = helper->PointOfInterestReplicationData[index];
-				states[GuidKey(data.PointOfInterestMarkerID)].State = static_cast<int>(data.State);
+				const uint8_t* data = MX_AT(pois, index, FPointOfInterestData);
+				states[GuidKey(MX(data, FPointOfInterestData, PointOfInterestMarkerID))].State =
+					static_cast<int>(MapStateSdk::LivePoiState(MX(data, FPointOfInterestData, State)));
 			}
 		}
 		SDK::AActor* actor = world
@@ -606,17 +706,17 @@ namespace
 			: nullptr;
 		if (MapStateSdk::TryIsObjectOfClass(actor, SDK::ACrAbandonBaseInfoReplicator::StaticClass()))
 		{
-			const auto& bases = static_cast<SDK::ACrAbandonBaseInfoReplicator*>(actor)->AbandonBaseDataContainer.AbandonBaseData;
+			const auto bases = MX(MX_PTR(actor, ACrAbandonBaseInfoReplicator, AbandonBaseDataContainer), FCrAbandonBaseDataContainer, AbandonBaseData);
 			const int count = std::clamp(bases.Num(), 0, kMaxPoiEntries);
 			for (int index = 0; index < count; ++index)
 			{
-				const SDK::FCrAbandonBaseData& base = bases[index];
-				PoiLiveState& state = states[GuidKey(base.AbandonBasePOIId)];
+				const uint8_t* base = MX_AT(bases, index, FCrAbandonBaseData);
+				PoiLiveState& state = states[GuidKey(MX(base, FCrAbandonBaseData, AbandonBasePOIId))];
 				state.IsBase = true;
-				CountStatuses(base.FoundablesCollectedStatus, state.Done[0], state.Total[0]);
-				CountStatuses(base.BlueprintChestsCollectedStatus, state.Done[1], state.Total[1]);
-				CountStatuses(base.StoryItemsCollectedStatus, state.Done[2], state.Total[2]);
-				CountStatuses(base.InfectionCystsDestroyedStatus, state.Done[3], state.Total[3]);
+				CountStatuses(MX(base, FCrAbandonBaseData, FoundablesCollectedStatus), state.Done[0], state.Total[0]);
+				CountStatuses(MX(base, FCrAbandonBaseData, BlueprintChestsCollectedStatus), state.Done[1], state.Total[1]);
+				CountStatuses(MX(base, FCrAbandonBaseData, StoryItemsCollectedStatus), state.Done[2], state.Total[2]);
+				CountStatuses(MX(base, FCrAbandonBaseData, InfectionCystsDestroyedStatus), state.Done[3], state.Total[3]);
 			}
 		}
 		return states;
@@ -647,7 +747,8 @@ namespace
 
 	int ReadRadiationLevel()
 	{
-		SDK::ACrMapMenuDataReplicationHelper* helper = FindMapHelper(SDK::UWorld::GetWorld());
-		return helper ? helper->CurrentRadiationLevelReplicated : -1;
+		SDK::ACrMapMenuDataReplicationHelper* helper = FindMapHelper(PluginSdkRuntime::GetWorld());
+		return helper && GameFields::On(GameFields::Group::Markers)
+			? static_cast<int>(MX(helper, ACrMapMenuDataReplicationHelper, CurrentRadiationLevelReplicated)) : -1;
 	}
 }

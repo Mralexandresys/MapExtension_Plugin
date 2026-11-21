@@ -181,12 +181,12 @@ if [[ ! -d "$SDK_ROOT" ]]; then
   exit 1
 fi
 
-PLUGIN_SDK_SHARED_PROPS="$SDK_ROOT/Shared.props"
+PLUGIN_GAME_BUILD_PROPS="$SDK_ROOT/PluginGameBuild.props"
 PLUGIN_API_INCLUDE_DIR="$SDK_ROOT/include"
 STARRUPTURE_SDK_BASE_DIR="$SDK_ROOT/StarRupture SDK"
 
-if [[ ! -f "$PLUGIN_SDK_SHARED_PROPS" ]]; then
-  echo "Shared.props introuvable: $PLUGIN_SDK_SHARED_PROPS" >&2
+if [[ ! -f "$PLUGIN_GAME_BUILD_PROPS" ]]; then
+  echo "PluginGameBuild.props introuvable: $PLUGIN_GAME_BUILD_PROPS" >&2
   exit 1
 fi
 
@@ -223,7 +223,6 @@ MSBUILD_PATH="$(find_msbuild)" || {
 SOLUTION_WIN_PATH="$(wslpath -w "$SOLUTION_PATH")"
 PLUGIN_ROOT_WIN_PATH="$(wslpath -w "$SCRIPT_DIR")"
 SDK_ROOT_WIN_PATH="$(wslpath -w "$SDK_ROOT")"
-PLUGIN_SDK_SHARED_PROPS_WIN_PATH="$(wslpath -w "$PLUGIN_SDK_SHARED_PROPS")"
 PLUGIN_API_INCLUDE_DIR_WIN_PATH="$(wslpath -w "$PLUGIN_API_INCLUDE_DIR")"
 STARRUPTURE_SDK_BASE_DIR_WIN_PATH="$(wslpath -w "$STARRUPTURE_SDK_BASE_DIR")"
 
@@ -251,7 +250,6 @@ BUILD_CMD=(
   /p:SolutionDir="$PLUGIN_ROOT_WIN_PATH\\"
   /p:RepoRootDir="$PLUGIN_ROOT_WIN_PATH\\"
   /p:PluginSdkRootDir="$SDK_ROOT_WIN_PATH\\"
-  /p:PluginSdkSharedProps="$PLUGIN_SDK_SHARED_PROPS_WIN_PATH"
   /p:PluginApiIncludeDir="$PLUGIN_API_INCLUDE_DIR_WIN_PATH\\"
   /p:StarRuptureSdkBaseDir="$STARRUPTURE_SDK_BASE_DIR_WIN_PATH\\"
 )

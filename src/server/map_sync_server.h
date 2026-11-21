@@ -13,6 +13,7 @@ namespace MapExtensionServer
 			void Shutdown();
 			void OnEngineInit();
 			void OnEngineShutdown();
+			void OnEngineTick();
 			void OnAnyWorldBeginPlay(SDK::UWorld* world, const char* worldName);
 			void OnBeforeWorldEndPlay(SDK::UWorld* world, const char* worldName);
 			void OnAfterWorldEndPlay(SDK::UWorld* world, const char* worldName);

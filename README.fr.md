@@ -8,6 +8,8 @@ Depuis la version 0.8, la carte est dans le jeu. L'ancien viewer navigateur (`Ma
 
 Le plugin fonctionne aussi bien en partie solo qu'en multijoueur. En solo/local, seul le build client est necessaire. Sur serveur dedie, il faut installer le build client sur la machine du joueur et le build serveur sur le serveur dedie, pour que le serveur envoie les donnees de carte et de cycle de rupture aux clients connectes.
 
+En coop (un joueur heberge la partie), chaque joueur installe le build client. L'hote peut partager sa carte avec les joueurs qui le rejoignent (experimental, pas encore teste dans une vraie partie coop ; les retours sont les bienvenus) : cocher **Share map with co-op players (experimental)** dans la barre de la carte en jeu (enregistre dans `[Coop] ShareMapWithClients`). Les joueurs qui rejoignent voient alors le reseau cargo, les teleporteurs, les joueurs, les points d'interet et le cycle de rupture de l'hote ; la barre affiche `Map: from host`, ou `Map: local` quand l'hote ne partage pas ou utilise une autre version de MapExtension.
+
 ## Fonctionnalites
 
 - Ouvrir la carte avec `F8` (configurable), la fermer avec la meme touche ou `Echap` ; glisser pour deplacer, molette pour zoomer, option "Follow me"
@@ -72,6 +74,12 @@ Deux limites a connaitre :
 
 Les mises a jour automatiques peuvent etre desactivees globalement dans le modloader avec `[AutoUpdate] Enabled=0` dans `modloader.ini`.
 
+### Mise a jour depuis la 0.9
+
+- Remplacer la DLL client ; le dossier `Plugins/MapExtension/` ne change pas.
+- Coop (experimental, pas encore teste dans une vraie partie coop) : nouvelle option `[Coop] ShareMapWithClients` (defaut `0`), activee par l'hote depuis la carte en jeu. L'hote et les joueurs qui rejoignent doivent avoir la meme version de MapExtension. Les retours sont les bienvenus.
+- Serveur dedie : StarRupture a arrete le support des serveurs dedies, aucun paquet serveur n'est donc plus publie. Le protocole de synchronisation reste v6 ; la DLL serveur 0.8 continue de fonctionner avec ce client.
+
 ### Mise a jour depuis la 0.8
 
 - Remplacer la DLL client ; le dossier `Plugins/MapExtension/` ne change pas.
@@ -123,9 +131,13 @@ LogRuptureCycleEvents=0
 LogResourceObservations=0
 LogActorScanFallback=0
 LogRefreshTimings=0
+FieldAudit=0
 
 [Runtime]
 RefreshIntervalMs=2000
+
+[Coop]
+ShareMapWithClients=0
 
 [InGameMap]
 ToggleKey=F8
@@ -141,7 +153,9 @@ ShowPopup=1
 - `LogResourceObservations` : loggue les changements d'etat observes, les resets de generation locale et les changements du nombre d'entrees d'epuisement ambigues (`1` ou `0`). Activer avec `LogRuptureCycleEvents` sur l'autorite solo/hote/serveur pour comparer une recolte et un cycle complet. Ce sont des heures d'observation, pas des heures exactes de recolte ni une attribution a un joueur ; un acteur bref peut disparaitre entre deux captures. Les hooks natifs de recolte demandent encore une validation sur les executables cibles.
 - `LogActorScanFallback` : loggue le fallback actor scan (`1` ou `0`)
 - `LogRefreshTimings` : loggue les timings par phase de refresh (`1` ou `0`)
+- `FieldAudit` : pour le diagnostic apres une mise a jour du jeu. Relit aussi chaque valeur du jeu a l'ancienne (a la position qu'elle avait dans le build du jeu pour lequel le mod a ete compile) et loggue, au chargement puis toutes les 60 s, les valeurs qui ont bouge ou qui different (`1` ou `0`, defaut `0` ; lu au chargement)
 - `RefreshIntervalMs` : definit l'intervalle de refresh runtime en millisecondes
+- `Coop.ShareMapWithClients` : quand vous hebergez une partie coop, envoie votre carte aux joueurs qui vous rejoignent avec la meme version de MapExtension (defaut `0`). Experimental. Se coche aussi dans la case **Share map with co-op players (experimental)** de la carte en jeu, visible seulement par l'hote
 - `InGameMap.ToggleKey` : touche qui ouvre ou ferme ce panneau (defaut `F8`)
 - `InGameMap.TileBudgetMiB` : memoire video approximative autorisee pour les tuiles de terrain en pleine resolution (defaut `64` ; `0` garde uniquement l'apercu basse resolution)
 - `InGameMap.ShowPopup` : a chaque partie chargee, affiche une fenetre centree, fermee par son bouton OK, qui indique que la carte s'ouvre en jeu avec la touche configuree et que les joueurs venant d'une version anterieure a la 0.7 doivent retelecharger le mod sur Nexus Mods (defaut `1` ; `0` la masque)

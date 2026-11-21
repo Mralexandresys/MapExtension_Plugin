@@ -1,6 +1,7 @@
 #include "map_sync_client.h"
 
 #include "map_state_remote_cache.h"
+#include "../game_fields.h"
 #include "../plugin_helpers.h"
 #include "../shared/map_sync_protocol.h"
 
@@ -23,6 +24,12 @@
 		// frequently than the server refresh rate wastes CPU. 15 s is ample
 		// given the 5 s request gate above.
 		constexpr int64_t kRefreshIntervalMs = 15000;
+		// A co-op host snapshot also replaces the local player positions, so a
+		// co-op client asks for one as often as the request gate allows.
+		constexpr int64_t kCoopRefreshIntervalMs = kMinRequestIntervalMs;
+		// Past this age the co-op client drops back to its local capture (the
+		// host turned sharing off, or left).
+		constexpr int64_t kCoopSnapshotMaxAgeMs = 3 * kMinRequestIntervalMs;
 
 	PluginNetworkMessageCallback g_ruptureReceiveHandle = nullptr;
 	PluginNetworkMessageCallback g_snapshotBeginReceiveHandle = nullptr;
@@ -178,6 +185,11 @@
 		hooks->Network->UnregisterMessageHandler(self, typeTag, handle);
 		handle = nullptr;
 	}
+}
+
+namespace
+{
+	MX_FIELD(Players, ACrGameStateBase, bIsDedicatedServer);
 }
 
 namespace MapExtensionClient
@@ -337,7 +349,12 @@ namespace MapExtensionClient
 			}
 
 			SDK::ACrGameStateBase* gameState = TryGetGameState(world);
-			if (!gameState || !gameState->bIsDedicatedServer)
+			if (!gameState)
+			{
+				return false;
+			}
+			const bool dedicated = MX(gameState, ACrGameStateBase, bIsDedicatedServer);
+			if (!dedicated && !IsCoopClient())
 			{
 				return false;
 			}
@@ -355,7 +372,7 @@ namespace MapExtensionClient
 			const bool hasPendingPoiPages = RemoteCache::HasPendingPoiPages();
 			if (!hasPendingPoiPages
 				&& lastReceivedAtUnixMs > 0
-				&& nowUnixMs - lastReceivedAtUnixMs < kRefreshIntervalMs)
+				&& nowUnixMs - lastReceivedAtUnixMs < (dedicated ? kRefreshIntervalMs : kCoopRefreshIntervalMs))
 			{
 				return false;
 			}
@@ -388,6 +405,22 @@ namespace MapExtensionClient
 		bool TryCopyRemoteCargoSnapshot(MapStateRuntime::Detail::CargoSnapshot& outSnapshot)
 		{
 			return RemoteCache::TryCopyCargoSnapshot(outSnapshot);
+		}
+
+		bool IsCoopClient()
+		{
+			IPluginHooks* hooks = GetHooks();
+			return hooks && hooks->NetMode && hooks->NetMode->GetNetMode
+				&& hooks->NetMode->GetNetMode() == EPluginNetMode::Client;
+		}
+
+		bool HasFreshCoopHostSnapshot()
+		{
+			const int64_t lastReceivedAtUnixMs = RemoteCache::GetLastReceivedAtUnixMs();
+			return IsCoopClient()
+				&& RemoteCache::HasCargoSnapshot()
+				&& lastReceivedAtUnixMs > 0
+				&& GetCurrentUnixTimeMilliseconds() - lastReceivedAtUnixMs < kCoopSnapshotMaxAgeMs;
 		}
 	}
 }

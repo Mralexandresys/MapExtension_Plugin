@@ -51,9 +51,18 @@ namespace MapExtensionClient::InGameMap
 	// Y monde, index.Y suit X monde, textures non transposees.
 	constexpr bool kSwapAxes = true;
 
+	enum class CoopRole
+	{
+		None,           // solo, ou client d'un serveur dedie
+		Host,           // hote d'une partie coop
+		ClientFromHost, // client coop qui recoit la carte de l'hote
+		ClientLocal,    // client coop sans carte de l'hote (partage coupe, autre version)
+	};
+
 	// Etat immuable publie par le game thread ; le render callback ne lit que ca.
 	struct Published
 	{
+		CoopRole Coop = CoopRole::None;
 		TerrainDescriptor Terrain;
 		std::vector<PluginTextureHandle> Tiles;  // aligne sur Terrain.Segments, nullptr = pas de texture
 		int HiResCount = 0;
@@ -72,6 +81,7 @@ namespace MapExtensionClient::InGameMap
 	inline std::shared_ptr<const Published> g_published;
 	inline std::atomic<int64_t> g_lastRenderUnixMs{ 0 };  // "fenetre ouverte" = rendue recemment
 	inline PanelHandle g_panel = nullptr;
+	inline std::atomic<bool> g_coopShare{ false };  // [Coop] ShareMapWithClients, lu a l'activation
 	inline std::string g_toggleKey;  // ecrit a l'activation, lu par le rendu (fermeture par la touche)
 
 	// --- Tuiles : game thread uniquement (sauf Disable, cf. ponytail plus bas) ---

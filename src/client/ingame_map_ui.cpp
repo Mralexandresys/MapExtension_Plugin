@@ -136,6 +136,7 @@ namespace
 		{
 			hooks->World->RegisterOnAnyWorldBeginPlay(OnAnyWorldBeginPlay);
 		}
+		g_coopShare = MapExtensionPluginConfig::Config::CoopShareMapWithClients();
 		g_toggleKey = MapExtensionPluginConfig::Config::InGameMapToggleKey();
 		if (!g_toggleKey.empty() && hooks->Input && hooks->Input->RegisterKeybindByName)
 		{

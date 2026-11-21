@@ -4,16 +4,11 @@
 #include "plugin_helpers.h"
 
 #if defined(MODLOADER_CLIENT_BUILD)
-#endif
-
-#if defined(MODLOADER_CLIENT_BUILD)
 #include "client/map_sync_client.h"
 #include "client/ingame_map_ui.h"
 #endif
 
-#if defined(MODLOADER_SERVER_BUILD)
 #include "server/map_sync_server.h"
-#endif
 
 namespace
 {
@@ -104,12 +99,10 @@ namespace MapStateRuntime
 		MapExtensionClient::InGameMap::Initialize();
 #endif
 
-#if defined(MODLOADER_SERVER_BUILD)
 		if (!MapExtensionServer::Sync::Initialize())
 		{
 			LOG_WARN("Server network sync initialization failed; snapshot requests will not be served.");
 		}
-#endif
 
 		g_registered = true;
 		LOG_INFO("Runtime callbacks registered");
@@ -172,9 +165,7 @@ namespace MapStateRuntime
 		MapExtensionClient::Sync::Shutdown();
 #endif
 
-#if defined(MODLOADER_SERVER_BUILD)
 		MapExtensionServer::Sync::Shutdown();
-#endif
 
 		g_registered = false;
 		LOG_INFO("Runtime callbacks unregistered");

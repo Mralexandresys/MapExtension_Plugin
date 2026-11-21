@@ -957,6 +957,32 @@ namespace
 		ui->SameLine(0.0f, -1.0f);
 	}
 
+	void RenderCoopControl(IModLoaderImGui* ui, const Published* published)
+	{
+		const CoopRole role = published ? published->Coop : CoopRole::None;
+		if (role == CoopRole::Host)
+		{
+			ui->SameLine(0.0f, -1.0f);
+			bool share = g_coopShare.load();
+			if (ui->Checkbox("Share map with co-op players (experimental)", &share))
+			{
+				g_coopShare = share;
+				MapExtensionPluginConfig::Config::SetCoopShareMapWithClients(share);
+			}
+			if (ui->IsItemHovered())
+			{
+				ui->SetTooltip("Experimental: not tested in a real co-op game yet.\n"
+					"Joining players need the same MapExtension version.\n"
+					"Feedback welcome on the Nexus Mods page.");
+			}
+		}
+		else if (role == CoopRole::ClientFromHost || role == CoopRole::ClientLocal)
+		{
+			ui->SameLine(0.0f, -1.0f);
+			ui->TextDisabled(role == CoopRole::ClientFromHost ? "Map: from host" : "Map: local");
+		}
+	}
+
 	void RenderToolbar(IModLoaderImGui* ui)
 	{
 		LayerCheckbox(ui, "Teleporters", &g_showTeleporters, kColorTeleporter, 4);
@@ -1191,6 +1217,7 @@ namespace
 		}
 
 		RenderToolbar(ui);
+		RenderCoopControl(ui, published.get());
 		if (g_showFilters)
 		{
 			RenderFilters(ui, published.get());

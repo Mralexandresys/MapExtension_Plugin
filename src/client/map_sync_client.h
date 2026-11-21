@@ -17,5 +17,10 @@ namespace MapExtensionClient
 		bool RequestSnapshotIfNeeded(SDK::UWorld* world, const char* reason);
 		bool TryCopyRemoteRuptureCycleSnapshot(MapStateRuntime::Detail::RuptureCycleSnapshot& outSnapshot);
 		bool TryCopyRemoteCargoSnapshot(MapStateRuntime::Detail::CargoSnapshot& outSnapshot);
+		// True on a client connected to a co-op host (net mode Client, not a
+		// dedicated server).
+		bool IsCoopClient();
+		// True on a co-op client that received a host snapshot recently.
+		bool HasFreshCoopHostSnapshot();
 	}
 }
